@@ -63,6 +63,9 @@ export const storageKeys = {
   supervisorSeq: "sju-sup-seq",
   portalUsers: "sju-portal-users",
   scholarRecords: "sju-scholar-records",
+  allocations: "sju-allocations",
+  racProposals: "sju-rac-proposals",
+  siteSettings: "sju-site-settings",
 } as const;
 
 export const sessionStorageKey = "sju-research-session";

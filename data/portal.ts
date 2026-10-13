@@ -22,21 +22,22 @@ export const portalNav: Record<Role, PortalNavItem[]> = {
       href: "/scholar/records/study-mode-change",
       ready: true,
     },
-    { label: "My application", href: "/scholar/dashboard", ready: false },
-    { label: "Course work", href: "/scholar/dashboard", ready: false },
-    { label: "Milestones", href: "/scholar/dashboard", ready: false },
-    { label: "Publications", href: "/scholar/dashboard", ready: false },
-    { label: "Documents", href: "/scholar/dashboard", ready: false },
+    { label: "Publications", href: "/scholar/records/publications", ready: true },
+    { label: "Six-month report", href: "/scholar/records/six-month-report", ready: true },
+    { label: "RAC members", href: "/scholar/rac", ready: true },
   ],
   supervisor: [
     { label: "Dashboard", href: "/supervisor/dashboard", ready: true },
-    { label: "My scholars", href: "/supervisor/dashboard", ready: false },
-    { label: "Milestones", href: "/supervisor/dashboard", ready: false },
-    { label: "Recognition", href: "/supervisor/dashboard", ready: false },
-    { label: "Publications", href: "/supervisor/dashboard", ready: false },
+    { label: "My scholars", href: "/supervisor/scholars", ready: true },
+    { label: "RAC proposal", href: "/supervisor/rac", ready: true },
+    { label: "Scholar requests", href: "/supervisor/reviews", ready: true },
   ],
   admin: [
     { label: "Dashboard", href: "/admin/dashboard", ready: true },
+    { label: "Home and admissions", href: "/admin/site", ready: true },
+    { label: "Scholar allotment", href: "/admin/allocations", ready: true },
+    { label: "RAC", href: "/admin/rac", ready: true },
+    { label: "People", href: "/admin/people", ready: true },
     { label: "Vacancies", href: "/admin/vacancies", ready: true },
     { label: "Applications", href: "/admin/applications", ready: true },
     { label: "Users", href: "/admin/users", ready: true },
@@ -60,10 +61,8 @@ export const portalNav: Record<Role, PortalNavItem[]> = {
       href: "/admin/records/study-mode-change",
       ready: true,
     },
-    { label: "Scholars", href: "/admin/dashboard", ready: false },
-    { label: "Supervisors", href: "/admin/dashboard", ready: false },
-    { label: "Announcements", href: "/admin/dashboard", ready: false },
-    { label: "Schools", href: "/admin/dashboard", ready: false },
+    { label: "Publications", href: "/admin/records/publications", ready: true },
+    { label: "Six-month report", href: "/admin/records/six-month-report", ready: true },
   ],
 };
 
@@ -71,17 +70,17 @@ export const portalIntro: Record<Role, { title: string; summary: string }> = {
   scholar: {
     title: "Scholar dashboard",
     summary:
-      "Upload your ABC ID, hall ticket, personal details, payments, and requests. The research office approves them.",
+      "Your payments, publications, reports, and requests. A mapped supervisor reviews the academic requests before the research office.",
   },
   supervisor: {
     title: "Supervisor dashboard",
     summary:
-      "Allotted scholars and their milestones will appear here after recognition is approved. This preview confirms the supervisor shell.",
+      "Scholars allotted to you, RAC nominations, and requests waiting for your recommendation.",
   },
   admin: {
     title: "Admin dashboard",
     summary:
-      "Review scholar uploads, approve requests, and download the records. Vacancies, the research team, and applications stay here too.",
+      "Admissions, allotment, RAC, payments, and the final approval after the supervisor.",
   },
 };
 

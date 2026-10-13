@@ -8,11 +8,18 @@ export const scholarRecordKinds = [
   "phd_cancellation",
   "supervisor_change",
   "study_mode_change",
+  "publication",
+  "six_month_report",
 ] as const;
 
 export type ScholarRecordKind = (typeof scholarRecordKinds)[number];
 
-export const recordStatuses = ["Submitted", "Approved", "Returned"] as const;
+export const recordStatuses = [
+  "Submitted",
+  "Supervisor approved",
+  "Approved",
+  "Returned",
+] as const;
 
 export type RecordStatus = (typeof recordStatuses)[number];
 
@@ -37,6 +44,7 @@ export type ScholarRecordMenu = {
   fileLabel: string | null;
   fileRequired: boolean;
   fileRule: FileLimitKey;
+  needsSupervisor: boolean;
   fields: readonly RecordField[];
 };
 
@@ -53,6 +61,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "ABC ID card",
     fileRequired: true,
     fileRule: "document",
+    needsSupervisor: false,
     fields: [
       { name: "abcId", label: "ABC ID", kind: "text", required: true, minLength: 6 },
       {
@@ -73,6 +82,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "Hall ticket",
     fileRequired: true,
     fileRule: "document",
+    needsSupervisor: false,
     fields: [
       { name: "examName", label: "Exam", kind: "text", required: true, minLength: 2 },
       { name: "examDate", label: "Exam date", kind: "date", required: true },
@@ -87,6 +97,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: null,
     fileRequired: false,
     fileRule: "document",
+    needsSupervisor: false,
     fields: [
       {
         name: "fullName",
@@ -125,11 +136,12 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     slug: "payment-history",
     kind: "payment",
     label: "Payment history",
-    summary: "Add each fee payment and upload the receipt.",
+    summary: "Payments you have made. The research office can see every scholar.",
     single: false,
     fileLabel: "Payment receipt",
     fileRequired: true,
     fileRule: "document",
+    needsSupervisor: false,
     fields: [
       { name: "paidOn", label: "Date of payment", kind: "date", required: true },
       { name: "amount", label: "Amount (INR)", kind: "amount", required: true },
@@ -154,11 +166,13 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     slug: "phd-cancellation",
     kind: "phd_cancellation",
     label: "Ph.D. cancellation request",
-    summary: "Ask the research office to cancel the Ph.D. registration.",
+    summary:
+      "Ask to cancel the Ph.D. registration. Attach the request letter. Your supervisor reviews it, then the research office.",
     single: false,
-    fileLabel: "Supporting document",
-    fileRequired: false,
+    fileLabel: "Request letter",
+    fileRequired: true,
     fileRule: "document",
+    needsSupervisor: true,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
       {
@@ -174,11 +188,13 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     slug: "supervisor-change",
     kind: "supervisor_change",
     label: "Supervisor change request",
-    summary: "Ask to move from the present supervisor to another recognised supervisor.",
+    summary:
+      "Ask to move to another recognised supervisor. Your present supervisor reviews it, then the research office.",
     single: false,
-    fileLabel: "Supporting document",
-    fileRequired: false,
+    fileLabel: "Request letter",
+    fileRequired: true,
     fileRule: "document",
+    needsSupervisor: true,
     fields: [
       {
         name: "currentSupervisor",
@@ -213,12 +229,67 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "No-objection certificate",
     fileRequired: true,
     fileRule: "document",
+    needsSupervisor: false,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
       { name: "employer", label: "Employer", kind: "text", required: true, minLength: 2 },
       {
         name: "reason",
         label: "Reason",
+        kind: "textarea",
+        required: true,
+        minLength: 10,
+      },
+    ],
+  },
+  {
+    slug: "publications",
+    kind: "publication",
+    label: "Publications",
+    summary:
+      "Add a publication. Your supervisor reviews it, then the research office.",
+    single: false,
+    fileLabel: "First page of the paper",
+    fileRequired: false,
+    fileRule: "document",
+    needsSupervisor: true,
+    fields: [
+      { name: "title", label: "Title", kind: "text", required: true, minLength: 2 },
+      { name: "authors", label: "Authors", kind: "text", required: true, minLength: 2 },
+      { name: "journal", label: "Journal", kind: "text", required: true, minLength: 2 },
+      { name: "year", label: "Year", kind: "text", required: true, minLength: 4 },
+      {
+        name: "indexing",
+        label: "Indexing",
+        kind: "text",
+        required: true,
+        minLength: 2,
+      },
+      { name: "doi", label: "DOI", kind: "text", required: false },
+    ],
+  },
+  {
+    slug: "six-month-report",
+    kind: "six_month_report",
+    label: "Six-month report",
+    summary:
+      "Submit the six-month progress report. Your supervisor reviews it, then the research office.",
+    single: false,
+    fileLabel: "Report",
+    fileRequired: true,
+    fileRule: "document",
+    needsSupervisor: true,
+    fields: [
+      {
+        name: "period",
+        label: "Reporting period",
+        kind: "text",
+        required: true,
+        minLength: 2,
+      },
+      {
+        name: "progress",
+        label: "Work done in this period",
         kind: "textarea",
         required: true,
         minLength: 10,

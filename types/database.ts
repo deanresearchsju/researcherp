@@ -103,6 +103,8 @@ export type Database = {
           payload: Json;
           file_name: string | null;
           file_data: string | null;
+          supervisor_identifier: string;
+          supervisor_name: string;
           created_at: string;
           updated_at: string;
         };
@@ -115,6 +117,8 @@ export type Database = {
           payload: Json;
           file_name?: string | null;
           file_data?: string | null;
+          supervisor_identifier?: string;
+          supervisor_name?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -124,6 +128,8 @@ export type Database = {
           payload?: Json;
           file_name?: string | null;
           file_data?: string | null;
+          supervisor_identifier?: string;
+          supervisor_name?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -175,6 +181,112 @@ export type Database = {
           sort_order?: number;
           role?: string;
           name?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      site_settings: {
+        Row: {
+          id: string;
+          hero_eyebrow: string;
+          hero_title: string;
+          hero_summary: string;
+          admission_label: string;
+          admission_session: string;
+          deadline_label: string;
+          deadline: string;
+          phd_open: boolean;
+          supervisor_open: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          hero_eyebrow: string;
+          hero_title: string;
+          hero_summary: string;
+          admission_label: string;
+          admission_session: string;
+          deadline_label: string;
+          deadline: string;
+          phd_open?: boolean;
+          supervisor_open?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          hero_eyebrow?: string;
+          hero_title?: string;
+          hero_summary?: string;
+          admission_label?: string;
+          admission_session?: string;
+          deadline_label?: string;
+          deadline?: string;
+          phd_open?: boolean;
+          supervisor_open?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      scholar_allocations: {
+        Row: {
+          id: string;
+          scholar_identifier: string;
+          scholar_name: string;
+          supervisor_identifier: string;
+          supervisor_name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          scholar_identifier: string;
+          scholar_name: string;
+          supervisor_identifier: string;
+          supervisor_name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          scholar_name?: string;
+          supervisor_identifier?: string;
+          supervisor_name?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      rac_proposals: {
+        Row: {
+          id: string;
+          kind: string;
+          scholar_identifier: string;
+          scholar_name: string;
+          supervisor_identifier: string;
+          supervisor_name: string;
+          status: string;
+          nominees: Json;
+          selected_internal: string;
+          selected_external: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          kind: string;
+          scholar_identifier: string;
+          scholar_name: string;
+          supervisor_identifier: string;
+          supervisor_name: string;
+          status?: string;
+          nominees: Json;
+          selected_internal?: string;
+          selected_external?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          nominees?: Json;
+          selected_internal?: string;
+          selected_external?: string;
           updated_at?: string;
         };
         Relationships: [];

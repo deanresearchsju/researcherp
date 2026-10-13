@@ -21,6 +21,8 @@ export type ScholarRecord = {
   payload: Record<string, string>;
   fileName: string | null;
   fileData: string | null;
+  supervisorIdentifier: string;
+  supervisorName: string;
   createdAt: string;
 };
 
@@ -31,7 +33,42 @@ export type ScholarRecordLoad = {
 };
 
 export const scholarRecordMigrationHint =
-  "Open the Supabase SQL editor for this project and run supabase/migrations/20261013173000_scholar_records.sql. Until then, uploads stay in this browser.";
+  "Open the Supabase SQL editor for this project and run supabase/migrations/20261013173000_scholar_records.sql, then supabase/migrations/20261013180000_office_controls.sql. Until then, uploads stay in this browser.";
+
+const officeSqlHint =
+  "Run supabase/migrations/20261013180000_office_controls.sql so this record is stored in the database. A copy is kept in this browser.";
+
+function writeLocalScholarRecord(draft: RecordDraft, existingId?: string) {
+  const all = readBrowserRecords();
+  const next: ScholarRecord = {
+    id: existingId ?? `local-${crypto.randomUUID()}`,
+    kind: draft.kind,
+    scholarIdentifier: draft.scholarIdentifier,
+    scholarName: draft.scholarName,
+    status: "Submitted",
+    payload: draft.payload,
+    fileName: draft.fileName,
+    fileData: draft.fileData,
+    supervisorIdentifier: draft.supervisorIdentifier ?? "",
+    supervisorName: draft.supervisorName ?? "",
+    createdAt:
+      all.find((record) => record.id === existingId)?.createdAt ??
+      new Date().toISOString(),
+  };
+  const records = existingId
+    ? all.map((record) => (record.id === existingId ? next : record))
+    : [next, ...all];
+  try {
+    writeBrowserRecords(records);
+  } catch {
+    return {
+      ok: false as const,
+      message:
+        "This browser cannot store that file. Run the SQL migration, then upload again.",
+    };
+  }
+  return { ok: true as const, record: next };
+}
 
 const caches = new Map<ScholarRecordKind, ScholarRecordLoad>();
 const loading = new Set<ScholarRecordKind>();
@@ -110,6 +147,8 @@ function readBrowserRecords(): ScholarRecord[] {
           payload: record.payload ?? {},
           fileName: record.fileName ?? null,
           fileData: record.fileData ?? null,
+          supervisorIdentifier: record.supervisorIdentifier ?? "",
+          supervisorName: record.supervisorName ?? "",
           createdAt: record.createdAt ?? new Date().toISOString(),
         },
       ];
@@ -132,6 +171,8 @@ type RecordRow = {
   payload: Json;
   file_name: string | null;
   created_at: string;
+  supervisor_identifier?: string | null;
+  supervisor_name?: string | null;
 };
 
 function mapRow(row: RecordRow): ScholarRecord | null {
@@ -145,6 +186,9 @@ function mapRow(row: RecordRow): ScholarRecord | null {
     payload: payloadOf(row.payload),
     fileName: row.file_name,
     fileData: null,
+    supervisorIdentifier:
+      row.supervisor_identifier || payloadOf(row.payload).supervisorIdentifier || "",
+    supervisorName: row.supervisor_name || payloadOf(row.payload).supervisorName || "",
     createdAt: row.created_at,
   };
 }
@@ -161,29 +205,53 @@ export async function loadScholarRecords(
     };
   }
 
-  const { data, error } = await supabase
+  const extended = await supabase
     .from("scholar_records")
     .select(
-      "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
+      "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",
     )
     .eq("kind", kind)
     .order("created_at", { ascending: false });
 
-  if (error || !data) {
+  const fallback =
+    extended.error || !extended.data
+      ? await supabase
+          .from("scholar_records")
+          .select(
+            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
+          )
+          .eq("kind", kind)
+          .order("created_at", { ascending: false })
+      : null;
+
+  const data = extended.data ?? fallback?.data ?? null;
+  const missingTable = Boolean(extended.error && fallback?.error);
+
+  if (missingTable || !data) {
     return {
       records: readBrowserRecords().filter((record) => record.kind === kind),
       source: "browser",
-      detail: "The scholar record table is not in the database yet.",
+      detail: extended.error
+        ? "The scholar record table is not in the database yet."
+        : null,
     };
   }
 
+  const remote = data.flatMap((row) => {
+    const record = mapRow(row);
+    return record ? [record] : [];
+  });
+  const remoteIds = new Set(remote.map((record) => record.id));
+  const localExtras = readBrowserRecords().filter(
+    (record) =>
+      record.kind === kind &&
+      record.id.startsWith("local-") &&
+      !remoteIds.has(record.id),
+  );
   return {
-    records: data.flatMap((row) => {
-      const record = mapRow(row);
-      return record ? [record] : [];
-    }),
+    records: [...localExtras, ...remote],
     source: "database",
-    detail: null,
+    detail: extended.error ? officeSqlHint : null,
   };
 }
 
@@ -194,6 +262,8 @@ export type RecordDraft = {
   payload: Record<string, string>;
   fileName: string | null;
   fileData: string | null;
+  supervisorIdentifier?: string;
+  supervisorName?: string;
 };
 
 export async function saveScholarRecord(draft: RecordDraft, existingId?: string) {
@@ -205,10 +275,16 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     if (!supabase) return { ok: false as const, message: "Supabase is not configured." };
     const columns = {
       scholar_name: draft.scholarName,
-      status: "Submitted",
-      payload: toJson(draft.payload),
+      status: "Submitted" as const,
+      payload: toJson({
+        ...draft.payload,
+        supervisorIdentifier: draft.supervisorIdentifier ?? "",
+        supervisorName: draft.supervisorName ?? "",
+      }),
       file_name: draft.fileName,
       file_data: draft.fileData,
+      supervisor_identifier: draft.supervisorIdentifier ?? "",
+      supervisor_name: draft.supervisorName ?? "",
     };
     const query = existingId
       ? supabase
@@ -216,7 +292,7 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
           .update(columns)
           .eq("id", existingId)
           .select(
-            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
+            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",
           )
       : supabase
           .from("scholar_records")
@@ -226,11 +302,25 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
             scholar_identifier: draft.scholarIdentifier,
           })
           .select(
-            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
+            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",
           );
     const { data, error } = await query.single();
-    if (error || !data)
-      return { ok: false as const, message: "That record could not be saved." };
+    if (error || !data) {
+      const local = writeLocalScholarRecord(draft, existingId);
+      if (!local.ok) return local;
+      if (cached) {
+        publish(draft.kind, {
+          ...cached,
+          records: existingId
+            ? cached.records.map((record) =>
+                record.id === existingId ? local.record : record,
+              )
+            : [local.record, ...cached.records],
+          detail: officeSqlHint,
+        });
+      }
+      return { ok: true as const };
+    }
     const mapped = mapRow(data);
     if (!mapped || !cached)
       return { ok: false as const, message: "That record could not be saved." };
@@ -251,6 +341,8 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     payload: draft.payload,
     fileName: draft.fileName,
     fileData: draft.fileData,
+    supervisorIdentifier: draft.supervisorIdentifier ?? "",
+    supervisorName: draft.supervisorName ?? "",
     createdAt: new Date().toISOString(),
   };
   const records = existingId

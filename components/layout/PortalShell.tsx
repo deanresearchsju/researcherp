@@ -151,7 +151,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <div className="mx-auto flex w-full max-w-6xl">
-        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 border-r border-border bg-white p-4 md:block">
+        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 overflow-y-auto border-r border-border bg-white p-4 md:block">
           <SideNav role={role} pathname={pathname} />
         </aside>
         <div className="min-w-0 flex-1 p-4 sm:p-8">{children}</div>
