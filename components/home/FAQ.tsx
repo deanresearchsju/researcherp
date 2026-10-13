@@ -18,7 +18,6 @@ export function FAQ() {
         <SectionHeading
           eyebrow={copy.eyebrow}
           title={copy.title}
-          description={copy.description}
           align="center"
           id="faq-title"
         />

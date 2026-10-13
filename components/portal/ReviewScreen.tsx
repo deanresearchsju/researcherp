@@ -66,13 +66,14 @@ export function ReviewScreen() {
     sameId(item.supervisorIdentifier, session.identifier),
   );
   const guided = scholarsGuidedBy(session.name, session.identifier);
+  const supervisorName = session.name;
   function isOwnScholar(identifier: string) {
     if (allotted.some((item) => sameId(item.scholarIdentifier, identifier))) return true;
     const scholar = scholarBySignIn(identifier);
     if (!scholar) return false;
     return (
       guided.some((item) => item.id === scholar.id) ||
-      sameGuide(scholar.guideName, session.name)
+      sameGuide(scholar.guideName, supervisorName)
     );
   }
   const records = [

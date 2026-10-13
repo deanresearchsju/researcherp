@@ -63,7 +63,7 @@ export function PasswordReset() {
     }
     const saved = await updatePortalUser(
       user,
-      { name: user.name, password: values.password, mustReset: false },
+      { name: user.name, password: values.password, mustReset: false, menus: user.menus },
       load.source,
     );
     if (!saved.ok) {

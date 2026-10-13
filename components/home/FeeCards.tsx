@@ -18,12 +18,7 @@ export function FeeCards() {
       aria-labelledby="fees-title"
     >
       <Container>
-        <SectionHeading
-          eyebrow={copy.eyebrow}
-          title={copy.title}
-          description={copy.description}
-          id="fees-title"
-        />
+        <SectionHeading eyebrow={copy.eyebrow} title={copy.title} id="fees-title" />
         <div className="mt-8 grid gap-4 lg:grid-cols-3">
           {feePlans.map((plan, index) => (
             <Reveal key={plan.id} delay={index * 0.05}>

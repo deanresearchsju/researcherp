@@ -122,8 +122,11 @@ export function AllocationScreen() {
         sameGuide(item.name, supervisor.name),
     );
     const remaining = guide
-      ? guideFigures(guide, quotas, currentOffice()?.allocations ?? office.allocations)
-          .vacancy
+      ? guideFigures(
+          guide,
+          quotas,
+          currentOffice()?.allocations ?? office?.allocations ?? [],
+        ).vacancy
       : null;
     setNotice(
       remaining === null
