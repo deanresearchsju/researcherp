@@ -2,14 +2,17 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { ApplicationsClosed } from "@/components/forms/ApplicationsClosed";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { schools } from "@/data/schools";
 import { university } from "@/lib/constants";
+import { currentOffice, subscribeOffice } from "@/lib/office";
 
 const departments = schools.map((school) => school.name);
 
@@ -35,6 +38,15 @@ export function ApplicationStart({
     resolver: zodResolver(startSchema),
     defaultValues: { mobile: "", email: "", department: "" },
   });
+  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  if (office && !office.settings.phdOpen) {
+    return (
+      <ApplicationsClosed
+        title="Ph.D. applications are closed"
+        detail="The research office has closed this admission window. The dates on the home page show when it opens again."
+      />
+    );
+  }
 
   return (
     <form

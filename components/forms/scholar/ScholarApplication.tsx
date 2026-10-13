@@ -247,6 +247,11 @@ export function ScholarApplication() {
   }
 
   async function onSubmit(submitted: ScholarFormValues) {
+    const { phdApplicationsOpen } = await import("@/lib/office");
+    if (!phdApplicationsOpen()) {
+      setSubmitError("Ph.D. applications are closed.");
+      return;
+    }
     if (!validateFiles(submitted)) {
       setStep(steps.findIndex((item) => item.label === "Documents"));
       return;

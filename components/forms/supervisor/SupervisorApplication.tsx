@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   useForm,
   useWatch,
@@ -22,9 +23,11 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Stepper } from "@/components/ui/stepper";
 import { Textarea } from "@/components/ui/textarea";
+import { ApplicationsClosed } from "@/components/forms/ApplicationsClosed";
 import { supervisorEnclosures } from "@/data/documents";
 import { supervisorDeclaration } from "@/data/declarations";
 import { supervisorFormCopy } from "@/data/forms";
+import { currentOffice, subscribeOffice, supervisorApplicationsOpen } from "@/lib/office";
 import { attachmentNames, saveSupervisorApplication } from "@/lib/records";
 import {
   indexingOptions,
@@ -200,6 +203,7 @@ export function SupervisorApplication() {
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
   const [issued, setIssued] = useState<SupervisorReceipt | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
 
   const form = useForm<SupervisorFormValues>({
     resolver: zodResolver(supervisorSchema),
@@ -306,6 +310,10 @@ export function SupervisorApplication() {
   }
 
   async function onSubmit(submitted: SupervisorFormValues) {
+    if (!supervisorApplicationsOpen()) {
+      setSubmitError("Supervisor recognition applications are closed.");
+      return;
+    }
     if (!validateEnclosures()) {
       setStep(steps.findIndex((item) => item.label === "Enclosures"));
       return;
@@ -347,6 +355,15 @@ export function SupervisorApplication() {
 
   if (issued) {
     return <SupervisorReceiptView receipt={issued} />;
+  }
+
+  if (office && !office.settings.supervisorOpen) {
+    return (
+      <ApplicationsClosed
+        title="Supervisor applications are closed"
+        detail="The research office has closed recognition applications."
+      />
+    );
   }
 
   const current = steps[step];

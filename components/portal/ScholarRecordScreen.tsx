@@ -28,6 +28,13 @@ import {
   subscribeScholarRecords,
   type ScholarRecord,
 } from "@/lib/scholar-records";
+import {
+  allocationFor,
+  currentOffice,
+  saveAllocation,
+  subscribeOffice,
+} from "@/lib/office";
+import { currentPortalUsers } from "@/lib/users";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
 function statusVariant(status: ScholarRecord["status"]) {
@@ -40,11 +47,15 @@ function RecordForm({
   menu,
   scholarIdentifier,
   scholarName,
+  supervisorIdentifier,
+  supervisorName,
   existing,
 }: {
   menu: ScholarRecordMenu;
   scholarIdentifier: string;
   scholarName: string;
+  supervisorIdentifier: string;
+  supervisorName: string;
   existing?: ScholarRecord;
 }) {
   const schema = useMemo(() => recordSchema(menu), [menu]);
@@ -73,6 +84,8 @@ function RecordForm({
         payload: values,
         fileName: file?.file.name ?? existing?.fileName ?? null,
         fileData: fileData || existing?.fileData || null,
+        supervisorIdentifier,
+        supervisorName,
       },
       existing?.id,
     );
@@ -82,9 +95,11 @@ function RecordForm({
       return;
     }
     setNotice(
-      existing
-        ? "Updated. The research office will review it again."
-        : "Submitted. The research office will review it.",
+      menu.needsSupervisor
+        ? "Submitted. Your supervisor reviews it first, then the research office."
+        : existing
+          ? "Updated. The research office will review it again."
+          : "Submitted. The research office will review it.",
     );
     if (!menu.single) form.reset(defaults);
     setFile(null);
@@ -177,6 +192,8 @@ export function ScholarRecordScreen({
   mode: "scholar" | "admin";
 }) {
   const session = usePreviewSession();
+  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  const [scholarFilter, setScholarFilter] = useState("all");
   const load = useSyncExternalStore(
     (onChange) => subscribeScholarRecords(menu.kind, onChange),
     () => currentScholarRecords(menu.kind),
@@ -192,11 +209,24 @@ export function ScholarRecordScreen({
   }
 
   const signedIn = session?.role === "scholar";
-  const mine =
+  const allotment =
+    session && signedIn ? allocationFor(office?.allocations ?? [], session.identifier) : null;
+  const owned =
     mode === "scholar"
       ? load.records.filter((record) => record.scholarIdentifier === session?.identifier)
       : load.records;
-  const existing = menu.single ? mine[0] : undefined;
+  const mine =
+    mode === "admin" && menu.kind === "payment" && scholarFilter !== "all"
+      ? owned.filter((record) => record.scholarIdentifier === scholarFilter)
+      : owned;
+  const existing = menu.single ? owned[0] : undefined;
+  const paymentTotal = mine.reduce(
+    (sum, record) => sum + (Number(record.payload.amount) || 0),
+    0,
+  );
+  const scholarOptions = Array.from(
+    new Map(owned.map((record) => [record.scholarIdentifier, record.scholarName])).entries(),
+  );
 
   function downloadTable() {
     const headers = [
@@ -232,6 +262,23 @@ export function ScholarRecordScreen({
   async function decide(record: ScholarRecord, status: "Approved" | "Returned") {
     setBusyId(record.id);
     const saved = await setScholarRecordStatus(record, status);
+    if (saved && status === "Approved" && record.kind === "supervisor_change") {
+      const requested = record.payload.requestedSupervisor ?? "";
+      const match = currentPortalUsers()?.users.find(
+        (user) =>
+          user.role === "supervisor" &&
+          (user.name.toLowerCase() === requested.toLowerCase() ||
+            user.identifier.toLowerCase() === requested.toLowerCase()),
+      );
+      if (match) {
+        await saveAllocation({
+          scholarIdentifier: record.scholarIdentifier,
+          scholarName: record.scholarName,
+          supervisorIdentifier: match.identifier,
+          supervisorName: match.name,
+        });
+      }
+    }
     setBusyId(null);
     setNotice(
       saved
@@ -272,14 +319,46 @@ export function ScholarRecordScreen({
         </p>
       ) : null}
 
-      {mode === "scholar" && signedIn && session ? (
+      {mode === "scholar" && signedIn && session && menu.needsSupervisor && office && !allotment ? (
+        <p className="mt-6 text-sm text-muted-foreground">
+          A supervisor has to be allotted before you can submit this.
+        </p>
+      ) : null}
+
+      {mode === "scholar" && signedIn && session && (!menu.needsSupervisor || allotment) ? (
         <RecordForm
           key={existing?.id ?? "new"}
           menu={menu}
           scholarIdentifier={session.identifier}
           scholarName={session.name.trim() || session.identifier}
+          supervisorIdentifier={allotment?.supervisorIdentifier ?? ""}
+          supervisorName={allotment?.supervisorName ?? ""}
           existing={existing}
         />
+      ) : null}
+
+      {menu.kind === "payment" ? (
+        <p className="mt-6 text-sm text-foreground">
+          {mode === "scholar" ? "Your payments" : "Overall"}: {mine.length} · ₹
+          {paymentTotal.toLocaleString("en-IN")}
+        </p>
+      ) : null}
+      {mode === "admin" && menu.kind === "payment" && scholarOptions.length > 0 ? (
+        <label className="mt-3 block text-sm">
+          Scholar
+          <select
+            className="mt-1 block rounded-lg border border-border bg-white px-3 py-2"
+            value={scholarFilter}
+            onChange={(event) => setScholarFilter(event.target.value)}
+          >
+            <option value="all">All scholars</option>
+            {scholarOptions.map(([identifier, name]) => (
+              <option key={identifier} value={identifier}>
+                {name} · {identifier}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
 
       <div className="mt-6 flex flex-wrap gap-2">
@@ -351,10 +430,15 @@ export function ScholarRecordScreen({
                             type="button"
                             variant="gold"
                             size="sm"
-                            disabled={busyId === record.id}
+                            disabled={
+                              busyId === record.id ||
+                              (menu.needsSupervisor && record.status !== "Supervisor approved")
+                            }
                             onClick={() => void decide(record, "Approved")}
                           >
-                            Approve
+                            {menu.needsSupervisor && record.status === "Submitted"
+                              ? "With supervisor"
+                              : "Approve"}
                           </Button>
                           <Button
                             type="button"

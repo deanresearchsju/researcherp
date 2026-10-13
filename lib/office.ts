@@ -207,7 +207,7 @@ export function currentOffice() {
 
 export function subscribeOffice(onChange: () => void) {
   listeners.add(onChange);
-  if (!memory && !loading) {
+  if (!loading) {
     loading = true;
     void loadOffice().then((value) => {
       loading = false;
