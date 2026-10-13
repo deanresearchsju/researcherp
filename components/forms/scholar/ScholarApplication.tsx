@@ -48,6 +48,7 @@ import {
   paymentStatus,
   programmeName,
   studyModes,
+  isPartTimeMode,
   titles,
   referenceDate,
   yesNo,
@@ -111,7 +112,7 @@ function documentRequired(
   values: ScholarFormValues,
 ) {
   if (spec.required === "always") return true;
-  if (spec.required === "part-time") return values.studyMode === "Part-Time";
+  if (spec.required === "part-time") return isPartTimeMode(values.studyMode);
   return false;
 }
 
@@ -482,7 +483,7 @@ export function ScholarApplication() {
           </FormField>
           <SelectField
             id="studyMode"
-            label="Study Mode (Full-Time / Part-Time)"
+            label="Mode of study"
             register={register}
             name="studyMode"
             error={errors.studyMode?.message}

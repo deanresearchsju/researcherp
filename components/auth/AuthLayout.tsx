@@ -1,61 +1,36 @@
-import { Check } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/Logo";
-import { university } from "@/lib/constants";
+import { buttonVariants } from "@/components/ui/button";
 
-type AuthLayoutProps = {
-  welcome: string;
-  description: string;
-  benefits: string[];
-  children: ReactNode;
-};
-
-export function AuthLayout({
-  welcome,
-  description,
-  benefits,
-  children,
-}: AuthLayoutProps) {
+export function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <section className="relative overflow-hidden bg-primary text-primary-foreground">
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-purple-deep via-primary to-secondary/80"
-          aria-hidden="true"
-        />
-        <div className="relative flex h-full flex-col justify-between gap-10 px-6 py-10 sm:px-10 lg:py-14">
-          <Link href="/" className="inline-flex w-fit rounded-xl bg-white p-2">
-            <Logo className="h-12 w-auto" alt="St. Joseph University Research, home" />
-          </Link>
-          <div>
-            <p className="text-xs font-semibold tracking-[0.22em] text-accent uppercase">
-              {university.researchOffice}
-            </p>
-            <h1 className="mt-3 max-w-md font-heading text-4xl leading-tight">
-              {welcome}
-            </h1>
-            <p className="mt-4 max-w-md text-sm leading-7 text-white/80">{description}</p>
-            <ul className="mt-8 hidden space-y-3 lg:block">
-              {benefits.map((benefit) => (
-                <li key={benefit} className="flex gap-3 text-sm leading-6">
-                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground">
-                    <Check className="size-3" aria-hidden="true" />
-                  </span>
-                  <span>{benefit}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <p className="hidden font-heading text-lg text-accent lg:block">
-            {university.tagline}
-          </p>
-        </div>
-      </section>
+    <div className="relative min-h-screen overflow-hidden bg-hero">
+      <div className="bg-grid pointer-events-none absolute inset-0" aria-hidden="true" />
+      <div
+        className="pointer-events-none absolute -top-28 -right-16 size-80 rounded-full bg-primary/10"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -bottom-24 -left-16 size-96 rounded-full bg-accent/25"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute top-1/3 left-1/2 size-64 -translate-x-1/2 rounded-full bg-secondary/5"
+        aria-hidden="true"
+      />
+      <header className="relative flex items-center justify-between gap-4 px-4 py-4 sm:px-8">
+        <Link href="/" className="inline-flex rounded-xl bg-white px-3 py-2 shadow-card">
+          <Logo className="h-10 w-auto" alt="St. Joseph University Research, home" />
+        </Link>
+        <Link href="/" className={buttonVariants({ variant: "outline" })}>
+          Home
+        </Link>
+      </header>
       <main
         id="main"
-        className="flex items-center justify-center bg-background px-4 py-10 sm:px-8"
+        className="relative flex items-center justify-center px-4 pt-4 pb-12 sm:px-8"
       >
         {children}
       </main>

@@ -53,13 +53,6 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
           Status: {receipt.status}. Submitted on {formatIsoDate(receipt.submittedOn)}.
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
-          <button
-            type="button"
-            className={buttonVariants({ variant: "gold" })}
-            onClick={() => window.print()}
-          >
-            Download application PDF
-          </button>
           <Link href="/apply/status" className={buttonVariants({ variant: "outline" })}>
             Check application status
           </Link>
@@ -114,7 +107,7 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
           <PrintSection title="2. Programme details">
             <PrintGrid>
               <PrintCell label="Programme" value={values.programme} />
-              <PrintCell label="Study mode" value={values.studyMode} />
+              <PrintCell label="Mode of study" value={values.studyMode} />
               <PrintCell label="School / Department" value={values.school} />
               <PrintCell label="Specialization" value={values.specialization} />
             </PrintGrid>

@@ -7,6 +7,7 @@ import { useForm, type FieldPath, type UseFormRegister } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -17,7 +18,6 @@ import { formatIsoDate } from "@/lib/dates";
 import {
   currentOffice,
   decideRac,
-  officeMigrationHint,
   presentRac,
   sameId,
   saveRacProposal,
@@ -25,7 +25,7 @@ import {
   type RacNominee,
   type RacProposal,
 } from "@/lib/office";
-import { usePreviewSession } from "@/lib/use-preview-session";
+import { usePortalSession } from "@/lib/use-preview-session";
 
 const nomineeSchema = z.object({
   name: z.string().trim().min(2, "Enter the name."),
@@ -33,7 +33,10 @@ const nomineeSchema = z.object({
   department: z.string().trim().min(2, "Enter the department."),
   institution: z.string().trim().min(2, "Enter the institution."),
   email: z.string().trim().email("Enter a valid email address."),
-  phone: z.string().trim().regex(/^[6-9]\d{9}$/, "Enter a 10-digit phone number."),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^[6-9]\d{9}$/, "Enter a 10-digit phone number."),
   specialization: z.string().trim().min(2, "Enter the specialisation."),
 });
 
@@ -100,7 +103,11 @@ function PresentMembers({
   }
   return (
     <ul className="grid gap-3 sm:grid-cols-3">
-      <MemberCard role="Guide / Supervisor" name={present.guide} detail="Present supervisor" />
+      <MemberCard
+        role="Guide / Supervisor"
+        name={present.guide}
+        detail="Present supervisor"
+      />
       <MemberCard
         role="Internal member"
         name={present.internal.name}
@@ -126,7 +133,8 @@ function NomineeFields({
   register: UseFormRegister<ProposalValues>;
   errors: Partial<Record<keyof RacNominee, { message?: string }>> | undefined;
 }) {
-  const field = (name: keyof RacNominee) => `${slot}.${name}` as FieldPath<ProposalValues>;
+  const field = (name: keyof RacNominee) =>
+    `${slot}.${name}` as FieldPath<ProposalValues>;
   return (
     <fieldset className="rounded-xl border border-border p-4">
       <legend className="px-1 text-sm font-semibold text-primary">{label}</legend>
@@ -142,7 +150,12 @@ function NomineeFields({
             ["specialization", "Specialisation"],
           ] as const
         ).map(([name, title]) => (
-          <FormField key={name} label={title} htmlFor={`${slot}-${name}`} error={errors?.[name]?.message}>
+          <FormField
+            key={name}
+            label={title}
+            htmlFor={`${slot}-${name}`}
+            error={errors?.[name]?.message}
+          >
             <Input id={`${slot}-${name}`} {...register(field(name))} />
           </FormField>
         ))}
@@ -152,12 +165,15 @@ function NomineeFields({
 }
 
 export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }) {
-  const session = usePreviewSession();
+  const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [choice, setChoice] = useState<Record<string, { internal: string; external: string }>>(
-    {},
-  );
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [kindFilter, setKindFilter] = useState("");
+  const [choice, setChoice] = useState<
+    Record<string, { internal: string; external: string }>
+  >({});
   const form = useForm<ProposalValues>({
     resolver: zodResolver(proposalSchema),
     defaultValues: {
@@ -185,7 +201,9 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
       : [];
 
   async function onSubmit(values: ProposalValues) {
-    const scholar = allotted.find((item) => item.scholarIdentifier === values.scholarIdentifier);
+    const scholar = allotted.find(
+      (item) => item.scholarIdentifier === values.scholarIdentifier,
+    );
     if (!scholar || !session) return;
     const nominees = slots.map(([slot, , key, side]) => ({
       key,
@@ -200,7 +218,11 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
       supervisorName: session.name.trim() || session.identifier,
       nominees,
     });
-    setNotice(saved.ok ? "Nomination submitted for the research office." : "That nomination could not be saved.");
+    setNotice(
+      saved.ok
+        ? "Nomination submitted for the research office."
+        : "That nomination could not be saved.",
+    );
     if (saved.ok) {
       form.reset({
         scholarIdentifier: "",
@@ -233,7 +255,11 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
         Research Advisory Committee
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">
-        {mode === "admin" ? "RAC decisions" : mode === "supervisor" ? "RAC proposal" : "RAC members"}
+        {mode === "admin"
+          ? "RAC decisions"
+          : mode === "supervisor"
+            ? "RAC proposal"
+            : "RAC members"}
       </h1>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
         {mode === "admin"
@@ -242,7 +268,7 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
       </p>
       {office.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
-          {office.detail} {officeMigrationHint}
+          {office.detail}
         </p>
       ) : null}
       {notice ? (
@@ -253,7 +279,10 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
 
       {mode !== "admin" && !signed ? (
         <p className="mt-6 text-sm">
-          <Link href={`/login/${mode}`} className="font-semibold text-primary hover:underline">
+          <Link
+            href={`/login/${mode}`}
+            className="font-semibold text-primary hover:underline"
+          >
             Sign in
           </Link>{" "}
           to see the RAC.
@@ -262,7 +291,10 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
 
       {mode === "scholar" && session?.role === "scholar" ? (
         <div className="mt-6">
-          <PresentMembers proposals={office.proposals} scholarIdentifier={session.identifier} />
+          <PresentMembers
+            proposals={office.proposals}
+            scholarIdentifier={session.identifier}
+          />
         </div>
       ) : null}
 
@@ -290,8 +322,8 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
               <h2 className="font-heading text-2xl text-primary">Nominate a committee</h2>
               <p className="text-sm text-muted-foreground">
-                Name two internal and two external members. The office selects one of each.
-                Use reconstitution when the committee has to be formed again.
+                Name two internal and two external members. The office selects one of
+                each. Use reconstitution when the committee has to be formed again.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
@@ -341,7 +373,10 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                     item.status !== "Approved",
                 )
                 .map((item) => (
-                  <li key={item.id} className="rounded-xl border border-border bg-card p-4 text-sm">
+                  <li
+                    key={item.id}
+                    className="rounded-xl border border-border bg-card p-4 text-sm"
+                  >
                     <p className="font-semibold text-primary">
                       {item.scholarName} · {item.kind}
                     </p>
@@ -355,21 +390,115 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
 
       {mode === "admin" ? (
         <div className="mt-6 space-y-4">
-          {office.proposals.length === 0 ? (
+          <ListToolbar
+            query={query}
+            onQuery={setQuery}
+            filters={[
+              {
+                id: "kind",
+                label: "Kind",
+                value: kindFilter,
+                options: [
+                  { value: "constitution", label: "Constitution" },
+                  { value: "reconstitution", label: "Reconstitution" },
+                ],
+                onChange: setKindFilter,
+              },
+              {
+                id: "status",
+                label: "Status",
+                value: statusFilter,
+                options: ["Submitted", "Approved", "Returned"].map((item) => ({
+                  value: item,
+                  label: item,
+                })),
+                onChange: setStatusFilter,
+              },
+            ]}
+            shown={
+              office.proposals.filter(
+                (proposal) =>
+                  (kindFilter === "" || proposal.kind === kindFilter) &&
+                  (statusFilter === "" || proposal.status === statusFilter) &&
+                  textMatches(query, [
+                    proposal.scholarName,
+                    proposal.supervisorName,
+                    proposal.kind,
+                    proposal.status,
+                  ]),
+              ).length
+            }
+            total={office.proposals.length}
+            filename="rac-nominations.csv"
+            headers={["scholar", "supervisor", "kind", "status"]}
+            rows={office.proposals
+              .filter(
+                (proposal) =>
+                  (kindFilter === "" || proposal.kind === kindFilter) &&
+                  (statusFilter === "" || proposal.status === statusFilter) &&
+                  textMatches(query, [
+                    proposal.scholarName,
+                    proposal.supervisorName,
+                    proposal.kind,
+                    proposal.status,
+                  ]),
+              )
+              .map((proposal) => [
+                proposal.scholarName,
+                proposal.supervisorName,
+                proposal.kind,
+                proposal.status,
+              ])}
+          />
+          {office.proposals.filter(
+            (proposal) =>
+              (kindFilter === "" || proposal.kind === kindFilter) &&
+              (statusFilter === "" || proposal.status === statusFilter) &&
+              textMatches(query, [
+                proposal.scholarName,
+                proposal.supervisorName,
+                proposal.kind,
+                proposal.status,
+              ]),
+          ).length === 0 ? (
             <p className="text-sm text-muted-foreground">No RAC nominations yet.</p>
           ) : (
-            office.proposals.map((proposal) => (
-              <article key={proposal.id} className="rounded-xl border border-border bg-card p-4 shadow-card">
+            office.proposals
+              .filter(
+                (proposal) =>
+                  (kindFilter === "" || proposal.kind === kindFilter) &&
+                  (statusFilter === "" || proposal.status === statusFilter) &&
+                  textMatches(query, [
+                    proposal.scholarName,
+                    proposal.supervisorName,
+                    proposal.kind,
+                    proposal.status,
+                  ]),
+              )
+              .map((proposal) => (
+              <article
+                key={proposal.id}
+                className="rounded-xl border border-border bg-card p-4 shadow-card"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="font-semibold text-primary">
                       {proposal.scholarName} · {proposal.kind}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      Guide {proposal.supervisorName} · {formatIsoDate(proposal.createdAt.slice(0, 10))}
+                      Guide {proposal.supervisorName} ·{" "}
+                      {formatIsoDate(proposal.createdAt.slice(0, 10))}
                     </p>
                   </div>
-                  <Badge variant={proposal.status === "Approved" ? "gold" : proposal.status === "Returned" ? "maroon" : "purple"}>
+                  <Badge
+                    variant={
+                      proposal.status === "Approved"
+                        ? "gold"
+                        : proposal.status === "Returned"
+                          ? "maroon"
+                          : "purple"
+                    }
+                  >
                     {proposal.status}
                   </Badge>
                 </div>
@@ -411,11 +540,13 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                                       internal:
                                         nominee.side === "internal"
                                           ? nominee.key
-                                          : (current[proposal.id]?.internal ?? proposal.selectedInternal),
+                                          : (current[proposal.id]?.internal ??
+                                            proposal.selectedInternal),
                                       external:
                                         nominee.side === "external"
                                           ? nominee.key
-                                          : (current[proposal.id]?.external ?? proposal.selectedExternal),
+                                          : (current[proposal.id]?.external ??
+                                            proposal.selectedExternal),
                                     },
                                   }))
                                 }
@@ -441,10 +572,20 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                 </div>
                 {proposal.status === "Submitted" ? (
                   <div className="mt-4 flex gap-2">
-                    <Button type="button" variant="gold" size="sm" onClick={() => void decide(proposal, "Approved")}>
+                    <Button
+                      type="button"
+                      variant="gold"
+                      size="sm"
+                      onClick={() => void decide(proposal, "Approved")}
+                    >
                       Approve selected
                     </Button>
-                    <Button type="button" variant="maroon" size="sm" onClick={() => void decide(proposal, "Returned")}>
+                    <Button
+                      type="button"
+                      variant="maroon"
+                      size="sm"
+                      onClick={() => void decide(proposal, "Returned")}
+                    >
                       Return
                     </Button>
                   </div>

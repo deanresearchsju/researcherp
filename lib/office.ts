@@ -1,9 +1,15 @@
 import { admissionWindow } from "@/data/home";
 import { heroCopy } from "@/data/sections";
-import { scholarRecordKinds, type RecordStatus, type ScholarRecordKind } from "@/data/scholar-records";
+import {
+  scholarRecordKinds,
+  type RecordStatus,
+  type ScholarRecordKind,
+} from "@/data/scholar-records";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { toJson } from "@/lib/records";
+import { currentRegister, loadRegister, vacancyBeforeAllotment } from "@/lib/register";
+import { syncAllottedVacancies } from "@/lib/vacancies";
 import type { Json } from "@/types/database";
 
 export const officeMigrationHint =
@@ -103,7 +109,8 @@ export function allocationFor(allocations: Allocation[], scholarIdentifier: stri
 export function presentRac(proposals: RacProposal[], scholarIdentifier: string) {
   const latest = proposals
     .filter(
-      (item) => item.status === "Approved" && sameId(item.scholarIdentifier, scholarIdentifier),
+      (item) =>
+        item.status === "Approved" && sameId(item.scholarIdentifier, scholarIdentifier),
     )
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   if (!latest) return null;
@@ -153,7 +160,12 @@ function readJson<T>(key: string): T | null {
 
 function readSettings(): SiteSettings {
   const stored = readJson<Partial<SiteSettings>>(storageKeys.siteSettings);
-  return { ...defaultSiteSettings, ...stored, phdOpen: stored?.phdOpen ?? true, supervisorOpen: stored?.supervisorOpen ?? true };
+  return {
+    ...defaultSiteSettings,
+    ...stored,
+    phdOpen: stored?.phdOpen ?? true,
+    supervisorOpen: stored?.supervisorOpen ?? true,
+  };
 }
 
 function readAllocations(): Allocation[] {
@@ -174,7 +186,8 @@ function readRecords(): OfficeRecord[] {
   const stored = readJson<OfficeRecord[]>(storageKeys.scholarRecords);
   if (!Array.isArray(stored)) return [];
   return stored.flatMap((item) => {
-    if (!item?.id || !item.kind || !isKind(item.kind) || !item.scholarIdentifier) return [];
+    if (!item?.id || !item.kind || !isKind(item.kind) || !item.scholarIdentifier)
+      return [];
     return [
       {
         id: item.id,
@@ -222,6 +235,32 @@ export function refreshOffice() {
     publish(value);
     return value;
   });
+}
+
+function mergeProposals(
+  remote: RacProposal[],
+  local: RacProposal[],
+  remoteFailed: boolean,
+) {
+  if (remoteFailed) return local;
+  const seen = new Set(remote.map((item) => item.id));
+  return [
+    ...local.filter((item) => item.id.startsWith("local-") && !seen.has(item.id)),
+    ...remote,
+  ];
+}
+
+function mergeAllocations(
+  remote: Allocation[],
+  local: Allocation[],
+  remoteFailed: boolean,
+) {
+  if (remoteFailed) return local;
+  const seen = new Set(remote.map((item) => item.scholarIdentifier.toLowerCase()));
+  return [
+    ...remote,
+    ...local.filter((item) => !seen.has(item.scholarIdentifier.toLowerCase())),
+  ];
 }
 
 function settingsFromRow(row: {
@@ -274,7 +313,9 @@ async function loadOffice(): Promise<OfficeState> {
   const [phdCount, supervisorCount] = supabase
     ? await Promise.all([
         supabase.from("phd_applications").select("id", { count: "exact", head: true }),
-        supabase.from("supervisor_applications").select("id", { count: "exact", head: true }),
+        supabase
+          .from("supervisor_applications")
+          .select("id", { count: "exact", head: true }),
       ])
     : [null, null];
 
@@ -307,44 +348,54 @@ async function loadOffice(): Promise<OfficeState> {
 
   return {
     settings: settings.data ? settingsFromRow(settings.data) : browser.settings,
-    allocations: allocations.data
-      ? allocations.data.map((row) => ({
-          id: row.id,
-          scholarIdentifier: row.scholar_identifier,
-          scholarName: row.scholar_name,
-          supervisorIdentifier: row.supervisor_identifier,
-          supervisorName: row.supervisor_name,
-        }))
-      : browser.allocations,
-    proposals: proposals.data
-      ? proposals.data.flatMap((row) => {
-          const nominees = Array.isArray(row.nominees) ? row.nominees.filter(isNominee) : [];
-          if (nominees.length === 0) return [];
-          if (row.kind !== "constitution" && row.kind !== "reconstitution") return [];
-          if (
-            row.status !== "Submitted" &&
-            row.status !== "Approved" &&
-            row.status !== "Returned"
-          ) {
-            return [];
-          }
-          return [
-            {
-              id: row.id,
-              kind: row.kind,
-              scholarIdentifier: row.scholar_identifier,
-              scholarName: row.scholar_name,
-              supervisorIdentifier: row.supervisor_identifier,
-              supervisorName: row.supervisor_name,
-              status: row.status,
-              nominees,
-              selectedInternal: row.selected_internal,
-              selectedExternal: row.selected_external,
-              createdAt: row.created_at,
-            },
-          ];
-        })
-      : browser.proposals,
+    allocations: mergeAllocations(
+      allocations.error || !allocations.data
+        ? []
+        : allocations.data.map((row) => ({
+            id: row.id,
+            scholarIdentifier: row.scholar_identifier,
+            scholarName: row.scholar_name,
+            supervisorIdentifier: row.supervisor_identifier,
+            supervisorName: row.supervisor_name,
+          })),
+      browser.allocations,
+      Boolean(allocations.error),
+    ),
+    proposals: mergeProposals(
+      proposals.error || !proposals.data
+        ? []
+        : proposals.data.flatMap((row) => {
+            const nominees = Array.isArray(row.nominees)
+              ? row.nominees.filter(isNominee)
+              : [];
+            if (nominees.length === 0) return [];
+            if (row.kind !== "constitution" && row.kind !== "reconstitution") return [];
+            if (
+              row.status !== "Submitted" &&
+              row.status !== "Approved" &&
+              row.status !== "Returned"
+            ) {
+              return [];
+            }
+            return [
+              {
+                id: row.id,
+                kind: row.kind,
+                scholarIdentifier: row.scholar_identifier,
+                scholarName: row.scholar_name,
+                supervisorIdentifier: row.supervisor_identifier,
+                supervisorName: row.supervisor_name,
+                status: row.status,
+                nominees,
+                selectedInternal: row.selected_internal,
+                selectedExternal: row.selected_external,
+                createdAt: row.created_at,
+              },
+            ];
+          }),
+      browser.proposals,
+      Boolean(proposals.error),
+    ),
     records: records.error ? browser.records : [...extras, ...remoteRecords],
     phdApplications: phdCount?.count ?? 0,
     supervisorApplications: supervisorCount?.count ?? 0,
@@ -377,7 +428,22 @@ export async function saveSiteSettings(settings: SiteSettings) {
   return { ok: true as const };
 }
 
-export async function saveAllocation(allocation: Omit<Allocation, "id"> & { id?: string }) {
+async function refreshVacancyCounts(names: readonly string[]) {
+  await syncAllottedVacancies(memory?.allocations ?? readAllocations(), names);
+}
+
+export async function saveAllocation(
+  allocation: Omit<Allocation, "id"> & { id?: string },
+) {
+  const existing = memory?.allocations ?? readAllocations();
+  const previous = existing.find((item) =>
+    sameId(item.scholarIdentifier, allocation.scholarIdentifier),
+  );
+  const register = currentRegister() ?? (await loadRegister());
+  const room = vacancyBeforeAllotment(allocation, existing, register.quotas);
+  if (room && !room.keeping && room.vacancy < 1) {
+    return { ok: false as const, message: `${room.supervisor.name} has no vacancy.` };
+  }
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
     const { error } = await supabase.from("scholar_allocations").upsert(
@@ -391,6 +457,10 @@ export async function saveAllocation(allocation: Omit<Allocation, "id"> & { id?:
     );
     if (!error) {
       await refreshOffice();
+      await refreshVacancyCounts([
+        allocation.supervisorName,
+        previous?.supervisorName ?? "",
+      ]);
       return { ok: true as const };
     }
   }
@@ -406,6 +476,7 @@ export async function saveAllocation(allocation: Omit<Allocation, "id"> & { id?:
   });
   window.localStorage.setItem(storageKeys.allocations, JSON.stringify(all));
   await refreshOffice();
+  await refreshVacancyCounts([allocation.supervisorName, previous?.supervisorName ?? ""]);
   return { ok: true as const };
 }
 
@@ -417,9 +488,15 @@ export async function removeAllocation(allocation: Allocation) {
   const all = readAllocations().filter((item) => item.id !== allocation.id);
   window.localStorage.setItem(storageKeys.allocations, JSON.stringify(all));
   await refreshOffice();
+  await refreshVacancyCounts([allocation.supervisorName]);
 }
 
-export async function saveRacProposal(proposal: Omit<RacProposal, "id" | "createdAt" | "status" | "selectedInternal" | "selectedExternal">) {
+export async function saveRacProposal(
+  proposal: Omit<
+    RacProposal,
+    "id" | "createdAt" | "status" | "selectedInternal" | "selectedExternal"
+  >,
+) {
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
     const { error } = await supabase.from("rac_proposals").insert({
@@ -451,7 +528,11 @@ export async function saveRacProposal(proposal: Omit<RacProposal, "id" | "create
 
 export async function decideRac(
   proposal: RacProposal,
-  decision: { status: "Approved" | "Returned"; selectedInternal: string; selectedExternal: string },
+  decision: {
+    status: "Approved" | "Returned";
+    selectedInternal: string;
+    selectedExternal: string;
+  },
 ) {
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail && !proposal.id.startsWith("local-")) {

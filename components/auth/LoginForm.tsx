@@ -8,14 +8,14 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Captcha, openingCaptchaAnswer } from "@/components/auth/Captcha";
+import { useClientReady } from "@/components/forms/ClientGate";
+import { Captcha, rollChallenge, type Challenge } from "@/components/auth/Captcha";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { roleProfiles } from "@/data/roles";
 import { mockLogin } from "@/lib/auth";
-import { cn } from "@/lib/utils";
-import { ROLES, type Role } from "@/types";
+import type { Role } from "@/types";
 
 type LoginFormProps = {
   role: Role;
@@ -24,7 +24,8 @@ type LoginFormProps = {
 export function LoginForm({ role }: LoginFormProps) {
   const profile = roleProfiles[role];
   const router = useRouter();
-  const [answer, setAnswer] = useState(openingCaptchaAnswer);
+  const ready = useClientReady();
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -39,11 +40,11 @@ export function LoginForm({ role }: LoginFormProps) {
           .trim()
           .min(1, "Enter the answer shown.")
           .refine(
-            (value) => value === String(answer),
+            (value) => challenge !== null && value === String(challenge.answer),
             "That answer does not match. Refresh the challenge and try again.",
           ),
       }),
-    [answer, profile.identifierError],
+    [challenge, profile.identifierError],
   );
 
   type FormValues = z.infer<typeof schema>;
@@ -79,6 +80,15 @@ export function LoginForm({ role }: LoginFormProps) {
     setValue,
     formState: { errors, isSubmitting },
   } = form;
+
+  if (ready && challenge === null) {
+    setChallenge(rollChallenge());
+  }
+
+  function refreshCaptcha() {
+    setChallenge(rollChallenge());
+    setValue("captcha", "");
+  }
 
   return (
     <div className="w-full max-w-md">
@@ -144,9 +154,9 @@ export function LoginForm({ role }: LoginFormProps) {
             ) : null}
           </div>
           <Captcha
+            challenge={challenge}
             registration={register("captcha")}
-            onAnswer={setAnswer}
-            onClear={() => setValue("captcha", "")}
+            onRefresh={refreshCaptcha}
             error={errors.captcha?.message}
           />
           <div className="flex items-center justify-between gap-3 text-sm">
@@ -172,38 +182,7 @@ export function LoginForm({ role }: LoginFormProps) {
             {isSubmitting ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-        {profile.footnote ? (
-          <p className="mt-4 text-sm text-muted-foreground">
-            {profile.footnote.prompt}{" "}
-            <Link
-              href={profile.footnote.href}
-              className="font-semibold text-primary hover:underline"
-            >
-              {profile.footnote.label}
-            </Link>
-          </p>
-        ) : null}
       </div>
-      <nav
-        aria-label="Switch portal"
-        className="mt-4 flex flex-wrap justify-center gap-2 text-sm"
-      >
-        {ROLES.map((item) => (
-          <Link
-            key={item}
-            href={`/login/${item}`}
-            aria-current={item === role ? "page" : undefined}
-            className={cn(
-              "rounded-full px-3 py-1.5",
-              item === role
-                ? "bg-primary text-primary-foreground"
-                : "bg-white text-primary hover:bg-muted",
-            )}
-          >
-            {roleProfiles[item].label}
-          </Link>
-        ))}
-      </nav>
     </div>
   );
 }

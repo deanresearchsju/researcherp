@@ -3,10 +3,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 
 import { FileUpload } from "@/components/forms/FileUpload";
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -14,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ScholarRecordMenu } from "@/data/scholar-records";
-import { downloadCsv, toCsv } from "@/lib/csv";
 import { formatIsoDate } from "@/lib/dates";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
@@ -34,8 +34,13 @@ import {
   saveAllocation,
   subscribeOffice,
 } from "@/lib/office";
+import {
+  personalDetailsFromRegister,
+  scholarBySignIn,
+  supervisorForGuide,
+} from "@/lib/register";
 import { currentPortalUsers } from "@/lib/users";
-import { usePreviewSession } from "@/lib/use-preview-session";
+import { usePortalSession } from "@/lib/use-preview-session";
 
 function statusVariant(status: ScholarRecord["status"]) {
   if (status === "Approved") return "gold" as const;
@@ -60,10 +65,17 @@ function RecordForm({
 }) {
   const schema = useMemo(() => recordSchema(menu), [menu]);
   const defaults = Object.fromEntries(menu.fields.map((field) => [field.name, ""]));
+  const registerDefaults =
+    menu.kind === "personal_details" && !existing
+      ? personalDetailsFromRegister(scholarIdentifier, scholarName)
+      : {};
   const form = useForm<Record<string, string>>({
     resolver: zodResolver(schema) as Resolver<Record<string, string>>,
-    defaultValues: existing ? { ...defaults, ...existing.payload } : defaults,
+    defaultValues: existing
+      ? { ...defaults, ...existing.payload }
+      : { ...defaults, ...registerDefaults },
   });
+  const doi = useWatch({ control: form.control, name: "doi" });
   const [file, setFile] = useState<StoredFile | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,16 +152,25 @@ function RecordForm({
               ))}
             </NativeSelect>
           ) : (
-            <Input
-              id={field.name}
-              type={
-                field.kind === "date" ? "date" : field.kind === "email" ? "email" : "text"
-              }
-              inputMode={
-                field.kind === "tel" || field.kind === "amount" ? "decimal" : undefined
-              }
-              {...form.register(field.name)}
-            />
+            <>
+              <Input
+                id={field.name}
+                type={
+                  field.kind === "date"
+                    ? "date"
+                    : field.kind === "email"
+                      ? "email"
+                      : "text"
+                }
+                inputMode={
+                  field.kind === "tel" || field.kind === "amount" ? "decimal" : undefined
+                }
+                {...form.register(field.name)}
+              />
+              {field.kind === "doi" && /^10\.\d{4,9}\/\S+$/.test(doi ?? "") ? (
+                <p className="text-xs text-primary">DOI format verified.</p>
+              ) : null}
+            </>
           )}
         </FormField>
       ))}
@@ -191,9 +212,11 @@ export function ScholarRecordScreen({
   menu: ScholarRecordMenu;
   mode: "scholar" | "admin";
 }) {
-  const session = usePreviewSession();
+  const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
-  const [scholarFilter, setScholarFilter] = useState("all");
+  const [scholarFilter, setScholarFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [query, setQuery] = useState("");
   const load = useSyncExternalStore(
     (onChange) => subscribeScholarRecords(menu.kind, onChange),
     () => currentScholarRecords(menu.kind),
@@ -209,15 +232,41 @@ export function ScholarRecordScreen({
   }
 
   const signedIn = session?.role === "scholar";
+  const registerScholar =
+    session && signedIn ? scholarBySignIn(session.identifier) : null;
+  const registerGuide = registerScholar
+    ? supervisorForGuide(registerScholar.guideName)
+    : null;
   const allotment =
-    session && signedIn ? allocationFor(office?.allocations ?? [], session.identifier) : null;
+    session && signedIn
+      ? allocationFor(office?.allocations ?? [], session.identifier)
+      : null;
+  const guide =
+    allotment ??
+    (registerGuide || registerScholar?.guideName
+      ? {
+          supervisorIdentifier:
+            registerGuide?.supervisorId.trim() || registerScholar?.guideName || "",
+          supervisorName: registerGuide?.name || registerScholar?.guideName || "",
+        }
+      : null);
   const owned =
     mode === "scholar"
       ? load.records.filter((record) => record.scholarIdentifier === session?.identifier)
       : load.records;
   const mine =
-    mode === "admin" && menu.kind === "payment" && scholarFilter !== "all"
-      ? owned.filter((record) => record.scholarIdentifier === scholarFilter)
+    mode === "admin"
+      ? owned.filter(
+          (record) =>
+            (scholarFilter === "" || record.scholarIdentifier === scholarFilter) &&
+            (statusFilter === "" || record.status === statusFilter) &&
+            textMatches(query, [
+              record.scholarName,
+              record.scholarIdentifier,
+              record.status,
+              ...menu.fields.map((field) => record.payload[field.name] ?? ""),
+            ]),
+        )
       : owned;
   const existing = menu.single ? owned[0] : undefined;
   const paymentTotal = mine.reduce(
@@ -225,28 +274,10 @@ export function ScholarRecordScreen({
     0,
   );
   const scholarOptions = Array.from(
-    new Map(owned.map((record) => [record.scholarIdentifier, record.scholarName])).entries(),
+    new Map(
+      owned.map((record) => [record.scholarIdentifier, record.scholarName]),
+    ).entries(),
   );
-
-  function downloadTable() {
-    const headers = [
-      "scholar_name",
-      "scholar_identifier",
-      "status",
-      "submitted",
-      ...menu.fields.map((field) => field.name),
-      "file_name",
-    ];
-    const rows = mine.map((record) => [
-      record.scholarName,
-      record.scholarIdentifier,
-      record.status,
-      record.createdAt.slice(0, 10),
-      ...menu.fields.map((field) => record.payload[field.name] ?? ""),
-      record.fileName ?? "",
-    ]);
-    downloadCsv(`${menu.slug}.csv`, toCsv(headers, rows));
-  }
 
   async function downloadFile(record: ScholarRecord) {
     setBusyId(record.id);
@@ -264,19 +295,27 @@ export function ScholarRecordScreen({
     const saved = await setScholarRecordStatus(record, status);
     if (saved && status === "Approved" && record.kind === "supervisor_change") {
       const requested = record.payload.requestedSupervisor ?? "";
+      const registerGuide = supervisorForGuide(requested);
       const match = currentPortalUsers()?.users.find(
         (user) =>
           user.role === "supervisor" &&
           (user.name.toLowerCase() === requested.toLowerCase() ||
             user.identifier.toLowerCase() === requested.toLowerCase()),
       );
-      if (match) {
-        await saveAllocation({
+      const supervisorName = registerGuide?.name ?? match?.name ?? "";
+      if (supervisorName) {
+        const allotted = await saveAllocation({
           scholarIdentifier: record.scholarIdentifier,
           scholarName: record.scholarName,
-          supervisorIdentifier: match.identifier,
-          supervisorName: match.name,
+          supervisorIdentifier:
+            registerGuide?.supervisorId.trim() || match?.identifier || requested,
+          supervisorName,
         });
+        if (!allotted.ok) {
+          setBusyId(null);
+          setNotice(allotted.message);
+          return;
+        }
       }
     }
     setBusyId(null);
@@ -319,20 +358,25 @@ export function ScholarRecordScreen({
         </p>
       ) : null}
 
-      {mode === "scholar" && signedIn && session && menu.needsSupervisor && office && !allotment ? (
+      {mode === "scholar" &&
+      signedIn &&
+      session &&
+      menu.needsSupervisor &&
+      office &&
+      !guide ? (
         <p className="mt-6 text-sm text-muted-foreground">
           A supervisor has to be allotted before you can submit this.
         </p>
       ) : null}
 
-      {mode === "scholar" && signedIn && session && (!menu.needsSupervisor || allotment) ? (
+      {mode === "scholar" && signedIn && session && (!menu.needsSupervisor || guide) ? (
         <RecordForm
           key={existing?.id ?? "new"}
           menu={menu}
           scholarIdentifier={session.identifier}
           scholarName={session.name.trim() || session.identifier}
-          supervisorIdentifier={allotment?.supervisorIdentifier ?? ""}
-          supervisorName={allotment?.supervisorName ?? ""}
+          supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
+          supervisorName={guide?.supervisorName ?? ""}
           existing={existing}
         />
       ) : null}
@@ -343,29 +387,52 @@ export function ScholarRecordScreen({
           {paymentTotal.toLocaleString("en-IN")}
         </p>
       ) : null}
-      {mode === "admin" && menu.kind === "payment" && scholarOptions.length > 0 ? (
-        <label className="mt-3 block text-sm">
-          Scholar
-          <select
-            className="mt-1 block rounded-lg border border-border bg-white px-3 py-2"
-            value={scholarFilter}
-            onChange={(event) => setScholarFilter(event.target.value)}
-          >
-            <option value="all">All scholars</option>
-            {scholarOptions.map(([identifier, name]) => (
-              <option key={identifier} value={identifier}>
-                {name} · {identifier}
-              </option>
-            ))}
-          </select>
-        </label>
+      {mode === "admin" ? (
+        <ListToolbar
+          query={query}
+          onQuery={setQuery}
+          filters={[
+            {
+              id: "scholar",
+              label: "Scholar",
+              value: scholarFilter,
+              options: scholarOptions.map(([identifier, name]) => ({
+                value: identifier,
+                label: `${name} · ${identifier}`,
+              })),
+              onChange: setScholarFilter,
+            },
+            {
+              id: "status",
+              label: "Status",
+              value: statusFilter,
+              options: ["Submitted", "Supervisor approved", "Approved", "Returned"].map(
+                (status) => ({ value: status, label: status }),
+              ),
+              onChange: setStatusFilter,
+            },
+          ]}
+          shown={mine.length}
+          total={owned.length}
+          filename={`${menu.slug}.csv`}
+          headers={[
+            "scholar_name",
+            "scholar_identifier",
+            "status",
+            "submitted",
+            ...menu.fields.map((field) => field.name),
+            "file_name",
+          ]}
+          rows={mine.map((record) => [
+            record.scholarName,
+            record.scholarIdentifier,
+            record.status,
+            record.createdAt.slice(0, 10),
+            ...menu.fields.map((field) => record.payload[field.name] ?? ""),
+            record.fileName ?? "",
+          ])}
+        />
       ) : null}
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={downloadTable}>
-          Download CSV
-        </Button>
-      </div>
 
       {mine.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">No records yet.</p>
@@ -413,7 +480,7 @@ export function ScholarRecordScreen({
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap justify-end gap-2">
-                      {record.fileName ? (
+                      {mode === "admin" && record.fileName ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -432,7 +499,8 @@ export function ScholarRecordScreen({
                             size="sm"
                             disabled={
                               busyId === record.id ||
-                              (menu.needsSupervisor && record.status !== "Supervisor approved")
+                              (menu.needsSupervisor &&
+                                record.status !== "Supervisor approved")
                             }
                             onClick={() => void decide(record, "Approved")}
                           >

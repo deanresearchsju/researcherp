@@ -5,6 +5,8 @@ import { useSyncExternalStore } from "react";
 
 import { scholarRecordMenus } from "@/data/scholar-records";
 import { portalIntro } from "@/data/portal";
+import { batchOf, scholarBySignIn, scholarsGuidedBy } from "@/lib/register";
+import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import {
   allocationFor,
@@ -14,7 +16,8 @@ import {
   subscribeOffice,
   type OfficeRecord,
 } from "@/lib/office";
-import { usePreviewSession } from "@/lib/use-preview-session";
+import { ProfileCard } from "@/components/portal/ProfileCard";
+import { usePortalSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
 import type { Role } from "@/types";
 
@@ -24,7 +27,9 @@ function Stat({ label, value, note }: { label: string; value: string; note: stri
       <p className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
         {label}
       </p>
-      <p className="mt-2 font-heading text-4xl text-primary">{value}</p>
+      <p className="mt-2 font-sans text-4xl font-semibold text-primary tabular-nums">
+        {value}
+      </p>
       <p className="mt-1 text-sm text-muted-foreground">{note}</p>
     </li>
   );
@@ -38,11 +43,84 @@ const reviewKinds = new Set(
   scholarRecordMenus.filter((menu) => menu.needsSupervisor).map((menu) => menu.kind),
 );
 
+function MissingDetails({ identifier }: { identifier: string }) {
+  const personal = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("personal_details", onChange),
+    () => currentScholarRecords("personal_details"),
+    () => null,
+  );
+  const menu = scholarRecordMenus.find((item) => item.kind === "personal_details");
+  if (!menu) return null;
+  const saved = personal?.records.find((record) =>
+    sameId(record.scholarIdentifier, identifier),
+  );
+  const missing = menu.fields.filter(
+    (field) => field.required && !(saved?.payload[field.name] ?? "").trim(),
+  );
+  if (personal && missing.length === 0) return null;
+
+  return (
+    <section className="mt-4 rounded-xl border border-border bg-card p-4 shadow-card">
+      <h2 className="font-semibold text-primary">Details still to fill</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Complete the personal details that are still blank.
+      </p>
+      {personal && missing.length > 0 ? (
+        <ul className="mt-3 list-disc pl-5 text-sm leading-6">
+          {missing.map((field) => (
+            <li key={field.name}>{field.label}</li>
+          ))}
+        </ul>
+      ) : null}
+      <Link
+        href={`/scholar/records/${menu.slug}`}
+        className="mt-4 inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
+      >
+        Open personal details
+      </Link>
+    </section>
+  );
+}
+
+function ScholarRecordLine({
+  identifier,
+  allocations,
+}: {
+  identifier: string;
+  allocations: Parameters<typeof allocationFor>[0];
+}) {
+  const record = scholarBySignIn(identifier);
+  if (record) {
+    const batch = batchOf(record.batchId);
+    return (
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-accent">
+        {batch ? `${batch.name}. ` : null}
+        Guide: {record.guideName || "—"}.{record.title ? ` Title: ${record.title}.` : ""}
+        {record.registrationNumber
+          ? ` Registration number: ${record.registrationNumber}.`
+          : " Registration number is to be allotted."}
+      </p>
+    );
+  }
+  const guide = allocationFor(allocations, identifier);
+  return (
+    <p className="mt-3 text-sm text-accent">
+      {guide
+        ? `Guide: ${guide.supervisorName}`
+        : "A supervisor has not been allotted yet."}
+    </p>
+  );
+}
+
 export function DashboardHome({ role }: { role: Role }) {
   const intro = portalIntro[role];
-  const session = usePreviewSession();
+  const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
-  const users = useSyncExternalStore(subscribePortalUsers, currentPortalUsers, () => null);
+  const users = useSyncExternalStore(
+    subscribePortalUsers,
+    currentPortalUsers,
+    () => null,
+  );
   const name =
     session && session.role === role
       ? session.name.trim() || session.identifier
@@ -71,8 +149,17 @@ export function DashboardHome({ role }: { role: Role }) {
   );
   const payments = records.filter((record) => record.kind === "payment");
   const myPayments = mine.filter((record) => record.kind === "payment");
-  const rac =
-    session && office ? presentRac(office.proposals, session.identifier) : null;
+  const rac = session && office ? presentRac(office.proposals, session.identifier) : null;
+
+  const registerScholars =
+    session && role === "supervisor"
+      ? scholarsGuidedBy(session.name, session.identifier).filter(
+          (scholar) =>
+            !allotted.some(
+              (item) => item.scholarName.toLowerCase() === scholar.name.toLowerCase(),
+            ),
+        )
+      : [];
 
   const cards =
     role === "scholar"
@@ -89,7 +176,9 @@ export function DashboardHome({ role }: { role: Role }) {
           },
           {
             label: "Six-month reports",
-            value: String(mine.filter((record) => record.kind === "six_month_report").length),
+            value: String(
+              mine.filter((record) => record.kind === "six_month_report").length,
+            ),
             note: "Progress reports sent",
           },
           {
@@ -102,7 +191,7 @@ export function DashboardHome({ role }: { role: Role }) {
         ? [
             {
               label: "Scholars",
-              value: String(allotted.length),
+              value: String(allotted.length + registerScholars.length),
               note: "Allotted to you",
             },
             {
@@ -122,8 +211,9 @@ export function DashboardHome({ role }: { role: Role }) {
             {
               label: "RAC in place",
               value: String(
-                allotted.filter((item) => presentRac(office?.proposals ?? [], item.scholarIdentifier))
-                  .length,
+                allotted.filter((item) =>
+                  presentRac(office?.proposals ?? [], item.scholarIdentifier),
+                ).length,
               ),
               note: "Scholars with a present RAC",
             },
@@ -131,7 +221,9 @@ export function DashboardHome({ role }: { role: Role }) {
         : [
             {
               label: "Scholars",
-              value: String(users?.users.filter((user) => user.role === "scholar").length ?? "—"),
+              value: String(
+                users?.users.filter((user) => user.role === "scholar").length ?? "—",
+              ),
               note: "Portal accounts",
             },
             {
@@ -144,12 +236,16 @@ export function DashboardHome({ role }: { role: Role }) {
             {
               label: "Ph.D. applications",
               value: String(office?.phdApplications ?? "—"),
-              note: office?.settings.phdOpen ? "Applications are open" : "Applications are closed",
+              note: office?.settings.phdOpen
+                ? "Applications are open"
+                : "Applications are closed",
             },
             {
               label: "Supervisor applications",
               value: String(office?.supervisorApplications ?? "—"),
-              note: office?.settings.supervisorOpen ? "Recognition is open" : "Recognition is closed",
+              note: office?.settings.supervisorOpen
+                ? "Recognition is open"
+                : "Recognition is closed",
             },
             {
               label: "Allotments",
@@ -169,7 +265,8 @@ export function DashboardHome({ role }: { role: Role }) {
             {
               label: "RAC pending",
               value: String(
-                office?.proposals.filter((item) => item.status === "Submitted").length ?? "—",
+                office?.proposals.filter((item) => item.status === "Submitted").length ??
+                  "—",
               ),
               note: "Nominations to select",
             },
@@ -191,32 +288,43 @@ export function DashboardHome({ role }: { role: Role }) {
           ]
         : [
             ["/admin/site", "Home and admissions"],
+            ["/admin/news", "News and events"],
             ["/admin/allocations", "Allot a scholar"],
             ["/admin/rac", "RAC decisions"],
             ["/admin/people", "View a person"],
+            ["/admin/register", "Scholar register"],
+            ["/admin/supervisors", "Supervisor register"],
             ["/admin/records/payment-history", "All payments"],
           ];
 
   return (
     <div>
-      <section className="overflow-hidden rounded-2xl bg-primary text-primary-foreground shadow-card">
-        <div className="px-6 py-6 sm:px-8 sm:py-8">
-          <p className="text-xs font-semibold tracking-[0.2em] text-accent uppercase">
-            {intro.title}
-          </p>
-          <h1 className="mt-2 font-heading text-4xl">{name}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-primary-foreground/80">
-            {intro.summary}
-          </p>
-          {session && session.role === role && role === "scholar" ? (
-            <p className="mt-3 text-sm text-accent">
-              {allocationFor(office?.allocations ?? [], session.identifier)
-                ? `Guide: ${allocationFor(office?.allocations ?? [], session.identifier)?.supervisorName}`
-                : "A supervisor has not been allotted yet."}
+      {session &&
+      (role === "scholar" || role === "supervisor") &&
+      session.role === role ? (
+        <ProfileCard role={role} />
+      ) : (
+        <section className="overflow-hidden rounded-2xl bg-primary text-primary-foreground shadow-card">
+          <div className="px-6 py-6 sm:px-8 sm:py-8">
+            <p className="text-xs font-semibold tracking-[0.2em] text-accent uppercase">
+              {intro.title}
             </p>
-          ) : null}
-        </div>
-      </section>
+            <h1 className="mt-2 font-heading text-4xl">{name}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-primary-foreground/80">
+              {intro.summary}
+            </p>
+            {session && session.role === role && role === "scholar" ? (
+              <ScholarRecordLine
+                identifier={session.identifier}
+                allocations={office?.allocations ?? []}
+              />
+            ) : null}
+          </div>
+        </section>
+      )}
+      {session && session.role === role && role === "scholar" ? (
+        <MissingDetails identifier={session.identifier} />
+      ) : null}
       {office?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{office.detail}</p>
       ) : null}

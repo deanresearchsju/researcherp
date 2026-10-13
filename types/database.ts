@@ -141,6 +141,8 @@ export type Database = {
           name: string;
           identifier: string;
           password: string;
+          must_reset: boolean;
+          menu_rights: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -150,12 +152,16 @@ export type Database = {
           name: string;
           identifier: string;
           password: string;
+          must_reset?: boolean;
+          menu_rights?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           name?: string;
           password?: string;
+          must_reset?: boolean;
+          menu_rights?: Json | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -166,6 +172,9 @@ export type Database = {
           sort_order: number;
           role: string;
           name: string;
+          email: string;
+          phone: string;
+          photo: string;
           created_at: string;
           updated_at: string;
         };
@@ -174,6 +183,9 @@ export type Database = {
           sort_order: number;
           role: string;
           name?: string;
+          email?: string;
+          phone?: string;
+          photo?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -181,6 +193,9 @@ export type Database = {
           sort_order?: number;
           role?: string;
           name?: string;
+          email?: string;
+          phone?: string;
+          photo?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -289,6 +304,48 @@ export type Database = {
           selected_external?: string;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      doctoral_office: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      research_register: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      news_board: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      research_areas: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      profile_photos: {
+        Row: { id: string; photo: string; updated_at: string };
+        Insert: { id: string; photo: string; updated_at?: string };
+        Update: { photo?: string; updated_at?: string };
+        Relationships: [];
+      };
+      admission_office: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      thesis_panels: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
         Relationships: [];
       };
       supervisor_applications: {

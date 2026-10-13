@@ -6,8 +6,6 @@ export const admissionWindow = {
 };
 
 export const homeCopy = {
-  schoolsLink: "Explore all research areas",
   programmesLink: "View full details",
   admissionLink: "Ph.D. admission",
-  announcementsLink: "View all",
 };

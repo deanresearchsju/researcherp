@@ -12,6 +12,30 @@ body {
   overflow-x: clip;
 }
 
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+  }
+
+  p,
+  li,
+  td,
+  th,
+  label,
+  input,
+  textarea,
+  select,
+  button {
+    font-family: var(--font-sans);
+  }
+}
+
 section[id],
 div[id] {
   scroll-margin-top: 8rem;
@@ -90,6 +114,42 @@ div[id] {
 .ticker:hover .ticker-track,
 .ticker:focus-within .ticker-track {
   animation-play-state: paused;
+}
+
+@keyframes admission-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(242 194 48 / 0.7),
+      0 22px 48px -18px rgb(91 42 134 / 0.45);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 12px rgb(242 194 48 / 0),
+      0 22px 48px -18px rgb(91 42 134 / 0.28);
+  }
+}
+
+@keyframes admission-blink {
+  0%,
+  40% {
+    opacity: 1;
+  }
+
+  55%,
+  100% {
+    opacity: 0.2;
+  }
+}
+
+.admission-beacon {
+  animation: admission-glow 1.5s ease-in-out infinite;
+}
+
+.admission-dot {
+  box-shadow: 0 0 0 4px rgb(242 194 48 / 0.35);
+  animation: admission-blink 1.1s steps(1, end) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

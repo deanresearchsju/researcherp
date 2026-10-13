@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AdmissionGlance } from "@/components/home/AdmissionGlance";
 import { Checklist } from "@/components/home/Checklist";
 import { FAQ } from "@/components/home/FAQ";
 import { buttonVariants } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export default function AdmissionPage() {
           </Link>
         </Container>
       </section>
+      <AdmissionGlance />
       <Checklist />
       <FAQ />
     </>

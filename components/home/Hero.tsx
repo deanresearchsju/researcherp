@@ -57,18 +57,32 @@ export function Hero() {
             <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
         </div>
-        <div className="relative overflow-hidden rounded-xl border border-white/80 bg-white/75 p-5 shadow-lift backdrop-blur-md">
-          <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
+        <div
+          className={
+            settings.phdOpen
+              ? "admission-beacon relative overflow-hidden rounded-2xl border-2 border-primary bg-white p-6"
+              : "relative overflow-hidden rounded-2xl border border-border bg-white p-6 shadow-lift"
+          }
+        >
+          <div className="absolute inset-x-0 top-0 h-1.5 bg-accent" aria-hidden="true" />
+          <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-secondary uppercase">
+            {settings.phdOpen ? (
+              <span
+                className="admission-dot size-2.5 rounded-full bg-accent"
+                aria-hidden="true"
+              />
+            ) : null}
             {settings.phdOpen ? settings.admissionLabel : "Admissions closed"}
           </p>
-          <p className="mt-3 font-heading text-2xl text-primary">
+          <p className="mt-4 font-heading text-4xl leading-none text-primary">
             {settings.admissionSession}
           </p>
-          <div className="mt-4 h-px bg-accent" aria-hidden="true" />
-          <p className="mt-4 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-            {settings.deadlineLabel}
-          </p>
-          <p className="mt-1 font-heading text-xl text-primary">{settings.deadline}</p>
+          <div className="mt-5 rounded-xl bg-muted px-4 py-3">
+            <p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+              {settings.deadlineLabel}
+            </p>
+            <p className="mt-1 font-heading text-2xl text-primary">{settings.deadline}</p>
+          </div>
         </div>
       </div>
     </section>

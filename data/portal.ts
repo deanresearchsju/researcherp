@@ -1,68 +1,145 @@
-import type { Notice, PortalNavItem, Role } from "@/types";
+import type { Notice, PortalNavGroup, Role } from "@/types";
 
-export const portalNav: Record<Role, PortalNavItem[]> = {
+const record = (role: Role, slug: string, label: string) => ({
+  label,
+  href: `/${role}/records/${slug}`,
+  ready: true,
+});
+
+export const portalGroups: Record<Role, PortalNavGroup[]> = {
   scholar: [
-    { label: "Dashboard", href: "/scholar/dashboard", ready: true },
-    { label: "ABC ID", href: "/scholar/records/abc-id", ready: true },
-    { label: "Hall ticket", href: "/scholar/records/hall-ticket", ready: true },
-    { label: "Personal details", href: "/scholar/records/personal-details", ready: true },
-    { label: "Payment history", href: "/scholar/records/payment-history", ready: true },
     {
-      label: "Ph.D. cancellation request",
-      href: "/scholar/records/phd-cancellation",
-      ready: true,
+      heading: "Overview",
+      items: [{ label: "Dashboard", href: "/scholar/dashboard", ready: true }],
     },
     {
-      label: "Supervisor change request",
-      href: "/scholar/records/supervisor-change",
-      ready: true,
+      heading: "Admission",
+      items: [{ label: "Admission file", href: "/scholar/admission", ready: true }],
     },
     {
-      label: "Full-time to part-time request",
-      href: "/scholar/records/study-mode-change",
-      ready: true,
+      heading: "Personal record",
+      items: [
+        record("scholar", "abc-id", "ABC ID"),
+        record("scholar", "hall-ticket", "Hall ticket"),
+        record("scholar", "personal-details", "Personal details"),
+        record("scholar", "payment-history", "Payment history"),
+      ],
     },
-    { label: "Publications", href: "/scholar/records/publications", ready: true },
-    { label: "Six-month report", href: "/scholar/records/six-month-report", ready: true },
-    { label: "RAC members", href: "/scholar/rac", ready: true },
+    {
+      heading: "Requests",
+      items: [
+        record("scholar", "phd-cancellation", "Ph.D. cancellation"),
+        record("scholar", "supervisor-change", "Supervisor change"),
+        record("scholar", "study-mode-change", "Full-time to part-time"),
+      ],
+    },
+    {
+      heading: "Course work",
+      items: [
+        { label: "Registration", href: "/scholar/course-work", ready: true },
+        { label: "Results", href: "/scholar/results", ready: true },
+      ],
+    },
+    {
+      heading: "Doctoral progress",
+      items: [
+        { label: "Ph.D. confirmation", href: "/scholar/confirmation", ready: true },
+        { label: "Colloquium", href: "/scholar/colloquium", ready: true },
+        record("scholar", "publications", "Publications"),
+        { label: "Six-month report", href: "/scholar/reports", ready: true },
+        { label: "Third committee", href: "/scholar/dc-third", ready: true },
+        { label: "Synopsis", href: "/scholar/synopsis", ready: true },
+        { label: "Fourth committee", href: "/scholar/dc-fourth", ready: true },
+        { label: "Thesis", href: "/scholar/thesis", ready: true },
+        { label: "RAC members", href: "/scholar/rac", ready: true },
+      ],
+    },
   ],
   supervisor: [
-    { label: "Dashboard", href: "/supervisor/dashboard", ready: true },
-    { label: "My scholars", href: "/supervisor/scholars", ready: true },
-    { label: "RAC proposal", href: "/supervisor/rac", ready: true },
-    { label: "Scholar requests", href: "/supervisor/reviews", ready: true },
+    {
+      heading: "Overview",
+      items: [{ label: "Dashboard", href: "/supervisor/dashboard", ready: true }],
+    },
+    {
+      heading: "Scholars",
+      items: [
+        { label: "My scholars", href: "/supervisor/scholars", ready: true },
+        { label: "Scholar requests", href: "/supervisor/reviews", ready: true },
+      ],
+    },
+    {
+      heading: "Committee",
+      items: [
+        { label: "RAC proposal", href: "/supervisor/rac", ready: true },
+        { label: "Colloquium", href: "/supervisor/colloquium", ready: true },
+      ],
+    },
   ],
   admin: [
-    { label: "Dashboard", href: "/admin/dashboard", ready: true },
-    { label: "Home and admissions", href: "/admin/site", ready: true },
-    { label: "Scholar allotment", href: "/admin/allocations", ready: true },
-    { label: "RAC", href: "/admin/rac", ready: true },
-    { label: "People", href: "/admin/people", ready: true },
-    { label: "Vacancies", href: "/admin/vacancies", ready: true },
-    { label: "Applications", href: "/admin/applications", ready: true },
-    { label: "Users", href: "/admin/users", ready: true },
-    { label: "Our Team", href: "/admin/team", ready: true },
-    { label: "ABC ID", href: "/admin/records/abc-id", ready: true },
-    { label: "Hall ticket", href: "/admin/records/hall-ticket", ready: true },
-    { label: "Personal details", href: "/admin/records/personal-details", ready: true },
-    { label: "Payment history", href: "/admin/records/payment-history", ready: true },
     {
-      label: "Ph.D. cancellation request",
-      href: "/admin/records/phd-cancellation",
-      ready: true,
+      heading: "Overview",
+      items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
     },
     {
-      label: "Supervisor change request",
-      href: "/admin/records/supervisor-change",
-      ready: true,
+      heading: "Office",
+      items: [
+        { label: "Home and admissions", href: "/admin/site", ready: true },
+        { label: "News and events", href: "/admin/news", ready: true },
+        { label: "Research areas", href: "/admin/research-areas", ready: true },
+        { label: "People", href: "/admin/people", ready: true },
+        { label: "Scholar register", href: "/admin/register", ready: true },
+        { label: "Supervisor register", href: "/admin/supervisors", ready: true },
+        { label: "Users", href: "/admin/users", ready: true },
+        { label: "Our Team", href: "/admin/team", ready: true },
+      ],
     },
     {
-      label: "Full-time to part-time request",
-      href: "/admin/records/study-mode-change",
-      ready: true,
+      heading: "Admissions",
+      items: [
+        { label: "Selection", href: "/admin/admission", ready: true },
+        { label: "Scholar allotment", href: "/admin/allocations", ready: true },
+        { label: "Vacancies", href: "/admin/vacancies", ready: true },
+        { label: "Applications", href: "/admin/applications", ready: true },
+        { label: "RAC", href: "/admin/rac", ready: true },
+      ],
     },
-    { label: "Publications", href: "/admin/records/publications", ready: true },
-    { label: "Six-month report", href: "/admin/records/six-month-report", ready: true },
+    {
+      heading: "Scholar records",
+      items: [
+        record("admin", "abc-id", "ABC ID"),
+        record("admin", "hall-ticket", "Hall ticket"),
+        record("admin", "personal-details", "Personal details"),
+        record("admin", "payment-history", "Payment history"),
+      ],
+    },
+    {
+      heading: "Requests",
+      items: [
+        record("admin", "phd-cancellation", "Ph.D. cancellation"),
+        record("admin", "supervisor-change", "Supervisor change"),
+        record("admin", "study-mode-change", "Full-time to part-time"),
+      ],
+    },
+    {
+      heading: "Course work",
+      items: [
+        { label: "Registration", href: "/admin/course-work", ready: true },
+        { label: "Results", href: "/admin/results", ready: true },
+      ],
+    },
+    {
+      heading: "Doctoral progress",
+      items: [
+        { label: "Ph.D. confirmation", href: "/admin/confirmation", ready: true },
+        { label: "Colloquium", href: "/admin/colloquium", ready: true },
+        record("admin", "publications", "Publications"),
+        { label: "Six-month report", href: "/admin/reports", ready: true },
+        { label: "Third committee", href: "/admin/dc-third", ready: true },
+        { label: "Synopsis", href: "/admin/synopsis", ready: true },
+        { label: "Fourth committee", href: "/admin/dc-fourth", ready: true },
+        { label: "Thesis", href: "/admin/thesis", ready: true },
+      ],
+    },
   ],
 };
 

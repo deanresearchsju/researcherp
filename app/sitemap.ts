@@ -5,8 +5,7 @@ import { university } from "@/lib/constants";
 export default function sitemap(): MetadataRoute.Sitemap {
   const paths = [
     "",
-    "/research-areas",
-    "/programmes-fees",
+    "/programmes",
     "/admission",
     "/scholar-journey",
     "/supervisors",

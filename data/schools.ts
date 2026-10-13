@@ -1,4 +1,14 @@
-import type { School } from "@/types";
+import type { School, SchoolIcon } from "@/types";
+
+export const schoolIcons: { value: SchoolIcon; label: string }[] = [
+  { value: "cpu", label: "Engineering" },
+  { value: "flask", label: "Science" },
+  { value: "heart-pulse", label: "Medicine" },
+  { value: "sprout", label: "Agriculture" },
+  { value: "scale", label: "Law" },
+  { value: "briefcase", label: "Management" },
+  { value: "building", label: "General" },
+];
 
 export const schools: School[] = [
   {
@@ -12,7 +22,7 @@ export const schools: School[] = [
       "Electronics and Communication Engineering",
       "Mechanical Engineering",
       "Electrical and Electronics Engineering",
-      ],
+    ],
   },
   {
     id: "science",

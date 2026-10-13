@@ -2,8 +2,8 @@ import type { NavLink } from "@/types";
 
 export const primaryNav: NavLink[] = [
   { label: "Home", href: "/" },
-  { label: "Research Areas", href: "/research-areas" },
-  { label: "Programmes & Fees", href: "/programmes-fees" },
+  { label: "Announcements", href: "/announcements" },
+  { label: "Programmes", href: "/programmes" },
   { label: "Admission", href: "/admission" },
   { label: "Supervisors", href: "/supervisors" },
   { label: "Our Team", href: "/our-team" },
@@ -11,8 +11,8 @@ export const primaryNav: NavLink[] = [
 ];
 
 export const footerExplore: NavLink[] = [
-  { label: "Research areas", href: "/research-areas" },
-  { label: "Programmes and fees", href: "/programmes-fees" },
+  { label: "Announcements", href: "/announcements" },
+  { label: "Programmes", href: "/programmes" },
   { label: "Admission", href: "/admission" },
   { label: "Scholar journey", href: "/scholar-journey" },
   { label: "Supervisors", href: "/supervisors" },
@@ -25,5 +25,4 @@ export const footerPortals: NavLink[] = [
   { label: "Supervisor login", href: "/login/supervisor" },
   { label: "Admin login", href: "/login/admin" },
   { label: "Apply for Ph.D.", href: "/apply" },
-  { label: "Privacy", href: "/privacy" },
 ];

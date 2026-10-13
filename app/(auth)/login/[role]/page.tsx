@@ -39,15 +39,10 @@ export default function LoginPage({ params }: LoginPageProps) {
 async function LoginContent({ params }: LoginPageProps) {
   const { role } = await params;
   if (!isRole(role)) notFound();
-  const profile = roleProfiles[role];
 
   return (
-    <AuthLayout
-      welcome={profile.welcome}
-      description={profile.description}
-      benefits={profile.benefits}
-    >
-      <LoginForm role={role} />
+    <AuthLayout>
+      <LoginForm key={role} role={role} />
     </AuthLayout>
   );
 }

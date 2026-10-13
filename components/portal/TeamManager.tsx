@@ -5,23 +5,28 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { FileUpload } from "@/components/forms/FileUpload";
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { teamSeed } from "@/data/team";
 import { field } from "@/lib/csv";
+import { fileError, fileToDataUrl, releaseFile, type StoredFile } from "@/lib/files";
 import { createSupabase } from "@/lib/supabase/client";
 import {
   loadTeam,
   mapTeamMember,
   officeTeam,
+  teamContactMigrationHint,
   teamMigrationHint,
+  teamSelect,
   type TeamLoad,
   type TeamMember,
 } from "@/lib/team";
 
-const teamColumns = ["sort_order", "role", "name"] as const;
+const teamColumns = ["sort_order", "role", "name", "email", "phone"] as const;
 
 const teamFormSchema = z.object({
   sortOrder: z
@@ -31,6 +36,20 @@ const teamFormSchema = z.object({
     .refine((value) => Number(value) >= 1, "Enter an order of 1 or more."),
   role: z.string().trim().min(2, "Enter the role."),
   name: z.string().trim(),
+  email: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+      "Enter a valid email address.",
+    ),
+  phone: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || /^[0-9+\-\s()]{6,20}$/.test(value),
+      "Enter a valid phone number.",
+    ),
 });
 
 type TeamFormValues = z.infer<typeof teamFormSchema>;
@@ -39,14 +58,26 @@ const emptyForm: TeamFormValues = {
   sortOrder: "",
   role: "",
   name: "",
+  email: "",
+  phone: "",
 };
 
-function toColumns(values: TeamFormValues) {
+function toColumns(values: TeamFormValues, photo: string) {
   return {
     sort_order: Number(values.sortOrder),
     role: values.role.trim(),
     name: values.name.trim(),
+    email: values.email.trim(),
+    phone: values.phone.trim(),
+    photo,
   };
+}
+
+function saveNotice(message: string) {
+  if (/email|phone|photo|column|schema cache/i.test(message)) {
+    return teamContactMigrationHint;
+  }
+  return null;
 }
 
 export function TeamManager({ initial }: { initial: TeamLoad }) {
@@ -57,6 +88,11 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initial.detail);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [photoFile, setPhotoFile] = useState<StoredFile | null>(null);
+  const [keptPhoto, setKeptPhoto] = useState("");
+  const [photoError, setPhotoError] = useState("");
 
   const form = useForm<TeamFormValues>({
     resolver: zodResolver(teamFormSchema),
@@ -65,18 +101,43 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
 
   const writable = source === "database" || source === "empty";
 
+  function clearPhoto() {
+    releaseFile(photoFile);
+    setPhotoFile(null);
+    setKeptPhoto("");
+    setPhotoError("");
+  }
+
   function beginEdit(member: TeamMember) {
+    releaseFile(photoFile);
+    setPhotoFile(null);
+    setPhotoError("");
+    setKeptPhoto(member.photo);
     setEditingId(member.id);
     form.reset({
       sortOrder: String(member.sortOrder),
       role: member.role,
       name: member.name,
+      email: member.email,
+      phone: member.phone,
     });
   }
 
   function cancelEdit() {
+    clearPhoto();
     setEditingId(null);
     form.reset(emptyForm);
+  }
+
+  async function chosenPhoto() {
+    if (!photoFile) return keptPhoto;
+    const problem = fileError(photoFile.file, "teamPhoto", false);
+    if (problem) {
+      setPhotoError(problem);
+      return null;
+    }
+    setPhotoError("");
+    return fileToDataUrl(photoFile.file);
   }
 
   async function refresh() {
@@ -96,6 +157,9 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         sort_order: member.sortOrder,
         role: member.role,
         name: member.name,
+        email: member.email,
+        phone: member.phone,
+        photo: member.photo,
       })),
     );
     setBusy(false);
@@ -111,18 +175,26 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
     if (!supabase || source === "office-copy") return;
     setBusy(true);
     setNotice(null);
-    const columns = toColumns(values);
+    const photo = await chosenPhoto();
+    if (photo === null) {
+      setBusy(false);
+      return;
+    }
+    const columns = toColumns(values, photo);
 
     if (editingId && !editingId.startsWith("office-")) {
       const { data, error } = await supabase
         .from("research_team")
         .update(columns)
         .eq("id", editingId)
-        .select("id, sort_order, role, name")
+        .select(teamSelect)
         .single();
       setBusy(false);
       if (error || !data) {
-        setNotice("That member could not be updated. The order may already be used.");
+        setNotice(
+          (error ? saveNotice(error.message) : null) ??
+            "That member could not be updated. The order may already be used.",
+        );
         return;
       }
       const next = mapTeamMember(data);
@@ -138,11 +210,14 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
     const { data, error } = await supabase
       .from("research_team")
       .insert(columns)
-      .select("id, sort_order, role, name")
+      .select(teamSelect)
       .single();
     setBusy(false);
     if (error || !data) {
-      setNotice("That member could not be added. The order may already be used.");
+      setNotice(
+        (error ? saveNotice(error.message) : null) ??
+          "That member could not be added. The order may already be used.",
+      );
       return;
     }
     setMembers((current) =>
@@ -191,6 +266,8 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         sortOrder: field(record, ["sort_order", "order"]),
         role: field(record, ["role"]),
         name: field(record, ["name"]),
+        email: field(record, ["email", "mail"]),
+        phone: field(record, ["phone", "mobile"]),
       });
       if (!parsed.success) {
         problems.push(
@@ -198,7 +275,8 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         );
         continue;
       }
-      const columns = toColumns(parsed.data);
+      const existing = members.find((member) => member.sortOrder === Number(parsed.data.sortOrder));
+      const columns = toColumns(parsed.data, existing?.photo ?? "");
       const existingId = known.get(columns.sort_order);
       if (existingId) {
         const { error } = await supabase
@@ -230,6 +308,19 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
     setNotice(problems.length ? `${summary} ${problems.slice(0, 3).join(" ")}` : summary);
   }
 
+  const visible = members.filter(
+    (member) =>
+      (roleFilter === "" || member.role === roleFilter) &&
+      textMatches(query, [
+        member.role,
+        member.name,
+        member.email,
+        member.phone,
+        String(member.sortOrder),
+      ]),
+  );
+  const roleOptions = [...new Set(members.map((member) => member.role))].sort();
+
   return (
     <div>
       <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
@@ -241,13 +332,39 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         list as CSV, or upload a CSV to add and update members. Removing a member stays on
         the Remove button.
       </p>
-      <SpreadsheetBar
-        filename="research-team.csv"
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "role",
+            label: "Role",
+            value: roleFilter,
+            options: roleOptions.map((role) => ({ value: role, label: role })),
+            onChange: setRoleFilter,
+          },
+        ]}
+        shown={visible.length}
+        total={members.length}
+        filename="research-team-filtered.csv"
         headers={teamColumns}
-        rows={members.map((member) => [
+        rows={visible.map((member) => [
           String(member.sortOrder),
           member.role,
           member.name,
+          member.email,
+          member.phone,
+        ])}
+      />
+      <SpreadsheetBar
+        filename="research-team.csv"
+        headers={teamColumns}
+        rows={visible.map((member) => [
+          String(member.sortOrder),
+          member.role,
+          member.name,
+          member.email,
+          member.phone,
         ])}
         canUpload={writable}
         busy={busy}
@@ -310,6 +427,48 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
           >
             <Input id="memberRole" {...form.register("role")} />
           </FormField>
+          <FormField
+            label="Email"
+            htmlFor="memberEmail"
+            error={form.formState.errors.email?.message}
+          >
+            <Input id="memberEmail" type="email" autoComplete="off" {...form.register("email")} />
+          </FormField>
+          <FormField
+            label="Phone"
+            htmlFor="memberPhone"
+            error={form.formState.errors.phone?.message}
+          >
+            <Input id="memberPhone" type="tel" autoComplete="off" {...form.register("phone")} />
+          </FormField>
+          <FormField label="Photograph" htmlFor="memberPhoto" error={photoError} className="sm:col-span-2">
+            <FileUpload
+              id="memberPhoto"
+              acceptRule="teamPhoto"
+              value={photoFile}
+              error={photoError}
+              onChange={(next) => {
+                releaseFile(photoFile);
+                setPhotoFile(next);
+                setPhotoError("");
+                if (next) setKeptPhoto("");
+              }}
+            />
+            {keptPhoto && !photoFile ? (
+              <div className="flex items-center gap-3">
+                {/* Stored team photograph; next/image cannot serve a data URL. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={keptPhoto}
+                  alt=""
+                  className="aspect-[7/9] w-20 rounded-lg border border-border object-contain"
+                />
+                <Button type="button" variant="ghost" size="sm" onClick={clearPhoto}>
+                  Remove photograph
+                </Button>
+              </div>
+            ) : null}
+          </FormField>
           <div className="flex gap-2 sm:col-span-2">
             <Button type="submit" variant="gold" disabled={busy}>
               {editingId ? "Save member" : "Add member"}
@@ -337,16 +496,40 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
                 Name
               </th>
               <th scope="col" className="px-4 py-3 font-semibold">
+                Email
+              </th>
+              <th scope="col" className="px-4 py-3 font-semibold">
+                Phone
+              </th>
+              <th scope="col" className="px-4 py-3 font-semibold">
+                Photograph
+              </th>
+              <th scope="col" className="px-4 py-3 font-semibold">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {members.map((member) => (
+            {visible.map((member) => (
               <tr key={member.id} className="border-t border-border">
                 <td className="px-4 py-3">{member.sortOrder}</td>
                 <td className="px-4 py-3 font-medium text-primary">{member.role}</td>
                 <td className="px-4 py-3">{member.name || "—"}</td>
+                <td className="px-4 py-3">{member.email || "—"}</td>
+                <td className="px-4 py-3">{member.phone || "—"}</td>
+                <td className="px-4 py-3">
+                  {member.photo ? (
+                    // Stored team photograph; next/image cannot serve a data URL.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={member.photo}
+                      alt=""
+                      className="aspect-[7/9] w-12 rounded-md border border-border object-contain"
+                    />
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   {writable && source === "database" ? (
                     <div className="flex justify-end gap-2">

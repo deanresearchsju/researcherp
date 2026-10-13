@@ -10,6 +10,16 @@ const nextConfig: NextConfig = {
         destination: "/supervisors",
         permanent: true,
       },
+      {
+        source: "/programmes-fees",
+        destination: "/programmes",
+        permanent: true,
+      },
+      {
+        source: "/research-areas",
+        destination: "/#research-areas",
+        permanent: true,
+      },
     ];
   },
   turbopack: {

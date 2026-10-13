@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -74,6 +75,9 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initial.detail);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
 
   const form = useForm<VacancyFormValues>({
     resolver: zodResolver(vacancyFormSchema),
@@ -284,6 +288,21 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
     setNotice(problems.length ? `${summary} ${problems.slice(0, 3).join(" ")}` : summary);
   }
 
+  const visible = rows.filter(
+    (row) =>
+      (department === "" || row.department === department) &&
+      (designation === "" || row.designation === designation) &&
+      textMatches(query, [
+        row.supervisorName,
+        row.designation,
+        row.department,
+        row.researchArea,
+        String(row.serialNo),
+      ]),
+  );
+  const choices = (values: string[]) =>
+    [...new Set(values)].sort().map((value) => ({ value, label: value }));
+
   return (
     <div>
       <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
@@ -295,10 +314,42 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
         public Supervisors page. Download the list as CSV, or upload a CSV to add and
         update rows. Removing a row stays on the Remove button.
       </p>
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "department",
+            label: "Department",
+            value: department,
+            options: choices(rows.map((row) => row.department)),
+            onChange: setDepartment,
+          },
+          {
+            id: "designation",
+            label: "Designation",
+            value: designation,
+            options: choices(rows.map((row) => row.designation)),
+            onChange: setDesignation,
+          },
+        ]}
+        shown={visible.length}
+        total={rows.length}
+        filename="supervisor-vacancies-filtered.csv"
+        headers={vacancyColumns}
+        rows={visible.map((row) => [
+          String(row.serialNo),
+          row.supervisorName,
+          row.designation,
+          row.department,
+          row.researchArea,
+          String(row.vacancyCount),
+        ])}
+      />
       <SpreadsheetBar
         filename="supervisor-vacancies.csv"
         headers={vacancyColumns}
-        rows={rows.map((row) => [
+        rows={visible.map((row) => [
           String(row.serialNo),
           row.supervisorName,
           row.designation,
@@ -423,7 +474,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {visible.map((row) => (
               <tr key={row.id} className="border-t border-border">
                 <td className="px-3 py-3 align-top">{row.serialNo}</td>
                 <td className="px-3 py-3 align-top">

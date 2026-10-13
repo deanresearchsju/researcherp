@@ -81,13 +81,6 @@ export function SupervisorReceiptView({ receipt }: { receipt: SupervisorReceipt 
           {supervisorFormCopy.successNote}
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
-          <button
-            type="button"
-            className={buttonVariants({ variant: "gold" })}
-            onClick={() => window.print()}
-          >
-            Download application PDF
-          </button>
           <Link href="/" className={buttonVariants({ variant: "outline" })}>
             Back to home
           </Link>

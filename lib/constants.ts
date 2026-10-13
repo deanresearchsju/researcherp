@@ -11,13 +11,8 @@ export const university = {
   email: "deanresearch.sju@dmifoundations.org",
   phone: "+914220000000",
   phoneDisplay: "+91 422 000 0000",
-  hours: "Monday to Friday, 9:30 AM – 5:00 PM",
-  addressLines: [
-    "Center for Research",
-    "St. Joseph University",
-    "Campus address to be confirmed",
-    "Tamil Nadu, India",
-  ],
+  hours: "Monday to Friday, 8:30 AM – 4:00 PM",
+  addressLines: ["Center for Research", "St. Joseph University", "Tamil Nadu, India"],
   bank: {
     accountName: "St. Joseph University",
     accountNumber: "To be confirmed",
@@ -34,6 +29,10 @@ export const university = {
 } as const;
 
 export const copyrightYear = 2026;
+
+export const footerCredit = {
+  designedBy: "Dr.Kalaiarasan C, Assistant Professor",
+} as const;
 
 /** Stable preview date so pages do not call `new Date()` during prerender. */
 export const referenceDate = "2026-10-13";
@@ -62,14 +61,25 @@ export const storageKeys = {
   supervisorDraft: "sju-sup-draft",
   supervisorSeq: "sju-sup-seq",
   portalUsers: "sju-portal-users",
+  mustReset: "sju-must-reset",
   scholarRecords: "sju-scholar-records",
   allocations: "sju-allocations",
   racProposals: "sju-rac-proposals",
   siteSettings: "sju-site-settings",
+  doctoral: "sju-doctoral",
+  thesisPanels: "sju-thesis-panels",
+  admission: "sju-admission",
+  register: "sju-research-register",
+  officeView: "sju-office-view",
+  newsBoard: "sju-news-board",
+  researchAreas: "sju-research-areas",
+  menuRights: "sju-menu-rights",
+  profilePhotos: "sju-profile-photo",
 } as const;
 
 export const sessionStorageKey = "sju-research-session";
 export const sessionEventName = "sju-session";
+export const officeViewEventName = "sju-office-view-change";
 
 const kb = (value: number) => value * 1024;
 const mb = (value: number) => value * 1024 * 1024;
@@ -81,6 +91,20 @@ export const fileLimits = {
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
     label: "JPG or PNG, 200–600 KB",
+  },
+  teamPhoto: {
+    minBytes: 1,
+    maxBytes: Number.MAX_SAFE_INTEGER,
+    types: ["image/jpeg", "image/png"],
+    accept: "image/jpeg,image/png",
+    label: "JPG or PNG, any size",
+  },
+  newsPoster: {
+    minBytes: 1,
+    maxBytes: 2 * 1024 * 1024,
+    types: ["image/jpeg", "image/png"],
+    accept: "image/jpeg,image/png",
+    label: "JPG or PNG, up to 2 MB",
   },
   scholarSignature: {
     minBytes: kb(20),
@@ -126,10 +150,32 @@ export const genders = ["Male", "Female", "Other"] as const;
 export const sexes = ["Male", "Female", "Other"] as const;
 export const maritalStatuses = ["Single", "Married", "Other"] as const;
 export const bloodGroups = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] as const;
-export const studyModes = ["Full-Time", "Part-Time"] as const;
+export const studyModes = [
+  "Full time",
+  "Part time (Internal)",
+  "Part time (External)",
+] as const;
+
+export type StudyMode = (typeof studyModes)[number];
+
+export const partTimeModes = ["Part time (Internal)", "Part time (External)"] as const;
+
+export function isPartTimeMode(value: string) {
+  return value.toLowerCase().replaceAll("-", " ").includes("part time");
+}
 export const yesNo = ["Yes", "No"] as const;
 export const paymentModes = ["UPI", "Net Banking"] as const;
-export const indexingOptions = ["Scopus", "SCI", "WOS", "Peer Reviewed", "None"] as const;
+export const indexingOptions = [
+  "Scopus",
+  "WOS",
+  "SCI",
+  "SCIE",
+  "SEI",
+  "Peer Reviewed",
+  "None",
+] as const;
+
+export const indexedSources = ["WOS", "SCI", "SCIE", "SEI"] as const;
 export const months = [
   "January",
   "February",

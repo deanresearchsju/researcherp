@@ -13,6 +13,7 @@ import {
   researchWordLimit,
   sexes,
   studyModes,
+  isPartTimeMode,
   titles,
   yesNo,
 } from "@/lib/constants";
@@ -197,7 +198,7 @@ export const scholarSchema = z
     const complete = value.experience.filter(
       (row) => row.organization.trim() && row.designation.trim() && row.from && row.to,
     );
-    if (value.studyMode === "Part-Time" && complete.length === 0) {
+    if (isPartTimeMode(value.studyMode) && complete.length === 0) {
       ctx.addIssue({
         code: "custom",
         message:
@@ -207,12 +208,12 @@ export const scholarSchema = z
     }
     value.experience.forEach((row, index) => {
       const started = rowFilled(row, ["organization", "designation", "from", "to"]);
-      if (!started && value.studyMode !== "Part-Time") return;
+      if (!started && !isPartTimeMode(value.studyMode)) return;
       if (!started && complete.length > 0) return;
-      if (value.studyMode === "Part-Time" && !started && index > 0) return;
+      if (isPartTimeMode(value.studyMode) && !started && index > 0) return;
       if (
         !started &&
-        value.studyMode === "Part-Time" &&
+        isPartTimeMode(value.studyMode) &&
         index === 0 &&
         complete.length === 0
       ) {

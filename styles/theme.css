@@ -42,7 +42,7 @@
   --color-maroon: var(--maroon);
   --color-purple-deep: var(--purple-deep);
   --font-sans: var(--font-inter), "Segoe UI", sans-serif;
-  --font-heading: var(--font-playfair), Georgia, "Times New Roman", serif;
+  --font-heading: var(--font-inter), "Segoe UI", sans-serif;
   --radius-xl: 0.75rem;
 }
 

@@ -18,14 +18,19 @@ function SheetContent({
   className,
   children,
   title,
+  side = "right",
   ...props
-}: React.ComponentProps<typeof Dialog.Content> & { title: string }) {
+}: React.ComponentProps<typeof Dialog.Content> & {
+  title: string;
+  side?: "left" | "right";
+}) {
   return (
     <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-50 bg-purple-deep/40" />
       <Dialog.Content
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex w-[min(100%,22rem)] flex-col bg-white shadow-lift",
+          "fixed inset-y-0 z-50 flex w-[min(100%,18rem)] flex-col bg-white shadow-lift",
+          side === "left" ? "left-0" : "right-0",
           className,
         )}
         {...props}

@@ -110,6 +110,14 @@ const monthNames = [
   "December",
 ];
 
+export function clientToday() {
+  if (typeof window === "undefined") return referenceDate;
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 export function formatIsoDate(iso: string) {
   if (!isValidIsoDate(iso)) return iso;
   const [year, month, day] = iso.split("-").map(Number);

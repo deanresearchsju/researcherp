@@ -1,5 +1,11 @@
 import { vacancySeed, type VacancySeed } from "@/data/vacancies";
 import { createSupabase } from "@/lib/supabase/client";
+import {
+  netAllotments,
+  sameGuide,
+  supervisorForGuide,
+  type GuideAllotment,
+} from "@/lib/register";
 
 export type Vacancy = VacancySeed & { id: string };
 
@@ -84,4 +90,39 @@ export async function loadVacancies(): Promise<VacancyLoad> {
   }
 
   return { rows: data.map(mapVacancy), source: "database", detail: null };
+}
+
+export async function syncAllottedVacancies(
+  allocations: readonly GuideAllotment[],
+  names: readonly string[],
+) {
+  const supabase = createSupabase();
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from("supervisor_vacancies")
+    .select("id, supervisor_name, vacancy_count");
+  if (error || !data) return;
+  for (const row of data) {
+    if (
+      !names.some(
+        (name) => name === row.supervisor_name || sameGuide(name, row.supervisor_name),
+      )
+    ) {
+      continue;
+    }
+    const seed = vacancySeed.find(
+      (item) =>
+        item.supervisorName === row.supervisor_name ||
+        sameGuide(item.supervisorName, row.supervisor_name),
+    );
+    if (!seed) continue;
+    const supervisor = supervisorForGuide(row.supervisor_name);
+    const extra = supervisor ? netAllotments(supervisor, allocations) : 0;
+    const vacancy = Math.max(0, seed.vacancyCount - extra);
+    if (vacancy === row.vacancy_count) continue;
+    await supabase
+      .from("supervisor_vacancies")
+      .update({ vacancy_count: vacancy })
+      .eq("id", row.id);
+  }
 }

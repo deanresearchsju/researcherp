@@ -11,11 +11,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { schools } from "@/data/schools";
 import { sectionCopy } from "@/data/sections";
+import { currentResearchAreas, subscribeResearchAreas } from "@/lib/research-areas";
 import { cn } from "@/lib/utils";
 import type { SchoolIcon } from "@/types";
 
@@ -30,7 +31,12 @@ const icons: Record<SchoolIcon, LucideIcon> = {
 };
 
 export function ResearchAreas() {
-  const [activeId, setActiveId] = useState(schools[0]?.id ?? "");
+  const schools = useSyncExternalStore(
+    subscribeResearchAreas,
+    currentResearchAreas,
+    currentResearchAreas,
+  );
+  const [activeId, setActiveId] = useState("");
   const active = schools.find((school) => school.id === activeId) ?? schools[0];
   const copy = sectionCopy.schools;
   const ActiveIcon = active ? icons[active.icon] : Cpu;
@@ -46,15 +52,11 @@ export function ResearchAreas() {
   return (
     <section
       id="research-areas"
-      className="py-16 sm:py-24"
+      className="scroll-mt-24 py-8 sm:py-10"
       aria-labelledby="schools-title"
     >
       <Container>
-        <SectionHeading
-          eyebrow={copy.eyebrow}
-          title={copy.title}
-          id="schools-title"
-        />
+        <SectionHeading eyebrow={copy.eyebrow} title={copy.title} id="schools-title" />
         <div
           className="mt-8 flex flex-wrap gap-2"
           role="tablist"

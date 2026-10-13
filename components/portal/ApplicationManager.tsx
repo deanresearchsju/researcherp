@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -148,6 +149,9 @@ export function ApplicationManager({
   const [rows, setRows] = useState(records);
   const [notice, setNotice] = useState<string | null>(detail);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const canUpload = detail === null;
 
   async function onStatus(row: StoredApplication, status: string) {
@@ -220,8 +224,20 @@ export function ApplicationManager({
     setNotice(problems.length ? `${summary} ${problems.slice(0, 3).join(" ")}` : summary);
   }
 
-  const phd = rows.filter((row) => row.kind === "phd");
-  const supervisors = rows.filter((row) => row.kind === "supervisor");
+  const visible = rows.filter(
+    (row) =>
+      (kindFilter === "" || row.kind === kindFilter) &&
+      (statusFilter === "" || row.status === statusFilter) &&
+      textMatches(query, [
+        row.applicationNo,
+        row.applicantName,
+        row.email,
+        row.status,
+        row.studyMode ?? "",
+      ]),
+  );
+  const phd = visible.filter((row) => row.kind === "phd");
+  const supervisors = visible.filter((row) => row.kind === "supervisor");
 
   return (
     <div>
@@ -234,10 +250,47 @@ export function ApplicationManager({
         public forms. Download them as CSV, upload a CSV to change status, or remove a
         record. New applications are still created by the public forms.
       </p>
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "kind",
+            label: "Application",
+            value: kindFilter,
+            options: [
+              { value: "phd", label: "Ph.D." },
+              { value: "supervisor", label: "Supervisor recognition" },
+            ],
+            onChange: setKindFilter,
+          },
+          {
+            id: "status",
+            label: "Status",
+            value: statusFilter,
+            options: applicationStatuses.map((status) => ({ value: status, label: status })),
+            onChange: setStatusFilter,
+          },
+        ]}
+        shown={visible.length}
+        total={rows.length}
+        filename="applications-filtered.csv"
+        headers={applicationColumns}
+        rows={visible.map((row) => [
+          row.kind,
+          row.applicationNo,
+          row.applicantName,
+          row.email,
+          row.dateOfBirth.slice(0, 10),
+          row.studyMode ?? "",
+          row.status,
+          row.createdAt.slice(0, 10),
+        ])}
+      />
       <SpreadsheetBar
         filename="applications.csv"
         headers={applicationColumns}
-        rows={rows.map((row) => [
+        rows={visible.map((row) => [
           row.kind,
           row.applicationNo,
           row.applicantName,

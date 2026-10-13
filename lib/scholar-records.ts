@@ -244,9 +244,7 @@ export async function loadScholarRecords(
   const remoteIds = new Set(remote.map((record) => record.id));
   const localExtras = readBrowserRecords().filter(
     (record) =>
-      record.kind === kind &&
-      record.id.startsWith("local-") &&
-      !remoteIds.has(record.id),
+      record.kind === kind && record.id.startsWith("local-") && !remoteIds.has(record.id),
   );
   return {
     records: [...localExtras, ...remote],
@@ -367,6 +365,39 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
   return { ok: true as const };
 }
 
+export async function annotateScholarRecord(
+  record: ScholarRecord,
+  patch: { status?: RecordStatus; extra?: Record<string, string> },
+) {
+  const next: ScholarRecord = {
+    ...record,
+    status: patch.status ?? record.status,
+    payload: { ...record.payload, ...patch.extra },
+  };
+  const cached = caches.get(record.kind);
+  if (cached?.source === "database" && !record.id.startsWith("local-")) {
+    const supabase = createSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase
+      .from("scholar_records")
+      .update({ status: next.status, payload: toJson(next.payload) })
+      .eq("id", record.id);
+    if (error) return false;
+  } else {
+    const records = readBrowserRecords().map((item) =>
+      item.id === record.id ? next : item,
+    );
+    writeBrowserRecords(records);
+  }
+  if (cached) {
+    publish(record.kind, {
+      ...cached,
+      records: cached.records.map((item) => (item.id === record.id ? next : item)),
+    });
+  }
+  return true;
+}
+
 export async function setScholarRecordStatus(
   record: ScholarRecord,
   status: RecordStatus,
@@ -436,6 +467,23 @@ export function recordSchema(menu: ScholarRecordMenu) {
         .string()
         .trim()
         .regex(/^\d+(\.\d{1,2})?$/, "Enter the amount.");
+      continue;
+    }
+    if (field.name === "year") {
+      shape[field.name] = z
+        .string()
+        .trim()
+        .regex(/^20\d{2}$/, "Enter a year such as 2026.");
+      continue;
+    }
+    if (field.kind === "doi") {
+      shape[field.name] = z
+        .string()
+        .trim()
+        .refine(
+          (value) => value === "" || /^10\.\d{4,9}\/\S+$/.test(value),
+          "Enter a DOI such as 10.1000/journal.1.",
+        );
       continue;
     }
     if (field.kind === "select") {

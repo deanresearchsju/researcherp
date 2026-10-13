@@ -41,17 +41,10 @@ export function Navbar() {
       <div className="bg-primary text-primary-foreground">
         <div className="mx-auto flex h-9 w-full max-w-7xl items-center justify-end gap-3 px-4 text-xs sm:gap-5 sm:px-6 sm:text-sm lg:px-8">
           {loginRoles.map((role) => (
-            <Link
-              key={role}
-              href={`/login/${role}`}
-              className="hover:text-accent"
-            >
+            <Link key={role} href={`/login/${role}`} className="hover:text-accent">
               {roleProfiles[role].label}
             </Link>
           ))}
-          <Link href="/apply" className="font-semibold text-accent hover:underline">
-            Apply for Ph.D.
-          </Link>
         </div>
       </div>
       <div className="mx-auto flex h-[4.25rem] w-full max-w-7xl items-center gap-8 px-4 sm:px-6 lg:gap-10 lg:px-8">

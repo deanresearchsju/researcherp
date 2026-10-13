@@ -1,9 +1,6 @@
-import Link from "next/link";
-
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { admissionGlance } from "@/data/admission";
-import { homeCopy } from "@/data/home";
 
 export function AdmissionGlance() {
   return (
@@ -28,12 +25,6 @@ export function AdmissionGlance() {
             </li>
           ))}
         </ol>
-        <Link
-          href="/admission"
-          className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline"
-        >
-          {homeCopy.admissionLink}
-        </Link>
       </Container>
     </section>
   );

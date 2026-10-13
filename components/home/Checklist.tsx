@@ -2,14 +2,12 @@ import { Reveal } from "@/components/home/Reveal";
 import { Badge } from "@/components/ui/badge";
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
-import Link from "next/link";
 
 import { checklist } from "@/data/checklist";
 import { sectionCopy } from "@/data/sections";
 
 export function Checklist() {
   const documents = sectionCopy.documents;
-  const files = sectionCopy.downloads;
 
   return (
     <section
@@ -40,12 +38,6 @@ export function Checklist() {
             </Reveal>
           ))}
         </ul>
-
-        <p className="mt-8 text-sm">
-          <Link href="/downloads" className="font-semibold text-primary hover:underline">
-            {files.title}
-          </Link>
-        </p>
       </Container>
     </section>
   );

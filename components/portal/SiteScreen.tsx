@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 
+import { useClientReady } from "@/components/forms/ClientGate";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -11,13 +12,13 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   currentOffice,
   defaultSiteSettings,
-  officeMigrationHint,
   saveSiteSettings,
   subscribeOffice,
   type SiteSettings,
 } from "@/lib/office";
 
 export function SiteScreen() {
+  const ready = useClientReady();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const [notice, setNotice] = useState<string | null>(null);
   const form = useForm<SiteSettings>({
@@ -29,6 +30,8 @@ export function SiteScreen() {
     setNotice("Home page and application window saved.");
   }
 
+  if (!ready) return <p className="text-sm text-muted-foreground">Loading…</p>;
+
   return (
     <div>
       <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
@@ -36,11 +39,12 @@ export function SiteScreen() {
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Home and admissions</h1>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Change the home-page introduction and admission dates, and open or close the Ph.D. and supervisor applications.
+        Change the home-page introduction and admission dates, and open or close the Ph.D.
+        and supervisor applications.
       </p>
       {office?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
-          {office.detail} {officeMigrationHint}
+          {office.detail}
         </p>
       ) : null}
       {notice ? (

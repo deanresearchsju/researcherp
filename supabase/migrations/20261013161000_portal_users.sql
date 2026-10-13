@@ -40,12 +40,3 @@ create policy portal_users_public
   to anon, authenticated
   using (true)
   with check (true);
-
-insert into public.portal_users (role, name, identifier, password)
-values
-  ('scholar', 'Sample Scholar', 'scholar@example.com', 'Scholar@2026'),
-  ('scholar', 'Sample Scholar', 'SJU/PHD/2026/0001', 'Scholar@2026'),
-  ('supervisor', 'Test Supervisor', 'supervisor@sju.test', 'Guide@2026'),
-  ('supervisor', 'Test Supervisor', 'SUP-1001', 'Guide@2026'),
-  ('admin', 'Research office', 'admin', 'Office@2026')
-on conflict (role, identifier) do nothing;

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { SupervisorCTA } from "@/components/home/SupervisorCTA";
 import { Container } from "@/components/ui/container";
 import { VacancyList } from "@/components/vacancies/VacancyList";
 import { university } from "@/lib/constants";
@@ -21,17 +20,14 @@ async function VacancyBoard() {
 
 export default function SupervisorsPage() {
   return (
-    <>
-      <SupervisorCTA />
-      <Suspense
-        fallback={
-          <Container className="pb-16">
-            <p className="text-sm text-muted-foreground">Loading the vacancy list…</p>
-          </Container>
-        }
-      >
-        <VacancyBoard />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <Container className="pb-16">
+          <p className="text-sm text-muted-foreground">Loading the vacancy list…</p>
+        </Container>
+      }
+    >
+      <VacancyBoard />
+    </Suspense>
   );
 }

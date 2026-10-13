@@ -7,8 +7,9 @@ export type VacancySeed = {
   vacancyCount: number;
 };
 
-/** Office list: vacancy after Ph.D. July 2027 admission. */
-export const vacancyNote = "Vacancy after Ph.D. July 2027 admission";
+export const vacancyListTitle = "List of Research Supervisors and Vacancy Position";
+
+export const vacancyListNote = "(Vacancy after Ph.D. July 2027 admission)";
 
 export const vacancySeed: VacancySeed[] = [
   {

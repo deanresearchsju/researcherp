@@ -1,4 +1,6 @@
-import type { Announcement } from "@/types";
+import type { Announcement, NewsItem } from "@/types";
+
+export const newsKinds = ["News", "Event"] as const;
 
 export const announcements: Announcement[] = [
   {
@@ -47,3 +49,14 @@ export const announcements: Announcement[] = [
       "Newly admitted scholars register for Research Methodology and Research Publication & Ethics in the first semester.",
   },
 ];
+
+const eventIds = new Set(["written-test", "colloquium-nov"]);
+
+export const newsSeed: NewsItem[] = announcements.map((item) => ({
+  id: item.id,
+  kind: eventIds.has(item.id) ? "Event" : "News",
+  title: item.title,
+  isoDate: item.isoDate,
+  summary: item.summary,
+  image: null,
+}));

@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 
-import { AdmissionGlance } from "@/components/home/AdmissionGlance";
 import { Hero } from "@/components/home/Hero";
-import { LatestAnnouncements } from "@/components/home/LatestAnnouncements";
-import { ProgrammesGlance } from "@/components/home/ProgrammesGlance";
-import { QuickAccess } from "@/components/home/QuickAccess";
-import { SchoolsPreview } from "@/components/home/SchoolsPreview";
+import { ResearchAreas } from "@/components/home/ResearchAreas";
+import { ResearchHighlights } from "@/components/home/ResearchHighlights";
 import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -32,11 +29,8 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
       <Hero />
-      <QuickAccess />
-      <SchoolsPreview />
-      <ProgrammesGlance />
-      <AdmissionGlance />
-      <LatestAnnouncements />
+      <ResearchHighlights />
+      <ResearchAreas />
     </>
   );
 }

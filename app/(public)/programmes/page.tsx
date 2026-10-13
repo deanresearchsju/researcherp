@@ -5,9 +5,9 @@ import { FeeCards } from "@/components/home/FeeCards";
 import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Programmes and fees",
+  title: "Programmes",
   description: `Full-time and part-time Ph.D. fees at ${university.name}.`,
-  alternates: { canonical: "/programmes-fees" },
+  alternates: { canonical: "/programmes" },
 };
 
 export default function ProgrammesPage() {

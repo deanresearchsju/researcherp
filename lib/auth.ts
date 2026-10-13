@@ -21,6 +21,7 @@ export type PreviewSession = {
   role: Role;
   identifier: string;
   name: string;
+  mustReset: boolean;
 };
 
 const dashboards: Record<Role, string> = {
@@ -28,6 +29,10 @@ const dashboards: Record<Role, string> = {
   supervisor: "/supervisor/dashboard",
   admin: "/admin/dashboard",
 };
+
+export function portalHome(role: Role) {
+  return dashboards[role];
+}
 
 export async function mockLogin(input: LoginInput): Promise<LoginResult> {
   await new Promise((resolve) => setTimeout(resolve, 700));
@@ -51,6 +56,7 @@ export async function mockLogin(input: LoginInput): Promise<LoginResult> {
     role: input.role,
     identifier: input.identifier.trim(),
     name: recognised.name,
+    mustReset: recognised.mustReset,
   };
 
   if (typeof window !== "undefined") {
@@ -62,7 +68,10 @@ export async function mockLogin(input: LoginInput): Promise<LoginResult> {
     notifySessionChange();
   }
 
-  return { ok: true, redirectTo: dashboards[input.role] };
+  return {
+    ok: true,
+    redirectTo: recognised.mustReset ? "/login/reset" : dashboards[input.role],
+  };
 }
 
 export function readPreviewSession(): PreviewSession | null {
@@ -74,10 +83,21 @@ export function readPreviewSession(): PreviewSession | null {
   try {
     const parsed = JSON.parse(raw) as PreviewSession;
     if (!parsed.identifier || !parsed.role) return null;
-    return { ...parsed, name: parsed.name ?? "" };
+    return { ...parsed, name: parsed.name ?? "", mustReset: parsed.mustReset === true };
   } catch {
     return null;
   }
+}
+
+export function replacePreviewSession(session: PreviewSession) {
+  if (typeof window === "undefined") return;
+  const payload = JSON.stringify(session);
+  if (window.localStorage.getItem(sessionStorageKey)) {
+    window.localStorage.setItem(sessionStorageKey, payload);
+  } else {
+    window.sessionStorage.setItem(sessionStorageKey, payload);
+  }
+  notifySessionChange();
 }
 
 export function clearPreviewSession() {

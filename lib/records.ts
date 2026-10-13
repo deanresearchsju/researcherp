@@ -215,6 +215,34 @@ export async function updateApplicationStatus(
   return !error;
 }
 
+export async function decideSupervisorApplication(
+  id: string,
+  payload: Json,
+  status: "Approved" | "Rejected",
+  remarks: string,
+  approvedQuota?: number,
+) {
+  const supabase = createSupabase();
+  if (!supabase) return false;
+  const current =
+    payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const { error } = await supabase
+    .from("supervisor_applications")
+    .update({
+      status,
+      payload: toJson({
+        ...current,
+        officeDecision: status,
+        officeRemarks: remarks.trim(),
+        ...(status === "Approved" && approvedQuota !== undefined
+          ? { approvedQuota }
+          : {}),
+      }),
+    })
+    .eq("id", id);
+  return !error;
+}
+
 export async function deleteApplication(kind: ApplicationKind, id: string) {
   const supabase = createSupabase();
   if (!supabase) return false;

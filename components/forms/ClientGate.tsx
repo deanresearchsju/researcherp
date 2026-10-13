@@ -2,6 +2,14 @@
 
 import { useSyncExternalStore, type ReactNode } from "react";
 
+export function useClientReady() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 export function ClientGate({
   children,
   fallback,

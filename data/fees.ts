@@ -9,13 +9,19 @@ export const applicationFee = {
 export const feeGlance = [
   {
     id: "full-time",
-    name: "Full Time",
+    name: "Full time",
     line: "Minimum 3 years",
     fee: "₹70,000 per year",
   },
   {
-    id: "part-time",
-    name: "Part Time",
+    id: "part-time-internal",
+    name: "Part time (Internal)",
+    line: "Minimum 4 years",
+    fee: "₹50,000 per year",
+  },
+  {
+    id: "part-time-external",
+    name: "Part time (External)",
     line: "Minimum 4 years",
     fee: "₹50,000 per year",
   },
@@ -30,7 +36,7 @@ export const feeGlance = [
 export const feePlans: FeePlan[] = [
   {
     id: "full-time",
-    name: "Full Time",
+    name: "Full time",
     duration: "Minimum 3 years",
     annualFee: "₹70,000",
     period: "per year",
@@ -46,7 +52,7 @@ export const feePlans: FeePlan[] = [
   },
   {
     id: "part-time-internal",
-    name: "Part Time Internal",
+    name: "Part time (Internal)",
     duration: "Minimum 4 years",
     annualFee: "₹50,000",
     period: "per year",
@@ -60,7 +66,7 @@ export const feePlans: FeePlan[] = [
   },
   {
     id: "part-time-external",
-    name: "Part Time External",
+    name: "Part time (External)",
     duration: "Minimum 4 years",
     annualFee: "₹50,000",
     period: "per year",

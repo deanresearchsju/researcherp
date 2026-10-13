@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
+import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { Portrait } from "@/components/portal/Portrait";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { scholarRecordMenus } from "@/data/scholar-records";
@@ -14,22 +16,45 @@ import {
   sameId,
   subscribeOffice,
 } from "@/lib/office";
+import { currentPortraits, portraitFor, subscribePortraits } from "@/lib/portraits";
 import { currentPortalUsers, subscribePortalUsers, type PortalUser } from "@/lib/users";
 
 export function PeopleScreen() {
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
-  const users = useSyncExternalStore(subscribePortalUsers, currentPortalUsers, () => null);
+  const users = useSyncExternalStore(
+    subscribePortalUsers,
+    currentPortalUsers,
+    () => null,
+  );
+  const portraits = useSyncExternalStore(
+    subscribePortraits,
+    currentPortraits,
+    () => null,
+  );
   const [person, setPerson] = useState<PortalUser | null>(null);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
 
   if (!office || !users) {
     return <p className="text-sm text-muted-foreground">Loading people…</p>;
   }
 
-  const scholars = users.users.filter((user) => user.role === "scholar");
-  const supervisors = users.users.filter((user) => user.role === "supervisor");
+  const people = users.users.filter(
+    (user) => user.role === "scholar" || user.role === "supervisor",
+  );
+  const visible = people.filter(
+    (user) =>
+      (roleFilter === "" || user.role === roleFilter) &&
+      textMatches(query, [user.name, user.identifier, user.role]),
+  );
+  const scholars = visible.filter((user) => user.role === "scholar");
+  const supervisors = visible.filter((user) => user.role === "supervisor");
 
   function recordsFor(identifier: string) {
-    return office?.records.filter((record) => sameId(record.scholarIdentifier, identifier)) ?? [];
+    return (
+      office?.records.filter((record) => sameId(record.scholarIdentifier, identifier)) ??
+      []
+    );
   }
 
   return (
@@ -39,8 +64,30 @@ export function PeopleScreen() {
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">People</h1>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Open one scholar or supervisor and read the menus on their record. This view is for the office only.
+        Open one scholar or supervisor and read the menus on their record. This view is
+        for the office only.
       </p>
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "role",
+            label: "Role",
+            value: roleFilter,
+            options: [
+              { value: "scholar", label: "Scholar" },
+              { value: "supervisor", label: "Supervisor" },
+            ],
+            onChange: setRoleFilter,
+          },
+        ]}
+        shown={visible.length}
+        total={people.length}
+        filename="people.csv"
+        headers={["role", "name", "identifier"]}
+        rows={visible.map((user) => [user.role, user.name, user.identifier])}
+      />
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         {[
           ["Scholars", scholars],
@@ -50,12 +97,20 @@ export function PeopleScreen() {
             <h2 className="font-semibold text-primary">{String(title)}</h2>
             <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-card">
               {(list as PortalUser[]).map((user) => (
-                <li key={user.id} className="flex items-center justify-between gap-3 px-3 py-3">
+                <li
+                  key={user.id}
+                  className="flex items-center justify-between gap-3 px-3 py-3"
+                >
                   <div>
                     <p className="font-semibold text-primary">{user.name}</p>
                     <p className="text-sm text-muted-foreground">{user.identifier}</p>
                   </div>
-                  <Button type="button" size="sm" variant="outline" onClick={() => setPerson(user)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPerson(user)}
+                  >
                     View
                   </Button>
                 </li>
@@ -67,10 +122,18 @@ export function PeopleScreen() {
 
       {person ? (
         <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">{person.name}</h2>
-          <p className="text-sm text-muted-foreground">
-            {person.role} · {person.identifier}
-          </p>
+          <div className="flex flex-wrap items-start gap-4">
+            <Portrait
+              src={portraitFor(portraits, person.identifier, person.name)}
+              name={person.name}
+            />
+            <div>
+              <h2 className="font-heading text-2xl text-primary">{person.name}</h2>
+              <p className="text-sm text-muted-foreground">
+                {person.role} · {person.identifier}
+              </p>
+            </div>
+          </div>
           {person.role === "scholar" ? (
             <div className="mt-4 space-y-4">
               <p className="text-sm">
@@ -80,7 +143,9 @@ export function PeopleScreen() {
               </p>
               <PresentLine identifier={person.identifier} />
               {scholarRecordMenus.map((menu) => {
-                const rows = recordsFor(person.identifier).filter((record) => record.kind === menu.kind);
+                const rows = recordsFor(person.identifier).filter(
+                  (record) => record.kind === menu.kind,
+                );
                 return (
                   <div key={menu.kind}>
                     <h3 className="font-semibold text-primary">{menu.label}</h3>
@@ -89,11 +154,15 @@ export function PeopleScreen() {
                     ) : (
                       rows.map((record) => (
                         <div key={record.id} className="mt-2 text-sm">
-                          <Badge variant={record.status === "Approved" ? "gold" : "purple"}>
+                          <Badge
+                            variant={record.status === "Approved" ? "gold" : "purple"}
+                          >
                             {record.status}
                           </Badge>
                           <span className="ml-2 text-muted-foreground">
-                            {record.createdAt ? formatIsoDate(record.createdAt.slice(0, 10)) : ""}
+                            {record.createdAt
+                              ? formatIsoDate(record.createdAt.slice(0, 10))
+                              : ""}
                           </span>
                           {menu.fields.map((field) => (
                             <p key={field.name}>
@@ -122,8 +191,8 @@ function PresentLine({ identifier }: { identifier: string }) {
   if (!present) return <p className="text-sm">RAC: not constituted.</p>;
   return (
     <p className="text-sm">
-      RAC: {present.guide} (guide), {present.internal.name} (internal), {present.external.name}{" "}
-      (external)
+      RAC: {present.guide} (guide), {present.internal.name} (internal),{" "}
+      {present.external.name} (external)
     </p>
   );
 }
@@ -131,8 +200,12 @@ function PresentLine({ identifier }: { identifier: string }) {
 function SupervisorFile({ identifier, name }: { identifier: string; name: string }) {
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   if (!office) return null;
-  const scholars = office.allocations.filter((item) => sameId(item.supervisorIdentifier, identifier));
-  const proposals = office.proposals.filter((item) => sameId(item.supervisorIdentifier, identifier));
+  const scholars = office.allocations.filter((item) =>
+    sameId(item.supervisorIdentifier, identifier),
+  );
+  const proposals = office.proposals.filter((item) =>
+    sameId(item.supervisorIdentifier, identifier),
+  );
   return (
     <div className="mt-4 space-y-4 text-sm">
       <div>
@@ -159,9 +232,10 @@ function SupervisorFile({ identifier, name }: { identifier: string; name: string
               </p>
               {item.nominees.map((nominee) => (
                 <p key={nominee.key}>
-                  {nominee.side}: {nominee.name}, {nominee.designation}, {nominee.institution},{" "}
-                  {nominee.email}
-                  {item.selectedInternal === nominee.key || item.selectedExternal === nominee.key
+                  {nominee.side}: {nominee.name}, {nominee.designation},{" "}
+                  {nominee.institution}, {nominee.email}
+                  {item.selectedInternal === nominee.key ||
+                  item.selectedExternal === nominee.key
                     ? " · selected"
                     : ""}
                 </p>

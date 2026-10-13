@@ -1,4 +1,10 @@
-import type { FileLimitKey } from "@/lib/constants";
+import {
+  indexingOptions,
+  months,
+  partTimeModes,
+  studyModes,
+  type FileLimitKey,
+} from "@/lib/constants";
 
 export const scholarRecordKinds = [
   "abc_id",
@@ -24,7 +30,7 @@ export const recordStatuses = [
 export type RecordStatus = (typeof recordStatuses)[number];
 
 export type RecordFieldKind =
-  "text" | "email" | "tel" | "date" | "amount" | "textarea" | "select";
+  "text" | "email" | "tel" | "date" | "amount" | "textarea" | "select" | "doi";
 
 export type RecordField = {
   name: string;
@@ -48,7 +54,6 @@ export type ScholarRecordMenu = {
   fields: readonly RecordField[];
 };
 
-const studyModes = ["Full-Time", "Part-Time"] as const;
 const paymentModes = ["UPI", "Net Banking"] as const;
 
 export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
@@ -118,7 +123,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
       },
       {
         name: "studyMode",
-        label: "Study mode",
+        label: "Mode of study",
         kind: "select",
         required: true,
         options: studyModes,
@@ -232,6 +237,13 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     needsSupervisor: false,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
+      {
+        name: "requestedMode",
+        label: "Requested mode of study",
+        kind: "select",
+        required: true,
+        options: partTimeModes,
+      },
       { name: "employer", label: "Employer", kind: "text", required: true, minLength: 2 },
       {
         name: "reason",
@@ -247,25 +259,65 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     kind: "publication",
     label: "Publications",
     summary:
-      "Add a publication. Your supervisor reviews it, then the research office.",
+      "Upload a journal article, book, book chapter, or conference paper. Your supervisor reviews it, then the research office. A DOI is checked before it is saved.",
     single: false,
     fileLabel: "First page of the paper",
     fileRequired: false,
     fileRule: "document",
     needsSupervisor: true,
     fields: [
+      {
+        name: "kind",
+        label: "Publication type",
+        kind: "select",
+        required: true,
+        options: ["Journal Article", "Book", "Book Chapter", "Conference Proceedings"],
+      },
       { name: "title", label: "Title", kind: "text", required: true, minLength: 2 },
       { name: "authors", label: "Authors", kind: "text", required: true, minLength: 2 },
-      { name: "journal", label: "Journal", kind: "text", required: true, minLength: 2 },
-      { name: "year", label: "Year", kind: "text", required: true, minLength: 4 },
       {
-        name: "indexing",
-        label: "Indexing",
+        name: "correspondingAuthor",
+        label: "Corresponding author",
         kind: "text",
         required: true,
         minLength: 2,
       },
-      { name: "doi", label: "DOI", kind: "text", required: false },
+      {
+        name: "position",
+        label: "Your position",
+        kind: "select",
+        required: true,
+        options: ["First Author", "Second Author", "Third Author"],
+      },
+      {
+        name: "journal",
+        label: "Journal, book, or conference",
+        kind: "text",
+        required: true,
+        minLength: 2,
+      },
+      {
+        name: "indexing",
+        label: "Indexing",
+        kind: "select",
+        required: true,
+        options: indexingOptions,
+      },
+      {
+        name: "impactFactor",
+        label: "Impact factor",
+        kind: "text",
+        required: false,
+      },
+      { name: "doi", label: "DOI", kind: "doi", required: false },
+      {
+        name: "month",
+        label: "Month",
+        kind: "select",
+        required: true,
+        options: months,
+      },
+      { name: "year", label: "Year", kind: "text", required: true, minLength: 4 },
     ],
   },
   {
@@ -273,12 +325,12 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     kind: "six_month_report",
     label: "Six-month report",
     summary:
-      "Submit the six-month progress report. Your supervisor reviews it, then the research office.",
+      "June admissions report in December and June. January admissions report in June and December. The research office approves the report or returns it with remarks.",
     single: false,
     fileLabel: "Report",
     fileRequired: true,
     fileRule: "document",
-    needsSupervisor: true,
+    needsSupervisor: false,
     fields: [
       {
         name: "period",

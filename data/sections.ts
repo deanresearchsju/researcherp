@@ -20,8 +20,8 @@ export const heroCopy = {
 export const sectionCopy = {
   announcements: {
     eyebrow: "Notices",
-    title: "Announcements",
-    description: "Dates for admission, the written test, colloquium, and course work.",
+    title: "News & Announcements",
+    description: "News and events published by the Center for Research.",
     viewAll: "View all",
     viewLess: "Show fewer",
   },
@@ -37,8 +37,6 @@ export const sectionCopy = {
   fees: {
     eyebrow: "Programmes",
     title: "Programmes and fee structure",
-    description:
-      "Three modes of Ph.D. registration. The application fee is separate from the annual research fee.",
   },
   admission: {
     eyebrow: "Admissions",
@@ -63,32 +61,6 @@ export const sectionCopy = {
     title: "Scholar journey",
     description: "The milestone path recorded for every registered scholar.",
   },
-  supervisors: {
-    eyebrow: "Faculty",
-    title: "For supervisors",
-    description:
-      "Recognition is an online application. After approval, the supervisor dashboard follows each scholar’s milestones.",
-    points: [
-      {
-        title: "Apply online",
-        detail: "Submit the recognition form with qualifications and publications.",
-      },
-      {
-        title: "Admin review",
-        detail: "The research office checks the record and the enclosures.",
-      },
-      {
-        title: "Approval or rejection by PDF mail",
-        detail: "The decision is sent as a PDF to the email on the application.",
-      },
-      {
-        title: "Supervisor dashboard",
-        detail: "After approval, recognised supervisors sign in to the portal.",
-      },
-    ],
-    cta: "Apply for recognition",
-    ctaHref: "/supervisor-recognition/apply",
-  },
   stats: {
     eyebrow: "The University",
     title: "Research in view",
@@ -101,7 +73,6 @@ export const sectionCopy = {
   faq: {
     eyebrow: "Questions",
     title: "Before you apply",
-    description: "Fees, documents, duration, course work, and the path to synopsis.",
   },
   contact: {
     eyebrow: "Helpdesk",

@@ -44,6 +44,17 @@ export type Announcement = {
   summary: string;
 };
 
+export type NewsKind = "News" | "Event";
+
+export type NewsItem = {
+  id: string;
+  kind: NewsKind;
+  title: string;
+  isoDate: string;
+  summary: string;
+  image: string | null;
+};
+
 export type FaqItem = {
   id: string;
   question: string;
@@ -108,6 +119,11 @@ export type PortalNavItem = {
   label: string;
   href: string;
   ready: boolean;
+};
+
+export type PortalNavGroup = {
+  heading: string;
+  items: PortalNavItem[];
 };
 
 export type Notice = {
