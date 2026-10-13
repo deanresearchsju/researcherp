@@ -1,0 +1,16 @@
+---
+description: Conventions for the St. Joseph University Research ERP
+globs:
+  - "**/*.{ts,tsx}"
+alwaysApply: true
+---
+
+- TypeScript is strict. Do not use `any`. Prefer explicit types from `/types`.
+- Server Components are the default. Add `"use client"` only for interactivity, browser APIs, or form state.
+- Do not hard-code page content inside components. Lists, copy, and mock records live in `/data`. The university name and contact details live in `/lib/constants.ts`.
+- Reuse the design tokens in `/styles/theme.css` and the primitives in `/components/ui`. Do not introduce one-off hex colours in components.
+- Roles are `scholar | supervisor | admin`.
+- Every form validates with zod. Client forms use react-hook-form with the zod resolver.
+- File-size and file-type limits live in `/lib/constants.ts` (`fileLimits`). Do not hard-code kilobyte limits in components.
+- Add new modules through the existing public, auth, and portal layouts. Do not rewrite shared shells for a single page.
+- Mock authentication stays in `/lib/auth.ts` until a real auth provider is introduced.

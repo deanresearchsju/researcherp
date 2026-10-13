@@ -1,0 +1,69 @@
+:root {
+  --background: #faf8fc;
+  --foreground: #1c1730;
+  --card: #ffffff;
+  --card-foreground: #1c1730;
+  --primary: #5b2a86;
+  --primary-foreground: #ffffff;
+  --secondary: #8b1e3f;
+  --secondary-foreground: #ffffff;
+  --accent: #f2c230;
+  --accent-foreground: #2c2110;
+  --muted: #f4eff8;
+  --muted-foreground: #4e4762;
+  --border: #e7dfef;
+  --input: #e4dced;
+  --ring: #5b2a86;
+  --gold: #f2c230;
+  --gold-ink: #9a6b00;
+  --maroon: #8b1e3f;
+  --purple-deep: #3d1a5c;
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gold: var(--gold);
+  --color-gold-ink: var(--gold-ink);
+  --color-maroon: var(--maroon);
+  --color-purple-deep: var(--purple-deep);
+  --font-sans: var(--font-inter), "Segoe UI", sans-serif;
+  --font-heading: var(--font-playfair), Georgia, "Times New Roman", serif;
+  --radius-xl: 0.75rem;
+}
+
+@utility shadow-card {
+  box-shadow: 0 16px 40px -28px rgb(61 26 92 / 0.55);
+}
+
+@utility shadow-lift {
+  box-shadow: 0 22px 48px -28px rgb(61 26 92 / 0.45);
+}
+
+@utility bg-hero {
+  background-image:
+    radial-gradient(ellipse 70% 55% at 100% -10%, rgb(91 42 134 / 0.14), transparent 60%),
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgb(242 194 48 / 0.2), transparent 55%),
+    linear-gradient(180deg, #faf8fc 0%, #f6f1fa 100%);
+}
+
+@utility bg-grid {
+  background-image:
+    linear-gradient(rgb(91 42 134 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(91 42 134 / 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
