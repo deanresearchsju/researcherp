@@ -55,7 +55,11 @@ export function NewsManager() {
     const saved = await saveNews(next);
     setBusy(false);
     if (!saved.ok) {
-      setError("message" in saved ? saved.message : "That item could not be saved.");
+      setError(
+        "message" in saved && saved.message
+          ? saved.message
+          : "That item could not be saved.",
+      );
       return;
     }
     setNotice(message);

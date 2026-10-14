@@ -397,15 +397,18 @@ async function loadAdmission(): Promise<AdmissionState> {
   };
 }
 
-export async function saveAdmission(next: Omit<AdmissionState, "detail">) {
+export async function saveAdmission(
+  next: Pick<AdmissionState, "cases" | "letter"> & { updatedAt?: string | null },
+) {
   const stored = { cases: next.cases, letter: next.letter };
+  const stamp = next.updatedAt ?? memory?.updatedAt ?? null;
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
     const saved = await saveJsonBlob(
       "admission_office",
       "office",
       toJson(stored),
-      memory.updatedAt,
+      stamp,
     );
     if (saved.ok) {
       publish({ ...stored, updatedAt: saved.updatedAt, detail: null });

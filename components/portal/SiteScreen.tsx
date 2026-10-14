@@ -27,7 +27,6 @@ import {
   parsePhdSession,
   saveSiteSettings,
   subscribeOffice,
-  type PhdSessionMonth,
   type SiteSettings,
 } from "@/lib/office";
 
@@ -36,13 +35,7 @@ const siteFormSchema = z.object({
   heroTitle: z.string().trim().min(1, "Enter the heading.").max(160),
   heroSummary: z.string().trim().min(1, "Enter the summary.").max(800),
   admissionLabel: z.string().trim().min(1, "Enter the status label.").max(80),
-  sessionMonth: z
-    .string()
-    .refine(
-      (value): value is PhdSessionMonth =>
-        (admissionSessions as readonly string[]).includes(value),
-      "Select January or July.",
-    ),
+  sessionMonth: z.enum(admissionSessions),
   sessionYear: z.string().trim().regex(/^(19|20)\d{2}$/, "Enter a four-digit year."),
   deadlineLabel: z.string().trim().max(80),
   deadline: z.string().trim().max(80),

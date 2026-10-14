@@ -71,7 +71,7 @@ export function ResearchAreaManager() {
     setNotice(
       saved.ok
         ? message
-        : "message" in saved
+        : "message" in saved && saved.message
           ? saved.message
           : "That change could not be saved.",
     );
