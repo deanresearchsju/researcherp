@@ -40,6 +40,7 @@ export const schools: School[] = [
       "Physical Education",
       "Physics",
       "Tamil",
+      "Commerce",
     ],
   },
   {

@@ -55,7 +55,7 @@ export function NewsManager() {
     const saved = await saveNews(next);
     setBusy(false);
     if (!saved.ok) {
-      setError("That item could not be saved.");
+      setError("message" in saved ? saved.message : "That item could not be saved.");
       return;
     }
     setNotice(message);
@@ -100,9 +100,6 @@ export function NewsManager() {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">News and events</h1>
-      <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
-        Publish a news item or an event. It appears on News &amp; Announcements.
-      </p>
       {stored?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{newsMigrationHint}</p>
       ) : null}

@@ -2,10 +2,10 @@ import type { FaqItem } from "@/types";
 
 export const faqs: FaqItem[] = [
   {
-    id: "fees",
-    question: "What are the research fees?",
+    id: "sessions",
+    question: "When can I apply for the Ph.D.?",
     answer:
-      "Full-time scholars pay ₹70,000 per year, with a minimum duration of 3 years. Part-time internal and part-time external scholars pay ₹50,000 per year, with a minimum duration of 4 years. The application fee is ₹500, paid to the college account, and the receipt is uploaded with the application. Fees are subject to revision by the University.",
+      "The University holds two Ph.D. admission sessions each year: January and July. Apply online while the current window is open. The home page shows whether applications are open.",
   },
   {
     id: "eligibility",
@@ -17,13 +17,13 @@ export const faqs: FaqItem[] = [
     id: "documents",
     question: "Which documents are required?",
     answer:
-      "Prepare a passport photograph (200–600 KB), a signature (20–40 KB), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a SET or NET certificate if you hold one.",
+      "Prepare a passport photograph (below 100 KB), a signature (below 100 KB), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a SET or NET certificate if you hold one. PDF files must be below 250 KB.",
   },
   {
     id: "duration",
     question: "How long does the programme take?",
     answer:
-      "The minimum duration is 3 years for full-time scholars and 4 years for part-time scholars. Progress is recorded through doctoral committee meetings, colloquium, publications, synopsis, and the thesis.",
+      "Full Time: 3 to 6 years. Part-Time Internal: 4 to 7 years. Part-Time External: 4 to 7 years. Progress is recorded through doctoral committee meetings, colloquium, publications, synopsis, and the thesis.",
   },
   {
     id: "course-work",

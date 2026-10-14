@@ -287,7 +287,7 @@ export function DashboardHome({ role }: { role: Role }) {
             ["/supervisor/reviews", "Scholar requests"],
           ]
         : [
-            ["/admin/site", "Home and admissions"],
+            ["/admin/site", "Application window"],
             ["/admin/news", "News and events"],
             ["/admin/allocations", "Allot a scholar"],
             ["/admin/rac", "RAC decisions"],
@@ -310,9 +310,6 @@ export function DashboardHome({ role }: { role: Role }) {
               {intro.title}
             </p>
             <h1 className="mt-2 font-heading text-4xl">{name}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-primary-foreground/80">
-              {intro.summary}
-            </p>
             {session && session.role === role && role === "scholar" ? (
               <ScholarRecordLine
                 identifier={session.identifier}

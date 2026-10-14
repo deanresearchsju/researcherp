@@ -6,7 +6,7 @@ import { Navbar } from "@/components/layout/Navbar";
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div id="top">
-      <Suspense fallback={<div className="h-28 border-b border-border bg-white" />}>
+      <Suspense fallback={<div className="h-36 border-b border-border bg-card" />}>
         <Navbar />
       </Suspense>
       <main id="main">{children}</main>

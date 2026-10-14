@@ -13,6 +13,16 @@ import type { Role } from "@/types";
 
 export const issuedPassword = "Welcome12345";
 
+const issuedAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+export function uniqueIssuedPassword() {
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => issuedAlphabet[byte % issuedAlphabet.length]).join(
+    "",
+  );
+}
+
 const resetColumnHint =
   "Run supabase/migrations/20261013220000_portal_user_password_reset.sql so every browser asks for a new password at the first sign-in.";
 
@@ -24,11 +34,18 @@ export type SignInDraft = {
   mustReset: boolean;
 };
 
+export type IssuedSignIn = {
+  name: string;
+  identifier: string;
+  password: string;
+};
+
 export type ActivationReport = {
   created: number;
   alreadyActive: number;
   scholarsWithoutEmail: number;
   supervisorsWithoutEmail: number;
+  issued: IssuedSignIn[];
   load: UserLoad;
 };
 
@@ -74,7 +91,7 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
           role,
           name: person.name.trim() || identifier,
           identifier,
-          password: issuedPassword,
+          password: uniqueIssuedPassword(),
           mustReset: true,
         },
       ];
@@ -99,12 +116,19 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
       : [];
   const newRows = [...scholarRows, ...supervisorRows];
 
+  const issued = newRows.map((row) => ({
+    name: row.name,
+    identifier: row.identifier,
+    password: row.password,
+  }));
+
   if (newRows.length === 0 && seedRows.length === 0) {
     return {
       created: 0,
       alreadyActive,
       scholarsWithoutEmail,
       supervisorsWithoutEmail,
+      issued: [],
       load,
     };
   }
@@ -121,6 +145,7 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
       alreadyActive,
       scholarsWithoutEmail,
       supervisorsWithoutEmail,
+      issued,
       load: next,
     };
   }
@@ -144,6 +169,7 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
       alreadyActive: present - createdNow,
       scholarsWithoutEmail,
       supervisorsWithoutEmail,
+      issued: createdNow > 0 ? issued : [],
       load:
         present < scholarsWithMail.length + supervisorsWithMail.length
           ? { ...reloaded, detail: saved.message }
@@ -162,6 +188,7 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
       alreadyActive: alreadyActive + (newRows.length - stillMissing.length),
       scholarsWithoutEmail,
       supervisorsWithoutEmail,
+      issued: [],
       load:
         stillMissing.length > 0
           ? {
@@ -191,6 +218,7 @@ export async function activateRegisterAccounts(): Promise<ActivationReport> {
     alreadyActive,
     scholarsWithoutEmail,
     supervisorsWithoutEmail,
+    issued: created > 0 ? issued : [],
     load: next,
   };
 }

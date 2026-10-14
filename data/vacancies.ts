@@ -11,6 +11,13 @@ export const vacancyListTitle = "List of Research Supervisors and Vacancy Positi
 
 export const vacancyListNote = "(Vacancy after Ph.D. July 2027 admission)";
 
+export const vacancyListColumns = {
+  name: "Name",
+  designation: "Designation",
+  researchArea: "Area of Research",
+  vacancy: "No. of Vacancy",
+} as const;
+
 export const vacancySeed: VacancySeed[] = [
   {
     serialNo: 1,

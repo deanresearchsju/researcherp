@@ -5,6 +5,8 @@ import {
   type ScholarRecordKind,
   type ScholarRecordMenu,
 } from "@/data/scholar-records";
+import { recordAudit, pushNotice } from "@/lib/audit";
+import { officeViewWriteBlock } from "@/lib/office-view";
 import { storageKeys } from "@/lib/constants";
 import { isValidIsoDate } from "@/lib/dates";
 import { createSupabase } from "@/lib/supabase/client";
@@ -33,7 +35,7 @@ export type ScholarRecordLoad = {
 };
 
 export const scholarRecordMigrationHint =
-  "Open the Supabase SQL editor for this project and run supabase/migrations/20261013173000_scholar_records.sql, then supabase/migrations/20261013180000_office_controls.sql. Until then, uploads stay in this browser.";
+  "Open the Supabase SQL editor for this project and run supabase/migrations/20261013173000_scholar_records.sql, then supabase/migrations/20261013180000_office_controls.sql, then supabase/migrations/20261014050000_lifecycle.sql. Until then, uploads stay in this browser.";
 
 const officeSqlHint =
   "Run supabase/migrations/20261013180000_office_controls.sql so this record is stored in the database. A copy is kept in this browser.";
@@ -264,7 +266,21 @@ export type RecordDraft = {
   supervisorName?: string;
 };
 
+function recordById(kind: ScholarRecordKind, id: string) {
+  return (
+    caches.get(kind)?.records.find((item) => item.id === id) ??
+    readBrowserRecords().find((item) => item.id === id)
+  );
+}
+
+const lockedMessage = "This record is approved and cannot be changed.";
+
 export async function saveScholarRecord(draft: RecordDraft, existingId?: string) {
+  const blocked = officeViewWriteBlock();
+  if (blocked) return blocked;
+  if (existingId && recordById(draft.kind, existingId)?.status === "Approved") {
+    return { ok: false as const, message: lockedMessage };
+  }
   const cached = caches.get(draft.kind);
   const source = cached?.source ?? "browser";
 
@@ -369,6 +385,11 @@ export async function annotateScholarRecord(
   record: ScholarRecord,
   patch: { status?: RecordStatus; extra?: Record<string, string> },
 ) {
+  if (officeViewWriteBlock()) return false;
+  if (record.status === "Approved") return false;
+  if (patch.status === "Returned" && (patch.extra?.remarks ?? "").trim().length < 2) {
+    return false;
+  }
   const next: ScholarRecord = {
     ...record,
     status: patch.status ?? record.status,
@@ -395,25 +416,47 @@ export async function annotateScholarRecord(
       records: cached.records.map((item) => (item.id === record.id ? next : item)),
     });
   }
+  if (patch.status && patch.status !== record.status) {
+    await recordAudit({
+      action: `record:${patch.status}`,
+      subject: `${record.kind}:${record.id}`,
+      detail: `${record.scholarName} · ${record.kind}`,
+    });
+    await pushNotice({
+      role: "scholar",
+      identifier: record.scholarIdentifier,
+      title: `${record.kind.replaceAll("_", " ")} ${patch.status}`,
+      detail: patch.extra?.remarks || `The office marked this ${patch.status}.`,
+    });
+  }
   return true;
 }
 
 export async function setScholarRecordStatus(
   record: ScholarRecord,
   status: RecordStatus,
+  remarks = "",
 ) {
+  if (officeViewWriteBlock()) return false;
+  if (record.status === "Approved") return false;
+  if (status === "Returned" && remarks.trim().length < 2) return false;
+  const payload =
+    remarks.trim().length > 0
+      ? { ...record.payload, remarks: remarks.trim() }
+      : record.payload;
+  const next = { ...record, status, payload };
   const cached = caches.get(record.kind);
   if (cached?.source === "database" && !record.id.startsWith("local-")) {
     const supabase = createSupabase();
     if (!supabase) return false;
     const { error } = await supabase
       .from("scholar_records")
-      .update({ status })
+      .update({ status, payload: toJson(payload) })
       .eq("id", record.id);
     if (error) return false;
   } else {
     const records = readBrowserRecords().map((item) =>
-      item.id === record.id ? { ...item, status } : item,
+      item.id === record.id ? next : item,
     );
     writeBrowserRecords(records);
   }
@@ -421,10 +464,21 @@ export async function setScholarRecordStatus(
     publish(record.kind, {
       ...cached,
       records: cached.records.map((item) =>
-        item.id === record.id ? { ...item, status } : item,
+        item.id === record.id ? next : item,
       ),
     });
   }
+  await recordAudit({
+    action: `record:${status}`,
+    subject: `${record.kind}:${record.id}`,
+    detail: `${record.scholarName} · ${record.kind}`,
+  });
+  await pushNotice({
+    role: "scholar",
+    identifier: record.scholarIdentifier,
+    title: `${record.kind.replaceAll("_", " ")} ${status}`,
+    detail: remarks.trim() || `The office marked this ${status}.`,
+  });
   return true;
 }
 

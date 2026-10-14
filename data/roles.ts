@@ -18,7 +18,7 @@ export const roleProfiles: Record<Role, RoleProfile> = {
     title: "Scholar sign in",
     welcome: "Welcome back, scholar",
     description:
-      "Follow your application, course work, and doctoral committee meetings from one place.",
+      "Ph.D. admissions open in January and July. Follow your application, course work, and doctoral committee meetings from one place.",
     benefits: [
       "Track milestones from the first DC meeting to the thesis",
       "Keep documents and the fee receipt with your record",
@@ -73,7 +73,8 @@ export const roleProfiles: Record<Role, RoleProfile> = {
 export const resetCopy = {
   title: "Reset your password",
   welcome: "Password help",
-  description: "Recovery uses the email on the scholar, supervisor, or admin record.",
+  description:
+    "Password recovery by email is not connected yet. Write to the research office with your sign-in id.",
   benefits: [
     "Scholars recover access with the registered email",
     "Supervisors use the email on the recognition record",

@@ -1,7 +1,9 @@
+import { university } from "@/lib/constants";
+
 /** Wording from the University research page, through Ph.D. Regulations: https://sju.ac.in/research/ */
 
 export const researchPage = {
-  title: "Research",
+  title: university.researchOffice,
   summary:
     "SJU fosters a dynamic research culture focused on innovation, industry collaboration, and real-world impact. With multidisciplinary initiatives, state-of-the-art facilities, and a commitment to societal progress, SJU empowers researchers to develop solutions that shape the future.",
   programmesTitle: "Ph.D. Programmes",
@@ -14,20 +16,52 @@ export const researchPage = {
   ],
   highlightsTitle: "Research Programme Highlights",
   durationLabel: "Duration",
-  duration: ["Full Time: 3 to 6 years", "Part-Time: 4 to 7 years"],
+  duration: [
+    "Full Time: 3 to 6 years",
+    "Part-Time Internal: 4 to 7 years",
+    "Part-Time External: 4 to 7 years",
+  ],
+  programmeModes: [
+    {
+      id: "full-time",
+      title: "Full Time",
+      duration: "3 to 6 years",
+      points: [
+        "The doctorate is the primary academic commitment.",
+        "Course work is completed within four semesters.",
+        "Regular contact with the allotted supervisor.",
+        "Progress through doctoral committee meetings, colloquium, publications, synopsis, and the thesis.",
+      ],
+    },
+    {
+      id: "part-time-internal",
+      title: "Part-Time Internal",
+      duration: "4 to 7 years",
+      points: [
+        "For candidates associated with the University.",
+        "Work experience and a no-objection certificate from the present employer.",
+        "Course work is completed within four semesters.",
+        "The same milestone sequence as full-time scholars.",
+      ],
+    },
+    {
+      id: "part-time-external",
+      title: "Part-Time External",
+      duration: "4 to 7 years",
+      points: [
+        "For candidates based outside the University.",
+        "Work experience and a no-objection certificate from the present employer.",
+        "Course work is completed within four semesters.",
+        "The same milestone sequence as full-time scholars.",
+      ],
+    },
+  ],
   creditsLabel: "Course Work Credits",
   credits: "12",
   marksLabel: "Course Work Marks / CGPA",
-  marks: "55% / 5.8",
-  extensions: [
-    "Re-registration: 2 years extension (maximum 8 years total)",
-    "Female/PWD: 2 years additional extension (maximum 10 years total)",
-    "Maternity/Child Care Leave: Up to 240 days",
-  ],
-  teaching:
-    "Teaching/Pedagogy Training: Mandatory for all Ph.D. scholars, involving 4-6 hours/week of teaching/research assistantship.",
+  marks: "55% / 5.5",
   onlineCourses:
-    "UGC-recognized online courses may be included, as per the Recommendation of the Research Advisory Committee",
+    "UGC-recognized online courses may be included for course as per the Recommendation of the Research Advisory Committee",
   nationalTitle: "National Level Tests:",
   nationalTests: "UGC-NET/CSIR-NET/GATE/CEED etc. followed by an interview.",
   entranceTitle: "Institution Level Entrance Test:",
@@ -43,7 +77,6 @@ export const researchPage = {
 export const regulationTabs = [
   { id: "eligibility", label: "General Eligibility" },
   { id: "admission", label: "Admission Procedure" },
-  { id: "supervisor", label: "Supervisor" },
   { id: "evaluation", label: "Evaluation Process" },
 ] as const;
 
@@ -51,29 +84,23 @@ export type RegulationTabId = (typeof regulationTabs)[number]["id"];
 
 export const regulationEligibility = {
   headers: ["Degree", "Marks", "5% Relaxation"],
-  row: ["MASTER'S/M.Phil.", "55%", "SC/ST/OBC/PWD/EWS"],
-};
-
-export const regulationSupervisors = {
-  headers: ["Designation", "Eligibility", "Scholar Limit"],
-  rows: [
-    ["Professor", "PhD + 5 Research Publications", "8"],
-    ["Associate Professor", "PhD + 5 Research Publications", "6"],
-    ["Assistant Professor", "PhD + 3 Research Publications", "4"],
-  ],
+  row: ["MASTER'S", "55%", "SC/ST/OBC/PWD/EWS"],
 };
 
 export const regulationEvaluation = {
   steps: [
     "Coursework",
+    "Colloquium",
+    "Comprehensive",
+    "Seminar Presentation",
     "Submission of Synopsis",
-    "Draft Thesis Presentation",
-    "Thesis Submission",
+    "Thesis Presentation",
+    "Viva Voce",
   ],
   notes: [
     "Thesis Evaluation by the supervisor and 2 external examiners (one preferably from outside India).",
     "Viva-voce Examination, Open to RAC members, faculty, and scholars.",
-    "Evaluation Timeline: The entire evaluation process must be completed within 6 months of thesis submission.",
+    "Evaluation Timeline: The entire evaluation process will be completed within 6 months of thesis submission.",
   ],
 };
 

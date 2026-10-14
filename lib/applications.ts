@@ -1,4 +1,5 @@
 import { admissionYear, storageKeys } from "@/lib/constants";
+import { createSupabase } from "@/lib/supabase/client";
 
 export type ScholarSubmission = {
   applicationNo: string;
@@ -23,6 +24,20 @@ export function issueScholarNumber() {
 export function issueSupervisorNumber() {
   const serial = String(nextSerial(storageKeys.supervisorSeq)).padStart(3, "0");
   return `SJU/SUP/PHD/${admissionYear}/${serial}`;
+}
+
+export async function issueApplicationNo(kind: "phd" | "supervisor") {
+  const supabase = createSupabase();
+  if (supabase) {
+    const issued = await supabase.rpc("issue_application_no", {
+      p_kind: kind,
+      p_year: admissionYear,
+    });
+    if (!issued.error && typeof issued.data === "string" && issued.data.trim()) {
+      return issued.data.trim();
+    }
+  }
+  return kind === "phd" ? issueScholarNumber() : issueSupervisorNumber();
 }
 
 export function readSubmissions(): ScholarSubmission[] {

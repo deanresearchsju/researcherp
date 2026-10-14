@@ -149,12 +149,6 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">Synopsis</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Full time scholars need 6 approved six-month reports. Part time (Internal) and
-          Part time (External) scholars need 8. Engineering, Medicine, and Agriculture
-          need one SCI, SCIE, WOS, or SEI paper and one Scopus paper. Management, Law,
-          and Science and Humanities need two Scopus papers.
-        </p>
       </header>
       {mode === "scholar" && review ? (
         own && own.status !== "Rejected" ? (

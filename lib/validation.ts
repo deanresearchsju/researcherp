@@ -115,7 +115,14 @@ function requireRow(
 
 export const scholarSchema = z
   .object({
-    session: oneOf(admissionSessions, "Select June or January."),
+    session: z
+      .string()
+      .trim()
+      .refine(
+        (value) =>
+          (admissionSessions as readonly string[]).includes(value) || value === "June",
+        "Select January or July.",
+      ),
     year: z.literal(admissionYear),
     title: oneOf(titles, "Select a title."),
     fullName: z.string().trim().min(2, "Enter your full name.").max(120),

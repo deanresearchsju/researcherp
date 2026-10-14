@@ -33,6 +33,15 @@ export const admissionSteps: AdmissionStep[] = [
   },
 ];
 
+export const admissionOverview = {
+  eyebrow: "Admissions",
+  title: "Eligibility and admission process",
+  description:
+    "The University holds two Ph.D. admission sessions each year: January and July. Review the eligibility conditions, then follow the four-step process from the online application to supervisor allotment.",
+  eligibilityTitle: "Who may apply",
+  processTitle: "Admission in 4 steps",
+};
+
 export const admissionGlance: AdmissionStep[] = [
   {
     id: "apply",
@@ -114,7 +123,7 @@ export type ChecklistId = (typeof admissionChecklist)[number]["id"];
 
 export const defaultLetter = {
   programme: "Ph.D. Degree Programme",
-  sessionLabel: "Provisional Admission Letter (June 2026)",
+  sessionLabel: "Provisional Admission Letter (January / July)",
   refPrefix: "SJU/Research/Adm/2026",
   issueDate: "10/09/2026",
   reportBy: "26 September 2026",

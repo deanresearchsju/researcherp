@@ -15,11 +15,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { notices } from "@/data/portal";
 import { roleProfiles } from "@/data/roles";
-import { canOpenMenu, effectiveMenus, visibleGroups } from "@/lib/access";
-import { clearPreviewSession } from "@/lib/auth";
-import { closeOfficeView, isOfficeAction } from "@/lib/office-view";
+import { canOpenMenu, effectiveMenus, isPrincipalAdmin, visibleGroups } from "@/lib/access";
+import { currentInbox, noticesFor, subscribeInbox } from "@/lib/audit";
+import { clearPreviewSession, type PreviewSession } from "@/lib/auth";
+import { closeOfficeView } from "@/lib/office-view";
 import { useOfficeView, usePreviewSession } from "@/lib/use-preview-session";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import { cn } from "@/lib/utils";
@@ -111,12 +111,19 @@ function SideNav({
   );
 }
 
-export function PortalShell({ children }: { children: React.ReactNode }) {
+export function PortalShell({
+  children,
+  signedIn,
+}: {
+  children: React.ReactNode;
+  signedIn: PreviewSession | null;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const ready = useClientReady();
   const pathRole = roleFromPath(pathname);
-  const session = usePreviewSession();
+  const stored = usePreviewSession();
+  const session = stored ?? signedIn;
   const view = useOfficeView();
   const [viewNotice, setViewNotice] = useState<string | null>(null);
   const users = useSyncExternalStore(
@@ -124,6 +131,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     currentPortalUsers,
     () => null,
   );
+  const inbox = useSyncExternalStore(subscribeInbox, currentInbox, () => null);
   const viewing =
     ready &&
     session?.role === "admin" &&
@@ -139,9 +147,17 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             user.identifier.toLowerCase() === session.identifier.toLowerCase(),
         )
       : undefined;
-  const menus = viewing || !users ? null : effectiveMenus(account);
+  const menus = viewing
+    ? null
+    : session && isPrincipalAdmin(session)
+      ? null
+      : session && session.menus !== undefined
+        ? session.menus
+        : effectiveMenus(account);
   const groups = visibleGroups(role, menus);
-  const allowed = !users || viewing || canOpenMenu(pathname, role, menus);
+  const allowed = viewing || canOpenMenu(pathname, role, menus);
+  const alerts =
+    session && inbox ? noticesFor(session.role, session.identifier, inbox) : [];
 
   useEffect(() => {
     if (ready && session?.mustReset && !viewing) router.replace("/login/reset");
@@ -167,14 +183,11 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     const control = target.closest("button, input, textarea, select");
     if (!control) return;
     if (control instanceof HTMLButtonElement) {
-      const label = control.textContent ?? "";
-      if (control.type === "submit" || isOfficeAction(label)) {
-        event.preventDefault();
-        event.stopPropagation();
-        setViewNotice(
-          "This page is open for reading. The office cannot submit or approve here.",
-        );
-      }
+      event.preventDefault();
+      event.stopPropagation();
+      setViewNotice(
+        "This page is open for reading. The office cannot submit or approve here.",
+      );
       return;
     }
     event.preventDefault();
@@ -191,13 +204,30 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         ? session.name.trim() || session.identifier
         : roleProfiles[pathRole].label;
 
+  if (ready && !session) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16">
+        <h1 className="font-heading text-3xl text-primary">Sign in required</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Open the portal with your sign-in.
+        </p>
+        <Link
+          href={`/login/${pathRole}`}
+          className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        >
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
   if (ready && session?.mustReset) {
     return <div className="min-h-screen bg-background" />;
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-white md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card md:flex">
         <div className="flex h-16 shrink-0 items-center border-b border-border px-4">
           <Link href={`/${role}/dashboard`} className="rounded-lg">
             <Logo className="h-9 w-auto" alt="St. Joseph University, dashboard" />
@@ -208,7 +238,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <div className="md:pl-64">
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-border bg-white px-4">
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-border bg-card px-4">
           <Sheet>
             <SheetTrigger asChild>
               <Button
@@ -236,24 +266,34 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label="Notifications, 2 unread"
+                  aria-label={
+                    alerts.length
+                      ? `Notifications, ${alerts.length} unread`
+                      : "Notifications"
+                  }
                 >
                   <Bell className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-72">
-                {notices.map((notice) => (
-                  <DropdownMenuItem
-                    key={notice.id}
-                    className="flex flex-col items-start gap-1 py-3"
-                  >
-                    <span className="font-semibold text-primary">{notice.title}</span>
-                    <span className="text-xs leading-5 text-muted-foreground">
-                      {notice.detail}
-                    </span>
-                    <span className="text-[11px] text-secondary">{notice.time}</span>
+                {alerts.length === 0 ? (
+                  <DropdownMenuItem className="text-sm text-muted-foreground">
+                    No notices yet.
                   </DropdownMenuItem>
-                ))}
+                ) : (
+                  alerts.slice(0, 8).map((notice) => (
+                    <DropdownMenuItem
+                      key={notice.id}
+                      className="flex flex-col items-start gap-1 py-3"
+                    >
+                      <span className="font-semibold text-primary">{notice.title}</span>
+                      <span className="text-xs leading-5 text-muted-foreground">
+                        {notice.detail}
+                      </span>
+                      <span className="text-[11px] text-secondary">{notice.time}</span>
+                    </DropdownMenuItem>
+                  ))
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <span className="hidden max-w-40 truncate text-sm text-muted-foreground md:inline">

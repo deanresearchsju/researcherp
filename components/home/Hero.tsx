@@ -1,10 +1,12 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
+import { researchPage } from "@/data/research-home";
 import { heroCopy } from "@/data/sections";
 import { currentOffice, defaultSiteSettings, subscribeOffice } from "@/lib/office";
 
@@ -14,74 +16,50 @@ export function Hero() {
     () => currentOffice()?.settings ?? defaultSiteSettings,
     () => defaultSiteSettings,
   );
+
   return (
-    <section className="bg-hero relative overflow-hidden" aria-labelledby="hero-title">
-      <div
-        className="bg-grid pointer-events-none absolute inset-0 opacity-60"
-        aria-hidden="true"
-      />
-      <div className="relative mx-auto grid w-full max-w-6xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.2fr_0.8fr] lg:px-8 lg:py-14">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.22em] text-secondary uppercase">
-            {settings.heroEyebrow}
-          </p>
-          <div className="mt-3 h-px w-12 bg-accent" aria-hidden="true" />
-          <h1
-            id="hero-title"
-            className="mt-4 max-w-xl font-heading text-4xl leading-tight font-semibold text-primary sm:text-5xl"
-          >
-            {settings.heroTitle}
-          </h1>
-          <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-            {settings.heroSummary}
-          </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link
-              href={settings.phdOpen ? heroCopy.primaryHref : "/admission"}
-              className={buttonVariants({ variant: "gold", size: "lg" })}
+    <section className="px-4 py-6 sm:px-6 lg:px-8" aria-labelledby="hero-title">
+      <div className="relative mx-auto min-h-[28rem] max-w-6xl overflow-hidden rounded-3xl sm:min-h-[32rem]">
+        <Image
+          src="/pic.jpeg"
+          alt=""
+          fill
+          priority
+          sizes="(min-width: 1024px) 72rem, 100vw"
+          className="object-cover object-center"
+        />
+        <div className="relative flex min-h-[28rem] items-center p-4 sm:min-h-[32rem] sm:p-8 lg:p-10">
+          <div className="w-full max-w-xl rounded-2xl bg-primary px-6 py-7 text-primary-foreground shadow-lift sm:px-8 sm:py-8">
+            <h1
+              id="hero-title"
+              className="font-heading text-4xl leading-tight font-semibold sm:text-5xl"
             >
-              {settings.phdOpen ? heroCopy.primaryCta : "Applications closed"}
-            </Link>
-            <Link
-              href={heroCopy.secondaryHref}
-              className={buttonVariants({ size: "lg" })}
-            >
-              {heroCopy.secondaryCta}
-            </Link>
-          </div>
-          <Link
-            href={heroCopy.tertiaryHref}
-            className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
-          >
-            {heroCopy.tertiaryCta}
-            <ArrowRight className="size-4" aria-hidden="true" />
-          </Link>
-        </div>
-        <div
-          className={
-            settings.phdOpen
-              ? "admission-beacon relative overflow-hidden rounded-2xl border-2 border-primary bg-white p-6"
-              : "relative overflow-hidden rounded-2xl border border-border bg-white p-6 shadow-lift"
-          }
-        >
-          <div className="absolute inset-x-0 top-0 h-1.5 bg-accent" aria-hidden="true" />
-          <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-secondary uppercase">
-            {settings.phdOpen ? (
-              <span
-                className="admission-dot size-2.5 rounded-full bg-accent"
-                aria-hidden="true"
-              />
-            ) : null}
-            {settings.phdOpen ? settings.admissionLabel : "Admissions closed"}
-          </p>
-          <p className="mt-4 font-heading text-4xl leading-none text-primary">
-            {settings.admissionSession}
-          </p>
-          <div className="mt-5 rounded-xl bg-muted px-4 py-3">
-            <p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-              {settings.deadlineLabel}
+              {researchPage.title}
+            </h1>
+            <p className="mt-4 text-sm leading-6 text-primary-foreground/95 sm:text-base sm:leading-7">
+              {researchPage.summary}
             </p>
-            <p className="mt-1 font-heading text-2xl text-primary">{settings.deadline}</p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <Link
+                href={settings.phdOpen ? heroCopy.primaryHref : "/admission"}
+                className={buttonVariants({ variant: "gold", size: "lg" })}
+              >
+                {settings.phdOpen ? heroCopy.primaryCta : "Applications closed"}
+              </Link>
+              <Link
+                href={heroCopy.secondaryHref}
+                className={buttonVariants({ variant: "outline", size: "lg" })}
+              >
+                {heroCopy.secondaryCta}
+              </Link>
+              <Link
+                href={heroCopy.tertiaryHref}
+                className="inline-flex items-center gap-1 text-sm font-semibold text-primary-foreground hover:underline"
+              >
+                {heroCopy.tertiaryCta}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
           </div>
         </div>
       </div>

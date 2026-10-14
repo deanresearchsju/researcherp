@@ -28,6 +28,7 @@ export function LoginForm({ role }: LoginFormProps) {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   const schema = useMemo(
     () =>
@@ -61,6 +62,7 @@ export function LoginForm({ role }: LoginFormProps) {
 
   async function onSubmit(values: FormValues) {
     setFormError(null);
+    setSigningIn(true);
     const result = await mockLogin({
       role,
       identifier: values.identifier,
@@ -68,6 +70,7 @@ export function LoginForm({ role }: LoginFormProps) {
       remember: values.remember,
     });
     if (!result.ok) {
+      setSigningIn(false);
       setFormError(result.message);
       return;
     }
@@ -78,7 +81,7 @@ export function LoginForm({ role }: LoginFormProps) {
     register,
     handleSubmit,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = form;
 
   if (ready && challenge === null) {
@@ -97,6 +100,7 @@ export function LoginForm({ role }: LoginFormProps) {
           {profile.label}
         </p>
         <h2 className="mt-2 font-heading text-3xl text-primary">{profile.title}</h2>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{profile.description}</p>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
           {formError ? (
             <p
@@ -111,6 +115,7 @@ export function LoginForm({ role }: LoginFormProps) {
             <Input
               id="identifier"
               autoComplete="username"
+              autoFocus
               aria-invalid={Boolean(errors.identifier)}
               aria-describedby={errors.identifier ? "identifier-error" : undefined}
               {...register("identifier")}
@@ -175,12 +180,20 @@ export function LoginForm({ role }: LoginFormProps) {
               Forgot password?
             </Link>
           </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? (
+          <Button type="submit" className="w-full" disabled={signingIn} aria-busy={signingIn}>
+            {signingIn ? (
               <Loader2 className="animate-spin" aria-hidden="true" />
             ) : null}
-            {isSubmitting ? "Signing in…" : "Sign in"}
+            {signingIn ? "Signing in…" : "Sign in"}
           </Button>
+          {profile.footnote ? (
+            <p className="text-center text-sm text-muted-foreground">
+              {profile.footnote.prompt}{" "}
+              <Link href={profile.footnote.href} className="font-medium text-primary hover:underline">
+                {profile.footnote.label}
+              </Link>
+            </p>
+          ) : null}
         </form>
       </div>
     </div>

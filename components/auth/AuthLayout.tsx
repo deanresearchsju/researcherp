@@ -21,8 +21,12 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         aria-hidden="true"
       />
       <header className="relative flex items-center justify-between gap-4 px-4 py-4 sm:px-8">
-        <Link href="/" className="inline-flex rounded-xl bg-white px-3 py-2 shadow-card">
-          <Logo className="h-10 w-auto" alt="St. Joseph University Research, home" />
+        <Link href="/" className="inline-flex rounded-xl bg-card px-3 py-2 shadow-card">
+          <Logo
+            priority
+            className="h-10 w-auto"
+            alt="St. Joseph University Research, home"
+          />
         </Link>
         <Link href="/" className={buttonVariants({ variant: "outline" })}>
           Home

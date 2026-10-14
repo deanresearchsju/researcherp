@@ -7,7 +7,7 @@ import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Ph.D. programmes",
-  description: `Apply for a Ph.D. at ${university.name}. Research schools, programmes, fees, and admissions.`,
+  description: `Apply for a Ph.D. at ${university.name}. Two admission sessions each year: January and July.`,
   alternates: { canonical: "/" },
 };
 

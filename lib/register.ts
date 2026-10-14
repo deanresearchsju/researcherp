@@ -5,6 +5,7 @@ import {
 } from "@/data/research-register";
 import { storageKeys, studyModes } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
+import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson } from "@/lib/records";
 
 export const registerMigrationHint =
@@ -33,6 +34,7 @@ export type RegisterLoad = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
   source: "database" | "browser";
+  updatedAt: string | null;
   detail: string | null;
 };
 
@@ -104,16 +106,17 @@ function payloadOf(value: unknown) {
 
 export async function loadRegister(): Promise<RegisterLoad> {
   const supabase = createSupabase();
-  if (!supabase) return { ...readStored(), source: "browser", detail: null };
+  if (!supabase) return { ...readStored(), source: "browser", updatedAt: null, detail: null };
   const { data, error } = await supabase
     .from("research_register")
-    .select("payload")
+    .select("payload, updated_at")
     .eq("id", rowId)
     .maybeSingle();
   if (error) {
     return {
       ...readStored(),
       source: "browser",
+      updatedAt: null,
       detail: "The registration-number table is not in the database yet.",
     };
   }
@@ -122,6 +125,7 @@ export async function loadRegister(): Promise<RegisterLoad> {
     allotments: parseAllotments(payload?.allotments),
     quotas: parseQuotas(payload?.quotas),
     source: "database",
+    updatedAt: data?.updated_at ?? null,
     detail: null,
   };
 }
@@ -479,12 +483,14 @@ async function persistRegister(next: RegisterLoad) {
   const stored = { allotments: next.allotments, quotas: next.quotas };
   const supabase = createSupabase();
   if (supabase && next.source === "database") {
-    const { error } = await supabase.from("research_register").upsert({
-      id: rowId,
-      payload: toJson(stored),
-    });
-    if (error) return { ok: false as const };
-    publish(next);
+    const saved = await saveJsonBlob(
+      "research_register",
+      rowId,
+      toJson(stored),
+      next.updatedAt,
+    );
+    if (!saved.ok) return { ok: false as const, message: saved.message };
+    publish({ ...next, updatedAt: saved.updatedAt });
     return { ok: true as const };
   }
   writeBrowser(stored);
@@ -503,7 +509,21 @@ export async function saveApprovedQuota(entry: ApprovedQuota) {
 
 export async function allotRegistration(scholarId: string, registrationNumber: string) {
   const number = registrationNumber.trim();
+  if (!number) {
+    return { ok: false as const, message: "Enter a registration number." };
+  }
   const current = memory ?? (await loadRegister());
+  const key = number.toLowerCase();
+  const overlayTaken = current.allotments.some(
+    (item) => item.scholarId !== scholarId && item.registrationNumber.toLowerCase() === key,
+  );
+  const rollTaken = researchRegister.scholars.some(
+    (item) =>
+      item.id !== scholarId && item.registrationNumber.trim().toLowerCase() === key,
+  );
+  if (overlayTaken || rollTaken) {
+    return { ok: false as const, message: "That registration number is already allotted." };
+  }
   const allotments = [
     ...current.allotments.filter((item) => item.scholarId !== scholarId),
     { scholarId, registrationNumber: number },

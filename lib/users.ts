@@ -1,3 +1,4 @@
+import { parseMenuRights } from "@/lib/access";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import type { Role } from "@/types";
@@ -111,10 +112,7 @@ function writeMenuStore(id: string, menus: string[] | null) {
 }
 
 function parseMenus(value: unknown): string[] | null {
-  if (!Array.isArray(value)) return null;
-  return value.filter(
-    (item): item is string => typeof item === "string" && item.startsWith("/"),
-  );
+  return parseMenuRights(value);
 }
 
 function readBrowserUsers(): PortalUser[] {
@@ -164,7 +162,7 @@ type UserRow = {
   role: string;
   name: string;
   identifier: string;
-  password: string;
+  password?: string;
   must_reset?: boolean;
   menu_rights?: unknown;
 };
@@ -177,7 +175,7 @@ function mapUser(row: UserRow, menusFromColumn: boolean): PortalUser | null {
     role: row.role,
     name: row.name,
     identifier: row.identifier,
-    password: row.password,
+    password: "",
     mustReset: row.must_reset === true || forced.has(row.id),
     menus: menusFromColumn
       ? parseMenus(row.menu_rights)
@@ -186,7 +184,23 @@ function mapUser(row: UserRow, menusFromColumn: boolean): PortalUser | null {
   return isRetiredSignIn(user) ? null : user;
 }
 
+async function fetchPortalUsers(): Promise<UserLoad | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const response = await fetch("/api/users");
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { ok?: boolean; users?: PortalUser[] };
+    if (!payload.ok || !Array.isArray(payload.users)) return null;
+    return { users: payload.users, source: "database", detail: null };
+  } catch {
+    return null;
+  }
+}
+
 export async function loadPortalUsers(): Promise<UserLoad> {
+  const fromApi = await fetchPortalUsers();
+  if (fromApi) return fromApi;
+
   const supabase = createSupabase();
   if (!supabase) {
     return { users: readBrowserUsers(), source: "browser", detail: null };
@@ -194,7 +208,7 @@ export async function loadPortalUsers(): Promise<UserLoad> {
 
   const full = await supabase
     .from("portal_users")
-    .select("id, role, name, identifier, password, must_reset, menu_rights")
+    .select("id, role, name, identifier, must_reset, menu_rights")
     .order("role", { ascending: true })
     .order("identifier", { ascending: true });
 
@@ -202,7 +216,7 @@ export async function loadPortalUsers(): Promise<UserLoad> {
     full.error && missingMenuColumn(full.error.message)
       ? await supabase
           .from("portal_users")
-          .select("id, role, name, identifier, password, must_reset")
+          .select("id, role, name, identifier, must_reset")
           .order("role", { ascending: true })
           .order("identifier", { ascending: true })
       : null;
@@ -212,7 +226,7 @@ export async function loadPortalUsers(): Promise<UserLoad> {
     chosen.error && missingResetColumn(chosen.error.message)
       ? await supabase
           .from("portal_users")
-          .select("id, role, name, identifier, password")
+          .select("id, role, name, identifier")
           .order("role", { ascending: true })
           .order("identifier", { ascending: true })
       : null;
@@ -294,11 +308,35 @@ export async function insertPortalUsers(
   | { ok: true; users: PortalUser[]; resetStoredLocally: boolean }
   | { ok: false; message: string }
 > {
+  if (rows.length === 0) return { ok: true, users: [], resetStoredLocally: false };
+  try {
+    const response = await fetch("/api/users/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows }),
+    });
+    const payload = (await response.json()) as
+      | { ok: true; users: PortalUser[]; resetStoredLocally?: boolean }
+      | { ok: false; message: string };
+    if (payload.ok) {
+      if (memory) {
+        publish({ ...memory, users: [...memory.users, ...payload.users] });
+      }
+      return {
+        ok: true,
+        users: payload.users,
+        resetStoredLocally: payload.resetStoredLocally === true,
+      };
+    }
+    if (response.status !== 503) return { ok: false, message: payload.message };
+  } catch {
+    // Fall through to the publishable client until the SQL revoke runs.
+  }
+
   const supabase = createSupabase();
   if (!supabase) {
     return { ok: false, message: "The user table is not in the database yet." };
   }
-  if (rows.length === 0) return { ok: true, users: [], resetStoredLocally: false };
 
   const inserted = await supabase
     .from("portal_users")
@@ -311,7 +349,7 @@ export async function insertPortalUsers(
         must_reset: row.mustReset,
       })),
     )
-    .select("id, role, name, identifier, password, must_reset");
+    .select("id, role, name, identifier, must_reset");
 
   if (inserted.error && missingResetColumn(inserted.error.message)) {
     const retry = await supabase
@@ -324,7 +362,7 @@ export async function insertPortalUsers(
           password: row.password,
         })),
       )
-      .select("id, role, name, identifier, password");
+      .select("id, role, name, identifier");
     if (retry.error || !retry.data) {
       return {
         ok: false,
@@ -380,46 +418,71 @@ export async function updatePortalUser(
   };
 
   if (source === "database" && !user.id.startsWith("seed-")) {
-    const supabase = createSupabase();
-    if (!supabase) return { ok: false as const, user };
-    const saved = await supabase
-      .from("portal_users")
-      .update({
-        name: updated.name,
-        password: updated.password,
-        must_reset: updated.mustReset,
-        menu_rights: updated.menus,
-      })
-      .eq("id", user.id);
-    if (saved.error && missingMenuColumn(saved.error.message)) {
-      writeMenuStore(user.id, updated.menus);
-      const retry = await supabase
-        .from("portal_users")
-        .update({
+    try {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           name: updated.name,
           password: updated.password,
-          must_reset: updated.mustReset,
-        })
-        .eq("id", user.id);
+          mustReset: updated.mustReset,
+          menus: updated.menus,
+        }),
+      });
+      const payload = (await response.json()) as
+        | { ok: true; user: PortalUser }
+        | { ok: false; message?: string };
+      if (payload.ok) {
+        if (memory) {
+          publish({
+            ...memory,
+            users: memory.users.map((item) => (item.id === user.id ? payload.user : item)),
+          });
+        }
+        return { ok: true as const, user: payload.user };
+      }
+      if (response.status !== 503) return { ok: false as const, user };
+    } catch {
+      // Fall through to the publishable client until the SQL revoke runs.
+    }
+    const supabase = createSupabase();
+    if (!supabase) return { ok: false as const, user };
+    const fields: {
+      name: string;
+      must_reset: boolean;
+      menu_rights: string[] | null;
+      password?: string;
+    } = {
+      name: updated.name,
+      must_reset: updated.mustReset,
+      menu_rights: updated.menus,
+    };
+    if (updated.password.trim()) fields.password = updated.password;
+    const saved = await supabase.from("portal_users").update(fields).eq("id", user.id);
+    if (saved.error && missingMenuColumn(saved.error.message)) {
+      writeMenuStore(user.id, updated.menus);
+      const retryFields: { name: string; must_reset: boolean; password?: string } = {
+        name: updated.name,
+        must_reset: updated.mustReset,
+      };
+      if (updated.password.trim()) retryFields.password = updated.password;
+      const retry = await supabase.from("portal_users").update(retryFields).eq("id", user.id);
       if (retry.error && missingResetColumn(retry.error.message)) {
-        const plain = await supabase
-          .from("portal_users")
-          .update({ name: updated.name, password: updated.password })
-          .eq("id", user.id);
+        const plainFields: { name: string; password?: string } = { name: updated.name };
+        if (updated.password.trim()) plainFields.password = updated.password;
+        const plain = await supabase.from("portal_users").update(plainFields).eq("id", user.id);
         if (plain.error) return { ok: false as const, user };
         rememberMustReset(user.id, updated.mustReset);
       } else if (retry.error) {
         return { ok: false as const, user };
       }
     } else if (saved.error && missingResetColumn(saved.error.message)) {
-      const retry = await supabase
-        .from("portal_users")
-        .update({
-          name: updated.name,
-          password: updated.password,
-          menu_rights: updated.menus,
-        })
-        .eq("id", user.id);
+      const retryFields: { name: string; menu_rights: string[] | null; password?: string } = {
+        name: updated.name,
+        menu_rights: updated.menus,
+      };
+      if (updated.password.trim()) retryFields.password = updated.password;
+      const retry = await supabase.from("portal_users").update(retryFields).eq("id", user.id);
       if (retry.error) return { ok: false as const, user };
       rememberMustReset(user.id, updated.mustReset);
     } else if (saved.error) {
@@ -471,8 +534,35 @@ export async function createPortalUser(
     };
   }
 
-  const supabase = createSupabase();
   if (source === "database") {
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: input.role,
+          name,
+          identifier,
+          password: input.password,
+          menus: input.menus,
+        }),
+      });
+      const payload = (await response.json()) as
+        | { ok: true; user: PortalUser }
+        | { ok: false; message: string };
+      if (payload.ok) {
+        if (memory) {
+          publish({ ...memory, users: [...memory.users, payload.user] });
+        }
+        return { ok: true as const, user: payload.user };
+      }
+      if (response.status !== 503) {
+        return { ok: false as const, message: payload.message };
+      }
+    } catch {
+      // Fall through to the publishable client until the SQL revoke runs.
+    }
+    const supabase = createSupabase();
     if (!supabase)
       return { ok: false as const, message: "That user could not be created." };
     const inserted = await supabase
@@ -485,7 +575,7 @@ export async function createPortalUser(
         must_reset: true,
         menu_rights: input.menus,
       })
-      .select("id, role, name, identifier, password, must_reset")
+      .select("id, role, name, identifier, must_reset")
       .single();
     const withoutMenus =
       inserted.error && missingMenuColumn(inserted.error.message)
@@ -498,7 +588,7 @@ export async function createPortalUser(
               password: input.password,
               must_reset: true,
             })
-            .select("id, role, name, identifier, password, must_reset")
+            .select("id, role, name, identifier, must_reset")
             .single()
         : null;
     const chosen = withoutMenus ?? inserted;
@@ -512,7 +602,7 @@ export async function createPortalUser(
               identifier,
               password: input.password,
             })
-            .select("id, role, name, identifier, password")
+            .select("id, role, name, identifier")
             .single()
         : null;
     const data = fallback ? fallback.data : chosen.data;
@@ -547,12 +637,27 @@ export async function createPortalUser(
 }
 
 export async function removePortalUser(user: PortalUser, source: UserSource) {
-  const supabase = createSupabase();
   if (
     source === "database" &&
     !user.id.startsWith("seed-") &&
     !user.id.startsWith("local-")
   ) {
+    try {
+      const response = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+      if (response.ok) {
+        if (memory) {
+          publish({
+            ...memory,
+            users: memory.users.filter((item) => item.id !== user.id),
+          });
+        }
+        return { ok: true as const };
+      }
+      if (response.status !== 503) return { ok: false as const };
+    } catch {
+      // Fall through to the publishable client until the SQL revoke runs.
+    }
+    const supabase = createSupabase();
     if (!supabase) return { ok: false as const };
     const { error } = await supabase.from("portal_users").delete().eq("id", user.id);
     if (error) return { ok: false as const };

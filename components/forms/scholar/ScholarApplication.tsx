@@ -24,7 +24,7 @@ import { scholarDocuments } from "@/data/documents";
 import { scholarDeclaration } from "@/data/declarations";
 import { scholarFormCopy } from "@/data/forms";
 import { schools } from "@/data/schools";
-import { issueScholarNumber, saveSubmission } from "@/lib/applications";
+import { saveSubmission } from "@/lib/applications";
 import { attachmentNames, savePhdApplication } from "@/lib/records";
 import {
   blankScholar,
@@ -275,7 +275,11 @@ export function ScholarApplication() {
         images: { photo: photo || null, signature: signature || null },
       },
     });
-    const applicationNo = saved.ok ? saved.applicationNo : issueScholarNumber();
+    if (!saved.ok) {
+      setSubmitError(saved.message);
+      return;
+    }
+    const applicationNo = saved.applicationNo;
     const status = "Acknowledgement sent";
     const nextReceipt: PhdReceipt = {
       applicationNo,
@@ -294,8 +298,8 @@ export function ScholarApplication() {
       status,
     });
     writeLocalReceipt(submitted.mobile, nextReceipt);
+    await clearRemoteDraft(submitted.mobile);
     clearLocalDraft(submitted.mobile);
-    void clearRemoteDraft(submitted.mobile);
     setReceipt(nextReceipt);
     setEditing(false);
   }
@@ -374,6 +378,12 @@ export function ScholarApplication() {
             error={errors.session?.message}
           >
             <NativeSelect id="session" {...register("session")}>
+              {values.session &&
+              !(admissionSessions as readonly string[]).includes(values.session) ? (
+                <option value={values.session}>
+                  {values.session} {admissionYear}
+                </option>
+              ) : null}
               {admissionSessions.map((session) => (
                 <option key={session} value={session}>
                   {session} {admissionYear}

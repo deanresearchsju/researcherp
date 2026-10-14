@@ -5,14 +5,33 @@ export type StoredFile = {
   previewUrl: string | null;
 };
 
+function sizeRule(file: File, rule: (typeof fileLimits)[FileLimitKey]) {
+  if (file.type.startsWith("image/")) {
+    return {
+      minBytes: 1,
+      maxBytes: fileLimits.photo.maxBytes,
+      label: fileLimits.photo.label,
+    };
+  }
+  if (file.type === "application/pdf") {
+    return {
+      minBytes: 1,
+      maxBytes: fileLimits.resume.maxBytes,
+      label: fileLimits.resume.label,
+    };
+  }
+  return { minBytes: rule.minBytes, maxBytes: rule.maxBytes, label: rule.label };
+}
+
 export function fileError(file: File | null, ruleKey: FileLimitKey, required: boolean) {
   const rule = fileLimits[ruleKey];
   if (!file) return required ? "Upload this document." : null;
   if (!(rule.types as readonly string[]).includes(file.type)) {
     return `This file type is not accepted. Use ${rule.label}.`;
   }
-  if (file.size < rule.minBytes || file.size > rule.maxBytes) {
-    return `This file is outside the allowed size. Use ${rule.label}.`;
+  const size = sizeRule(file, rule);
+  if (file.size < size.minBytes || file.size > size.maxBytes) {
+    return `This file is outside the allowed size. Use ${size.label}.`;
   }
   return null;
 }
@@ -33,7 +52,8 @@ export function fileToDataUrl(file: File) {
     reader.onload = () => {
       resolve(typeof reader.result === "string" ? reader.result : "");
     };
-    reader.onerror = () => reject(reader.error ?? new Error("The file could not be read."));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("The file could not be read."));
     reader.readAsDataURL(file);
   });
 }

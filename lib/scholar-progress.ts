@@ -1,4 +1,9 @@
-import { admissionYear, programmeName, storageKeys } from "@/lib/constants";
+import {
+  admissionSessions,
+  admissionYear,
+  programmeName,
+  storageKeys,
+} from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { toJson } from "@/lib/records";
 import { emptyAddress, emptyEducation, type ScholarFormValues } from "@/lib/validation";
@@ -23,7 +28,7 @@ const stepCount = 10;
 
 export function blankScholar(): ScholarFormValues {
   return {
-    session: "June",
+    session: admissionSessions[0],
     year: admissionYear,
     title: "",
     fullName: "",
@@ -116,6 +121,19 @@ export function clearLocalDraft(mobile: string) {
   const all = readMap<DraftRecord>(storageKeys.scholarProgress);
   delete all[mobile];
   writeMap(storageKeys.scholarProgress, all);
+  const tokens = readMap<string>(storageKeys.draftTokens);
+  delete tokens[mobile];
+  writeMap(storageKeys.draftTokens, tokens);
+}
+
+function draftTokenFor(mobile: string) {
+  const tokens = readMap<string>(storageKeys.draftTokens);
+  const existing = tokens[mobile];
+  if (existing && existing.length >= 16) return existing;
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+  tokens[mobile] = token;
+  writeMap(storageKeys.draftTokens, tokens);
+  return token;
 }
 
 export function readLocalReceipt(mobile: string): PhdReceipt | null {
@@ -153,19 +171,23 @@ export async function saveRemoteDraft(
 ) {
   const supabase = createSupabase();
   if (!supabase) return;
-  await supabase.from("phd_drafts").upsert({
-    mobile,
-    email,
-    department,
-    step,
-    payload: toJson(values),
+  await supabase.rpc("upsert_phd_draft", {
+    p_token: draftTokenFor(mobile),
+    p_mobile: mobile,
+    p_email: email,
+    p_department: department,
+    p_step: step,
+    p_payload: toJson(values),
   });
 }
 
 export async function clearRemoteDraft(mobile: string) {
   const supabase = createSupabase();
   if (!supabase) return;
-  await supabase.from("phd_drafts").delete().eq("mobile", mobile);
+  const tokens = readMap<string>(storageKeys.draftTokens);
+  const token = tokens[mobile];
+  if (!token) return;
+  await supabase.rpc("delete_phd_draft", { p_token: token });
 }
 
 function receiptFromPayload(
@@ -248,17 +270,24 @@ export async function findPhdByMobile(
       };
     }
 
-    const draft = await supabase
-      .from("phd_drafts")
-      .select("step, payload")
-      .eq("mobile", mobile)
-      .maybeSingle();
-    if (!draft.error && draft.data) {
-      return {
-        kind: "draft",
-        step: Math.min(Math.max(draft.data.step, 0), stepCount - 1),
-        values: mergeScholarValues(draft.data.payload),
-      };
+    const token = readMap<string>(storageKeys.draftTokens)[mobile];
+    if (token) {
+      const draft = await supabase.rpc("get_phd_draft", { p_token: token });
+      const payload = draft.data;
+      if (
+        !draft.error &&
+        payload &&
+        typeof payload === "object" &&
+        !Array.isArray(payload) &&
+        "payload" in payload
+      ) {
+        const step = Number("step" in payload ? payload.step : 0);
+        return {
+          kind: "draft",
+          step: Number.isFinite(step) ? Math.min(Math.max(step, 0), stepCount - 1) : 0,
+          values: mergeScholarValues(payload.payload),
+        };
+      }
     }
   }
 

@@ -1,5 +1,5 @@
 import { scholarDeclaration, supervisorDeclaration } from "@/data/declarations";
-import { university } from "@/lib/constants";
+import { admissionSessionsCopy, university } from "@/lib/constants";
 
 export { scholarDeclaration, supervisorDeclaration };
 
@@ -13,7 +13,8 @@ export const scholarFormCopy = {
   applicationDate: "Date of Application",
   session: "Session & Year",
   issued: "Issued on submission",
-  success: "An acknowledgement mail has been sent to your email.",
+  success: "Keep the application number from the receipt. The office uses it to track this form.",
+  startHint: `${admissionSessionsCopy.sentence} Use a mobile number and email you can reach. A draft stays in this browser until you submit.`,
   draftNote:
     "A draft of your answers is saved in this browser. Uploads stay only for this visit.",
 };

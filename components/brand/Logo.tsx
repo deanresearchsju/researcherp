@@ -16,7 +16,8 @@ export function Logo({ className, priority = false, alt }: LogoProps) {
       width={1024}
       height={216}
       priority={priority}
-      className={cn("h-14 w-auto", className)}
+      sizes="320px"
+      className={cn("h-16 w-auto object-contain", className)}
     />
   );
 }

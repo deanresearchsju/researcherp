@@ -4,13 +4,13 @@ export const checklist: ChecklistItem[] = [
   {
     id: "photo",
     title: "Passport photograph",
-    detail: "Recent colour photograph, file size 200–600 KB.",
+    detail: "Recent colour photograph, file size below 100 KB.",
     required: true,
   },
   {
     id: "signature",
     title: "Signature",
-    detail: "Scanned signature on a plain background, file size 20–40 KB.",
+    detail: "Scanned signature on a plain background, file size below 100 KB.",
     required: true,
   },
   {
@@ -20,9 +20,21 @@ export const checklist: ChecklistItem[] = [
     required: true,
   },
   {
+    id: "sslc & hsc",
+    title: "SSLC & HSC",
+    detail: "Marksheet.",
+    required: true,
+  },
+  {
+    id: "Transfer Certificate",
+    title: "Transfer Certificate",
+    detail: "Last Studied College's Transfer Certificate.",
+    required: true,
+  },
+  {
     id: "ug",
     title: "Undergraduate degree",
-    detail: "Degree certificate or provisional certificate.",
+    detail: "Degree certificate and Marksheet.",
     required: true,
   },
   {

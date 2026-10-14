@@ -8,7 +8,7 @@ type PageHeaderProps = {
 
 export function PageHeader({ eyebrow, title, description }: PageHeaderProps) {
   return (
-    <header className="border-b border-border bg-white">
+    <header className="border-b border-border bg-card">
       <div className={cn("mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8")}>
         <p className="text-xs font-semibold tracking-[0.22em] text-secondary uppercase">
           {eyebrow}

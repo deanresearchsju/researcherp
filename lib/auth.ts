@@ -1,5 +1,4 @@
 import { sessionEventName, sessionStorageKey } from "@/lib/constants";
-import { loadPortalUsers } from "@/lib/users";
 import type { Role } from "@/types";
 
 export function notifySessionChange() {
@@ -22,6 +21,7 @@ export type PreviewSession = {
   identifier: string;
   name: string;
   mustReset: boolean;
+  menus?: string[] | null;
 };
 
 const dashboards: Record<Role, string> = {
@@ -35,43 +35,36 @@ export function portalHome(role: Role) {
 }
 
 export async function mockLogin(input: LoginInput): Promise<LoginResult> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-
-  const identifier = input.identifier.trim().toLowerCase();
-  const { users } = await loadPortalUsers();
-  const recognised = users.find(
-    (account) =>
-      account.role === input.role &&
-      account.identifier.toLowerCase() === identifier &&
-      account.password === input.password,
-  );
-  if (!recognised) {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: input.role,
+      identifier: input.identifier,
+      password: input.password,
+      remember: input.remember,
+    }),
+  });
+  let payload: { ok: true; redirectTo: string; session: PreviewSession } | { ok: false; message: string };
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch {
     return {
       ok: false,
       message: "Those credentials were not recognised. Check the details and try again.",
     };
   }
-
-  const session: PreviewSession = {
-    role: input.role,
-    identifier: input.identifier.trim(),
-    name: recognised.name,
-    mustReset: recognised.mustReset,
-  };
-
+  if (!payload.ok) {
+    return { ok: false, message: payload.message };
+  }
   if (typeof window !== "undefined") {
-    const payload = JSON.stringify(session);
     window.localStorage.removeItem(sessionStorageKey);
     window.sessionStorage.removeItem(sessionStorageKey);
     const store = input.remember ? window.localStorage : window.sessionStorage;
-    store.setItem(sessionStorageKey, payload);
+    store.setItem(sessionStorageKey, JSON.stringify(payload.session));
     notifySessionChange();
   }
-
-  return {
-    ok: true,
-    redirectTo: recognised.mustReset ? "/login/reset" : dashboards[input.role],
-  };
+  return { ok: true, redirectTo: payload.redirectTo };
 }
 
 export function readPreviewSession(): PreviewSession | null {
@@ -83,7 +76,12 @@ export function readPreviewSession(): PreviewSession | null {
   try {
     const parsed = JSON.parse(raw) as PreviewSession;
     if (!parsed.identifier || !parsed.role) return null;
-    return { ...parsed, name: parsed.name ?? "", mustReset: parsed.mustReset === true };
+    return {
+      ...parsed,
+      name: parsed.name ?? "",
+      mustReset: parsed.mustReset === true,
+      menus: parsed.menus,
+    };
   } catch {
     return null;
   }
@@ -105,4 +103,5 @@ export function clearPreviewSession() {
   window.localStorage.removeItem(sessionStorageKey);
   window.sessionStorage.removeItem(sessionStorageKey);
   notifySessionChange();
+  void fetch("/api/auth/logout", { method: "POST" });
 }

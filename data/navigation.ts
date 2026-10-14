@@ -3,7 +3,6 @@ import type { NavLink } from "@/types";
 export const primaryNav: NavLink[] = [
   { label: "Home", href: "/" },
   { label: "Announcements", href: "/announcements" },
-  { label: "Programmes", href: "/programmes" },
   { label: "Admission", href: "/admission" },
   { label: "Supervisors", href: "/supervisors" },
   { label: "Our Team", href: "/our-team" },
@@ -12,7 +11,6 @@ export const primaryNav: NavLink[] = [
 
 export const footerExplore: NavLink[] = [
   { label: "Announcements", href: "/announcements" },
-  { label: "Programmes", href: "/programmes" },
   { label: "Admission", href: "/admission" },
   { label: "Scholar journey", href: "/scholar-journey" },
   { label: "Supervisors", href: "/supervisors" },

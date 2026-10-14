@@ -33,7 +33,8 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (mode !== "admin") return true;
     const result = resultFor(doctoral, row.id);
     const paper = paperOf(doctoral, row);
-    const label = result?.outcome ?? "Pending";
+    const label =
+      result?.attendance === "Absent" ? "Absent" : (result?.outcome ?? "Pending");
     return (
       (outcome === "" || label === outcome) &&
       (semester === "" || String(row.semester) === semester) &&
@@ -54,10 +55,6 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">Course-work results</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Pass or fail for each registered paper. A scholar can write the papers across
-          four semesters.
-        </p>
       </header>
       {mode === "admin" ? (
         <ListToolbar
@@ -68,7 +65,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               id: "outcome",
               label: "Result",
               value: outcome,
-              options: ["Pass", "Fail", "Pending"].map((item) => ({
+              options: ["Pass", "Fail", "Absent", "Pending"].map((item) => ({
                 value: item,
                 label: item,
               })),
@@ -88,7 +85,15 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
           shown={rows.length}
           total={doctoral.registrations.length}
           filename="course-results.csv"
-          headers={["scholar", "semester", "code", "subject", "result", "published"]}
+          headers={[
+            "scholar",
+            "semester",
+            "code",
+            "subject",
+            "result",
+            "attendance",
+            "published",
+          ]}
           rows={rows.map((row) => {
             const paper = paperOf(doctoral, row);
             const result = resultFor(doctoral, row.id);
@@ -98,6 +103,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               paper.code,
               paper.name,
               result?.outcome ?? "Pending",
+              result?.attendance || "",
               result?.publishedOn ?? "",
             ];
           })}
@@ -142,6 +148,23 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                     >
                       Fail
                     </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void publishResult(
+                          row.id,
+                          "Fail",
+                          new Date().toISOString().slice(0, 10),
+                          "Absent",
+                        ).then((saved) =>
+                          setNotice(saved.ok ? "Absent recorded as fail." : saved.message),
+                        )
+                      }
+                    >
+                      Absent
+                    </Button>
                   </div>
                 ) : (
                   <Badge
@@ -149,12 +172,15 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                       result?.outcome === "Fail" ? "maroon" : result ? "gold" : "outline"
                     }
                   >
-                    {result?.outcome ?? "Pending"}
+                    {result?.attendance === "Absent"
+                      ? "Absent"
+                      : (result?.outcome ?? "Pending")}
                   </Badge>
                 )}
                 {mode === "admin" && result ? (
                   <span className="text-sm text-muted-foreground">
-                    {result.outcome} · {result.publishedOn}
+                    {result.attendance === "Absent" ? "Absent" : result.outcome} ·{" "}
+                    {result.publishedOn}
                   </span>
                 ) : null}
               </li>

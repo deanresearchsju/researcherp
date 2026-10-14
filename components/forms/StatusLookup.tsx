@@ -75,9 +75,7 @@ export function StatusLookup() {
         >
           <p className="font-semibold text-primary">{match.applicationNo}</p>
           <p className="mt-1">{match.name}</p>
-          <p className="mt-1 text-muted-foreground">
-            {match.status}. An acknowledgement mail has been sent to your email.
-          </p>
+          <p className="mt-1 text-muted-foreground">{match.status}.</p>
           <p className="mt-1 text-muted-foreground">
             Date of birth {formatIsoDate(match.dateOfBirth)}
           </p>

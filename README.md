@@ -73,7 +73,7 @@ Any password of at least 6 characters opens the matching dashboard. The password
 - Helpdesk phone, hours, and campus address in `lib/constants.ts` (the email is `deanresearch.sju@dmifoundations.org`)
 - Site URL `https://research.sju.ac.in`
 - Bank account name, number, IFSC, bank, and branch
-- Next admission deadline in `data/home.ts` (currently 30 April 2026)
+- Ph.D. admission sessions are January and July (`lib/constants.ts`)
 - Announcement dates
 - Approved school names and research areas
 - Eligibility marks, if the University publishes a minimum

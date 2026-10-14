@@ -27,7 +27,7 @@ export function ProgrammesGlance() {
           ))}
         </ul>
         <Link
-          href="/programmes"
+          href="/admission#programmes"
           className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline"
         >
           {homeCopy.programmesLink}

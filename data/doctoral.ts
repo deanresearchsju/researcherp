@@ -1,6 +1,6 @@
-import { indexedSources } from "@/lib/constants";
+import { admissionSessions, indexedSources } from "@/lib/constants";
 
-export const admissionSessions = ["June", "January"] as const;
+export { admissionSessions };
 
 export const courseSemesters = [1, 2, 3, 4] as const;
 
@@ -67,5 +67,11 @@ export const hardcopyNotice =
   "Submit the hard copy to the Dean's office within 3 working days.";
 
 export const thesisWindowMonths = 3;
+
+export const examinerOutcomes = ["Recommended", "Revision", "Rejected"] as const;
+
+export const vivaOutcomes = ["Passed", "Failed"] as const;
+
+export const completionKinds = ["Provisional", "Degree"] as const;
 
 export const reportTargets = { "Full-Time": 6, "Part-Time": 8 } as const;

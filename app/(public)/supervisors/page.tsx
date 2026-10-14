@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Container } from "@/components/ui/container";
 import { VacancyList } from "@/components/vacancies/VacancyList";
 import { university } from "@/lib/constants";
+import { loadResearchAreas } from "@/lib/research-areas";
 import { loadVacancies, officeVacancies } from "@/lib/vacancies";
 
 export const metadata: Metadata = {
@@ -14,8 +15,9 @@ export const metadata: Metadata = {
 
 async function VacancyBoard() {
   const loaded = await loadVacancies();
+  const areas = await loadResearchAreas();
   const rows = loaded.source === "empty" ? officeVacancies() : loaded.rows;
-  return <VacancyList rows={rows} />;
+  return <VacancyList rows={rows} schools={areas.schools} />;
 }
 
 export default function SupervisorsPage() {

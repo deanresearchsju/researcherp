@@ -1,10 +1,11 @@
 "use client";
 
 import { FileText, X } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { fileLimits, type FileLimitKey } from "@/lib/constants";
-import { releaseFile, takeFile, type StoredFile } from "@/lib/files";
+import { fileError, releaseFile, takeFile, type StoredFile } from "@/lib/files";
 
 type FileUploadProps = {
   id: string;
@@ -25,6 +26,8 @@ export function FileUpload({
   framed = false,
 }: FileUploadProps) {
   const rule = fileLimits[acceptRule];
+  const [pickError, setPickError] = useState<string | null>(null);
+  const shownError = error ?? pickError;
 
   function replace(file: File | null) {
     releaseFile(value);
@@ -38,14 +41,27 @@ export function FileUpload({
         type="file"
         accept={rule.accept}
         className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary"
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-invalid={shownError ? true : undefined}
+        aria-describedby={shownError ? `${id}-error` : undefined}
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
+          if (!file) {
+            setPickError(null);
+            replace(null);
+            return;
+          }
+          const message = fileError(file, acceptRule, true);
+          if (message) {
+            setPickError(message);
+            event.target.value = "";
+            return;
+          }
+          setPickError(null);
           replace(file);
           event.target.value = "";
         }}
       />
+      <p className="text-xs text-muted-foreground">{rule.label}</p>
       {value && framed ? (
         <div className="flex items-center gap-2 text-xs">
           <span className="min-w-0 flex-1 truncate font-medium text-foreground">
@@ -91,9 +107,9 @@ export function FileUpload({
           </Button>
         </div>
       ) : null}
-      {error ? (
+      {shownError ? (
         <p id={`${id}-error`} role="alert" className="text-sm text-secondary">
-          {error}
+          {shownError}
         </p>
       ) : null}
     </div>

@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   regulationEligibility,
   regulationEvaluation,
-  regulationSupervisors,
   regulationTabs,
   researchPage,
   type RegulationTabId,
@@ -17,15 +17,24 @@ export function RegulationsPanel() {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Ph.D. Regulations">
-        {regulationTabs.map((item) => (
+      <div
+        className="inline-flex max-w-full flex-wrap overflow-hidden rounded-xl border border-border bg-card"
+        role="tablist"
+        aria-label="Ph.D. Regulations"
+      >
+        {regulationTabs.map((item, index) => (
           <Button
             key={item.id}
             type="button"
             size="sm"
             role="tab"
             aria-selected={tab === item.id}
-            variant={tab === item.id ? "default" : "outline"}
+            variant={tab === item.id ? "default" : "ghost"}
+            className={cn(
+              "rounded-none",
+              index > 0 && "border-l border-border",
+              tab !== item.id && "text-foreground",
+            )}
             onClick={() => setTab(item.id)}
           >
             {item.label}
@@ -37,9 +46,6 @@ export function RegulationsPanel() {
           <FactTable headers={regulationEligibility.headers} rows={[regulationEligibility.row]} />
         ) : null}
         {tab === "admission" ? <AdmissionCopy /> : null}
-        {tab === "supervisor" ? (
-          <FactTable headers={regulationSupervisors.headers} rows={regulationSupervisors.rows} />
-        ) : null}
         {tab === "evaluation" ? (
           <div className="space-y-3 text-sm leading-6">
             <ol className="list-decimal space-y-1 pl-5">

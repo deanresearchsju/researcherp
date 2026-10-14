@@ -10,6 +10,7 @@ import { field } from "@/lib/csv";
 import { formatIsoDate } from "@/lib/dates";
 import {
   applicationStatuses,
+  canChangeApplicationStatus,
   deleteApplication,
   updateApplicationStatus,
   type ApplicationKind,
@@ -106,11 +107,13 @@ function ApplicationTable({
                       value={row.status}
                       onChange={(event) => onStatus(row, event.target.value)}
                     >
-                      {applicationStatuses.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
+                      {applicationStatuses
+                        .filter((status) => canChangeApplicationStatus(row.status, status))
+                        .map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
                       {applicationStatuses.includes(
                         row.status as (typeof applicationStatuses)[number],
                       ) ? null : (
@@ -155,6 +158,10 @@ export function ApplicationManager({
   const canUpload = detail === null;
 
   async function onStatus(row: StoredApplication, status: string) {
+    if (!canChangeApplicationStatus(row.status, status)) {
+      setNotice("That status change is not allowed.");
+      return;
+    }
     const previous = row.status;
     setRows((current) =>
       current.map((item) => (item.id === row.id ? { ...item, status } : item)),
@@ -209,6 +216,10 @@ export function ApplicationManager({
         continue;
       }
       if (match.status === status) continue;
+      if (!canChangeApplicationStatus(match.status, status)) {
+        problems.push(`Row ${index + 2} skips a required status.`);
+        continue;
+      }
       const saved = await updateApplicationStatus(match.kind, match.id, status);
       if (!saved) {
         problems.push(`Row ${index + 2} could not be updated.`);
@@ -245,11 +256,6 @@ export function ApplicationManager({
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Applications</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Ph.D. applications and supervisor recognition applications submitted through the
-        public forms. Download them as CSV, upload a CSV to change status, or remove a
-        record. New applications are still created by the public forms.
-      </p>
       <ListToolbar
         query={query}
         onQuery={setQuery}

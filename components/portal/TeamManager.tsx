@@ -327,11 +327,6 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Our Team</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {members.length} members. Changes appear on the public Our Team page. Download the
-        list as CSV, or upload a CSV to add and update members. Removing a member stays on
-        the Remove button.
-      </p>
       <ListToolbar
         query={query}
         onQuery={setQuery}

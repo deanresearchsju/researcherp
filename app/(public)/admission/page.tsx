@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { AdmissionGlance } from "@/components/home/AdmissionGlance";
+import { AdmissionOverview } from "@/components/home/AdmissionOverview";
 import { Checklist } from "@/components/home/Checklist";
 import { FAQ } from "@/components/home/FAQ";
-import { buttonVariants } from "@/components/ui/button";
+import { ProgrammeDuration } from "@/components/home/ProgrammeDuration";
+import { PhdApplyCta } from "@/components/home/PhdApplyCta";
 import { Container } from "@/components/ui/container";
-import { university } from "@/lib/constants";
+import { admissionSessionsCopy, university } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Admission",
-  description: `Apply for the Ph.D. at ${university.name}.`,
+  description: `Apply for the Ph.D. at ${university.name}. Two admission sessions each year: January and July.`,
   alternates: { canonical: "/admission" },
 };
 
@@ -25,22 +25,15 @@ export default function AdmissionPage() {
             </p>
             <h1 className="mt-3 font-heading text-4xl text-primary">Ph.D. admission</h1>
             <p className="mt-3 max-w-xl text-base leading-7 text-muted-foreground">
-              Keep the documents below ready, then start the online application.
+              {admissionSessionsCopy.sentence} Keep the documents below ready, then start
+              the online application.
             </p>
           </div>
-          <Link
-            href="/apply"
-            className={buttonVariants({
-              variant: "gold",
-              size: "lg",
-              className: "shrink-0",
-            })}
-          >
-            Apply for Ph.D.
-          </Link>
+          <PhdApplyCta />
         </Container>
       </section>
-      <AdmissionGlance />
+      <AdmissionOverview />
+      <ProgrammeDuration />
       <Checklist />
       <FAQ />
     </>

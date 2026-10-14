@@ -63,10 +63,6 @@ export function PeopleScreen() {
         Research office
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">People</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Open one scholar or supervisor and read the menus on their record. This view is
-        for the office only.
-      </p>
       <ListToolbar
         query={query}
         onQuery={setQuery}

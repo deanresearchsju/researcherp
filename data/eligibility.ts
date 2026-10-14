@@ -1,5 +1,11 @@
 export const eligibility = [
   {
+    id: "sessions",
+    title: "January and July sessions",
+    detail:
+      "The University holds two Ph.D. admission sessions each year: January and July.",
+  },
+  {
     id: "postgraduate",
     title: "Postgraduate degree",
     detail:

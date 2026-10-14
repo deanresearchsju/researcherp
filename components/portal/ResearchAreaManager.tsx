@@ -68,7 +68,13 @@ export function ResearchAreaManager() {
     setBusy(true);
     const saved = await saveResearchAreas(next);
     setBusy(false);
-    setNotice(saved.ok ? message : "That change could not be saved.");
+    setNotice(
+      saved.ok
+        ? message
+        : "message" in saved
+          ? saved.message
+          : "That change could not be saved.",
+    );
   }
 
   async function addSchool(values: SchoolValues) {
@@ -102,9 +108,6 @@ export function ResearchAreaManager() {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Research areas</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Add a school or a research area. The home page shows the list saved here.
-      </p>
       {notice ? (
         <p role="status" className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
           {notice} {stored?.source === "browser" ? researchAreaMigrationHint : ""}

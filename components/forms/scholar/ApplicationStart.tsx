@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
@@ -10,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { scholarFormCopy } from "@/data/forms";
+import { phdWindowCopy } from "@/data/home";
 import { schools } from "@/data/schools";
 import { university } from "@/lib/constants";
 import { currentOffice, subscribeOffice } from "@/lib/office";
@@ -38,12 +41,26 @@ export function ApplicationStart({
     resolver: zodResolver(startSchema),
     defaultValues: { mobile: "", email: "", department: "" },
   });
+  const [busy, setBusy] = useState(false);
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+
+  async function submit(values: ApplicationStartValues) {
+    setBusy(true);
+    try {
+      await onApply(values);
+    } finally {
+      setBusy(false);
+    }
+  }
   if (office && !office.settings.phdOpen) {
     return (
       <ApplicationsClosed
         title="Ph.D. applications are closed"
-        detail="The research office has closed this admission window. The dates on the home page show when it opens again."
+        detail={
+          office.settings.deadline.trim()
+            ? `${phdWindowCopy.closedDetail} ${office.settings.deadlineLabel} ${office.settings.deadline}.`
+            : phdWindowCopy.closedDetail
+        }
       />
     );
   }
@@ -51,13 +68,16 @@ export function ApplicationStart({
   return (
     <form
       className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6 shadow-card sm:p-8"
-      onSubmit={form.handleSubmit(onApply)}
+      onSubmit={form.handleSubmit(submit)}
       noValidate
     >
       <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
         {university.researchOffice}
       </p>
       <h1 className="mt-2 font-heading text-3xl text-primary">Apply for Ph.D.</h1>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        {scholarFormCopy.startHint}
+      </p>
       <div className="mt-6 space-y-4">
         <FormField
           label="Mobile number"
@@ -105,9 +125,10 @@ export function ApplicationStart({
         type="submit"
         variant="gold"
         className="mt-6"
-        disabled={form.formState.isSubmitting}
+        disabled={busy}
+        aria-busy={busy}
       >
-        Apply
+        {busy ? "Opening…" : "Apply"}
       </Button>
     </form>
   );

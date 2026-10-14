@@ -29,7 +29,12 @@ export function usePreviewSession(): PreviewSession | null {
   try {
     const parsed = JSON.parse(raw) as PreviewSession;
     if (!parsed.identifier || !parsed.role) return null;
-    return { ...parsed, name: parsed.name ?? "", mustReset: parsed.mustReset === true };
+    return {
+      ...parsed,
+      name: parsed.name ?? "",
+      mustReset: parsed.mustReset === true,
+      menus: parsed.menus,
+    };
   } catch {
     return null;
   }
@@ -50,6 +55,7 @@ export function usePortalSession(): PreviewSession | null {
       identifier: view.identifier,
       name: view.name,
       mustReset: false,
+      menus: null,
     };
   }
   if (view.role === "supervisor" && pathname.startsWith("/supervisor")) {
@@ -58,6 +64,7 @@ export function usePortalSession(): PreviewSession | null {
       identifier: view.identifier,
       name: view.name,
       mustReset: false,
+      menus: null,
     };
   }
   return session;

@@ -5,6 +5,13 @@ export function isPrincipalAdmin(user: { role: Role; identifier: string }) {
   return user.role === "admin" && user.identifier.trim().toLowerCase() === "admin";
 }
 
+export function parseMenuRights(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter(
+    (item): item is string => typeof item === "string" && item.startsWith("/"),
+  );
+}
+
 export function menuHrefs(role: Role) {
   return portalGroups[role].flatMap((group) => group.items.map((item) => item.href));
 }
@@ -12,7 +19,8 @@ export function menuHrefs(role: Role) {
 export function effectiveMenus(
   user: { role: Role; identifier: string; menus: string[] | null } | undefined,
 ) {
-  if (!user || isPrincipalAdmin(user)) return null;
+  if (!user) return [];
+  if (isPrincipalAdmin(user)) return null;
   return user.menus;
 }
 

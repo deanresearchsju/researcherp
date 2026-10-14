@@ -66,3 +66,11 @@ export function isOfficeAction(label: string) {
   const text = label.replace(/\s+/g, " ").trim();
   return officeAction.test(text) || /^record\b/i.test(text);
 }
+
+export function officeViewWriteBlock() {
+  if (typeof window === "undefined") return null;
+  if (!readOfficeView()) return null;
+  const path = window.location.pathname;
+  if (!path.startsWith("/scholar") && !path.startsWith("/supervisor")) return null;
+  return { ok: false as const, message: "Office view is read-only." };
+}

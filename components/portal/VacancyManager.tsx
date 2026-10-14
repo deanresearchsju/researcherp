@@ -18,7 +18,6 @@ import {
   mapVacancy,
   officeVacancies,
   vacancyMigrationHint,
-  vacancyTotal,
   type Vacancy,
   type VacancyLoad,
 } from "@/lib/vacancies";
@@ -309,11 +308,6 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Supervisor vacancies</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {rows.length} supervisors · {vacancyTotal(rows)} vacancies. Changes appear on the
-        public Supervisors page. Download the list as CSV, or upload a CSV to add and
-        update rows. Removing a row stays on the Remove button.
-      </p>
       <ListToolbar
         query={query}
         onQuery={setQuery}

@@ -224,6 +224,7 @@ export function ScholarRecordScreen({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
 
   if (!load) {
     return (
@@ -291,8 +292,13 @@ export function ScholarRecordScreen({
   }
 
   async function decide(record: ScholarRecord, status: "Approved" | "Returned") {
+    const note = (remarks[record.id] ?? "").trim();
+    if (status === "Returned" && note.length < 2) {
+      setNotice("Enter the remarks before returning this record.");
+      return;
+    }
     setBusyId(record.id);
-    const saved = await setScholarRecordStatus(record, status);
+    const saved = await setScholarRecordStatus(record, status, note);
     if (saved && status === "Approved" && record.kind === "supervisor_change") {
       const requested = record.payload.requestedSupervisor ?? "";
       const registerGuide = supervisorForGuide(requested);
@@ -332,9 +338,6 @@ export function ScholarRecordScreen({
         {mode === "admin" ? "Admin" : "Scholar"}
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">{menu.label}</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {menu.summary}
-      </p>
       {load.detail ? (
         <p role="status" className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
           {load.detail} {scholarRecordMigrationHint}
@@ -370,15 +373,22 @@ export function ScholarRecordScreen({
       ) : null}
 
       {mode === "scholar" && signedIn && session && (!menu.needsSupervisor || guide) ? (
-        <RecordForm
-          key={existing?.id ?? "new"}
-          menu={menu}
-          scholarIdentifier={session.identifier}
-          scholarName={session.name.trim() || session.identifier}
-          supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
-          supervisorName={guide?.supervisorName ?? ""}
-          existing={existing}
-        />
+        existing?.status === "Approved" ? (
+          <p className="mt-6 rounded-xl border border-border bg-card p-4 text-sm">
+            This record is approved and locked
+            {existing.fileName ? ` · ${existing.fileName}` : ""}.
+          </p>
+        ) : (
+          <RecordForm
+            key={existing?.id ?? "new"}
+            menu={menu}
+            scholarIdentifier={session.identifier}
+            scholarName={session.name.trim() || session.identifier}
+            supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
+            supervisorName={guide?.supervisorName ?? ""}
+            existing={existing}
+          />
+        )
       ) : null}
 
       {menu.kind === "payment" ? (
@@ -493,6 +503,17 @@ export function ScholarRecordScreen({
                       ) : null}
                       {mode === "admin" ? (
                         <>
+                          <Textarea
+                            aria-label={`Remarks for ${record.scholarName}`}
+                            className="min-h-16"
+                            value={remarks[record.id] ?? ""}
+                            onChange={(event) =>
+                              setRemarks((current) => ({
+                                ...current,
+                                [record.id]: event.target.value,
+                              }))
+                            }
+                          />
                           <Button
                             type="button"
                             variant="gold"

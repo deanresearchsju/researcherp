@@ -21,6 +21,7 @@ import {
   currentDoctoral,
   decideThesis,
   latestCommittee,
+  latestPlagiarism,
   latestSynopsis,
   saveThesis,
   subscribeDoctoral,
@@ -83,6 +84,7 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [sheet, setSheet] = useState<ThesisSubmission | null>(null);
   const [selection, setSelection] = useState<Record<string, ThesisPanel>>({});
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
     defaultValues: {
@@ -187,7 +189,11 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice("Select one local, one Indian, and one foreign evaluator.");
       return;
     }
-    await savePanel(panel);
+    const panelSaved = await savePanel(panel);
+    if (!panelSaved.ok) {
+      setNotice(panelSaved.message);
+      return;
+    }
     const saved = await decideThesis(thesis.id, {
       status: "Approved",
       remarks: "",
@@ -201,6 +207,20 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
   }
 
+  async function rejectThesis(thesis: ThesisSubmission) {
+    const note = (remarks[thesis.id] ?? "").trim();
+    if (note.length < 2) {
+      setNotice("Enter the remarks before rejecting the thesis.");
+      return;
+    }
+    const saved = await decideThesis(thesis.id, {
+      status: "Rejected",
+      remarks: note,
+      decidedOn: new Date().toISOString().slice(0, 10),
+    });
+    setNotice(saved.ok ? "Thesis returned with remarks." : saved.message);
+  }
+
   const groups = [
     ["local", "Local"],
     ["indian", "Indian"],
@@ -211,10 +231,6 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">Thesis</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          The thesis opens after the fourth doctoral committee is approved, and it must be
-          submitted within three months of the synopsis approval.
-        </p>
       </header>
       {mode === "scholar" ? (
         own && own.status !== "Rejected" ? (
@@ -225,6 +241,12 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
               {own.status}
               {deadline ? ` · Submit by ${deadline}` : ""}
             </p>
+            {latestPlagiarism(doctoral, identifier)?.status !== "Approved" ? (
+              <p className="mt-2 text-muted-foreground">
+                Upload the plagiarism certificate. Examiners cannot be recorded until it
+                is approved.
+              </p>
+            ) : null}
           </div>
         ) : !open ? (
           <p className="rounded-xl border border-border bg-card p-4 text-sm">
@@ -357,28 +379,61 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
                   {thesis.status}
                 </Badge>
               </div>
-              {groups.map(([key, label]) => (
-                <fieldset key={key}>
-                  <legend className="text-sm font-semibold text-primary">{label}</legend>
-                  {thesis[key].map((person: ThesisEvaluator) => (
-                    <label
-                      key={person.email}
-                      className="mt-1 flex items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="radio"
-                        name={`${thesis.id}-${key}`}
-                        checked={chosen(thesis, key) === person.name}
-                        onChange={() => choose(thesis, key, person.name)}
-                      />
-                      {person.name} · {person.institution}
-                    </label>
+              {thesis.remarks ? (
+                <p className="text-sm text-muted-foreground">{thesis.remarks}</p>
+              ) : null}
+              {thesis.status === "Submitted" ? (
+                <>
+                  {latestPlagiarism(doctoral, thesis.scholarIdentifier)?.status !==
+                  "Approved" ? (
+                    <p className="text-sm text-muted-foreground">
+                      The plagiarism certificate has to be approved before examiners can
+                      be recorded.
+                    </p>
+                  ) : null}
+                  {groups.map(([key, label]) => (
+                    <fieldset key={key}>
+                      <legend className="text-sm font-semibold text-primary">{label}</legend>
+                      {thesis[key].map((person: ThesisEvaluator) => (
+                        <label
+                          key={person.email}
+                          className="mt-1 flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="radio"
+                            name={`${thesis.id}-${key}`}
+                            checked={chosen(thesis, key) === person.name}
+                            onChange={() => choose(thesis, key, person.name)}
+                          />
+                          {person.name} · {person.institution}
+                        </label>
+                      ))}
+                    </fieldset>
                   ))}
-                </fieldset>
-              ))}
-              <Button type="button" variant="gold" onClick={() => void seal(thesis)}>
-                Record examiners and open the sheet
-              </Button>
+                  <Textarea
+                    aria-label="Remarks"
+                    value={remarks[thesis.id] ?? ""}
+                    onChange={(event) =>
+                      setRemarks((current) => ({
+                        ...current,
+                        [thesis.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="gold" onClick={() => void seal(thesis)}>
+                      Record examiners and open the sheet
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="maroon"
+                      onClick={() => void rejectThesis(thesis)}
+                    >
+                      Return
+                    </Button>
+                  </div>
+                </>
+              ) : null}
             </li>
           ))}
         </ul>

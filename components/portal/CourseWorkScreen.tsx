@@ -446,11 +446,6 @@ function ScholarCourseWork({
     <section className="space-y-6">
       <header>
         <h1 className="font-heading text-4xl text-primary">Course work</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Register the subjects for the semester the office has opened. The fee is ₹
-          {formatInr(courseWorkFee)} for each subject, paid with the registration receipt.
-          Scholars with an arrear can register through semester 4.
-        </p>
       </header>
       {doctoral.detail ? (
         <p className="text-sm text-secondary">{doctoral.detail}</p>
@@ -599,11 +594,6 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
     <section className="space-y-8">
       <header>
         <h1 className="font-heading text-4xl text-primary">Course work</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Open registration for a research batch and fix the last date. Scholars with an
-          arrear can register through semester 4. Each subject is ₹
-          {formatInr(courseWorkFee)}.
-        </p>
       </header>
       {doctoral.detail ? (
         <p className="text-sm text-secondary">{doctoral.detail}</p>

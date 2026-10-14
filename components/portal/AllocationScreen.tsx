@@ -141,10 +141,6 @@ export function AllocationScreen() {
         Research office
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Scholar allotment</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Allot a scholar to one supervisor. Each new allotment reduces that supervisor’s
-        vacancy by one. RAC nominations and supervisor approval start after this.
-      </p>
       {office.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{office.detail}</p>
       ) : null}

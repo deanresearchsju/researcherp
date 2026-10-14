@@ -1,5 +1,7 @@
+import { schools as schoolSeed } from "@/data/schools";
 import { vacancySeed, type VacancySeed } from "@/data/vacancies";
 import { createSupabase } from "@/lib/supabase/client";
+import type { School } from "@/types";
 import {
   netAllotments,
   sameGuide,
@@ -24,14 +26,35 @@ export function officeVacancies(): Vacancy[] {
   return vacancySeed.map((row) => ({ ...row, id: `office-${row.serialNo}` }));
 }
 
-export function groupVacancies(rows: Vacancy[]) {
-  const groups: { department: string; rows: Vacancy[] }[] = [];
-  for (const row of rows) {
-    const current = groups.at(-1);
-    if (current && current.department === row.department) current.rows.push(row);
-    else groups.push({ department: row.department, rows: [row] });
-  }
-  return groups;
+function sameLabel(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+export function groupVacancies(
+  rows: Vacancy[],
+  catalogue: readonly School[] = schoolSeed,
+) {
+  const order =
+    catalogue.length > 0
+      ? catalogue.map((school) => {
+          const seed = schoolSeed.find((item) => item.id === school.id);
+          const areas = [...school.areas];
+          for (const area of seed?.areas ?? []) {
+            if (!areas.some((item) => sameLabel(item, area))) areas.push(area);
+          }
+          return { ...school, areas };
+        })
+      : schoolSeed;
+  const extra = schoolSeed.filter(
+    (seed) => !order.some((school) => school.id === seed.id),
+  );
+  return [...order, ...extra].flatMap((school) => {
+    const members = rows.filter((row) =>
+      school.areas.some((area) => sameLabel(area, row.department)),
+    );
+    if (members.length === 0) return [];
+    return [{ school: school.name, rows: members }];
+  });
 }
 
 export function vacancyTotal(rows: Vacancy[]) {

@@ -121,11 +121,6 @@ export function ResearchRegister() {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Scholar register</h1>
-      <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
-        Three batches are on the roll. June 2026 is the fourth batch: selection is
-        complete. January 2026 and June 2026 still need a registration number. Open a name
-        to read that scholar&apos;s portal.
-      </p>
       {stored?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
           {stored.detail} {registerMigrationHint}
@@ -423,7 +418,9 @@ function AllotForm({
     const saved = await allotRegistration(scholar.id, number);
     setBusy(false);
     if (!saved.ok) {
-      setError("The registration number could not be saved.");
+      setError(
+        "message" in saved ? saved.message : "The registration number could not be saved.",
+      );
       return;
     }
     onDone(`Allotted ${number} to ${scholar.name}.`);

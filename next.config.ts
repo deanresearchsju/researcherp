@@ -11,8 +11,13 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
+        source: "/programmes",
+        destination: "/admission#programmes",
+        permanent: true,
+      },
+      {
         source: "/programmes-fees",
-        destination: "/programmes",
+        destination: "/admission#programmes",
         permanent: true,
       },
       {

@@ -1,4 +1,4 @@
-import { issueScholarNumber, issueSupervisorNumber } from "@/lib/applications";
+import { issueApplicationNo } from "@/lib/applications";
 import { createSupabase } from "@/lib/supabase/client";
 import type { Json } from "@/types/database";
 
@@ -9,6 +9,20 @@ export const applicationStatuses = [
   "Selected",
   "Not selected",
 ] as const;
+
+const applicationTransitions: Record<string, readonly string[]> = {
+  "Acknowledgement sent": ["Under review"],
+  "Under review": ["Shortlisted", "Not selected"],
+  "Shortlisted": ["Selected", "Not selected"],
+  Selected: [],
+  "Not selected": [],
+};
+
+export function canChangeApplicationStatus(from: string, to: string) {
+  if (from === to) return true;
+  const allowed = applicationTransitions[from];
+  return Boolean(allowed?.includes(to));
+}
 
 export type ApplicationKind = "phd" | "supervisor";
 
@@ -73,7 +87,7 @@ async function insertApplication(
   if (!supabase) return { ok: false, message: saveError };
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const applicationNo = kind === "phd" ? issueScholarNumber() : issueSupervisorNumber();
+    const applicationNo = await issueApplicationNo(kind);
     const shared = {
       application_no: applicationNo,
       date_of_birth: values.dateOfBirth,
@@ -208,10 +222,15 @@ export async function updateApplicationStatus(
 ) {
   const supabase = createSupabase();
   if (!supabase) return false;
+  const table = applicationTable(kind);
+  const current = await supabase.from(table).select("status").eq("id", id).maybeSingle();
+  if (current.error || !current.data) return false;
+  if (!canChangeApplicationStatus(current.data.status, status)) return false;
   const { error } = await supabase
-    .from(applicationTable(kind))
+    .from(table)
     .update({ status })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("status", current.data.status);
   return !error;
 }
 

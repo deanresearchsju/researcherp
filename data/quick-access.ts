@@ -4,7 +4,7 @@ export const quickAccess: QuickAccessItem[] = [
   {
     id: "apply",
     title: "Apply for Ph.D.",
-    description: "Start the online application.",
+    description: "Apply for the January or July session.",
     href: "/apply",
     icon: "file-pen",
   },

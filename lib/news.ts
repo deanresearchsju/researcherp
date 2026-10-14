@@ -1,6 +1,7 @@
 import { newsSeed } from "@/data/announcements";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
+import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson } from "@/lib/records";
 import type { NewsItem } from "@/types";
 
@@ -12,6 +13,7 @@ const rowId = "board";
 export type NewsLoad = {
   items: NewsItem[];
   source: "database" | "browser";
+  updatedAt: string | null;
   detail: string | null;
 };
 
@@ -56,25 +58,41 @@ export async function loadNews(): Promise<NewsLoad> {
   const browser = readBrowser();
   const supabase = createSupabase();
   if (!supabase) {
-    return { items: browser ?? newsSeed, source: "browser", detail: null };
+    return {
+      items: browser ?? newsSeed,
+      source: "browser",
+      updatedAt: null,
+      detail: null,
+    };
   }
   const { data, error } = await supabase
     .from("news_board")
-    .select("payload")
+    .select("payload, updated_at")
     .eq("id", rowId)
     .maybeSingle();
   if (error) {
     return {
       items: browser ?? newsSeed,
       source: "browser",
+      updatedAt: null,
       detail: newsMigrationHint,
     };
   }
   if (data?.payload && typeof data.payload === "object" && !Array.isArray(data.payload)) {
     const items = parseItems((data.payload as { items?: unknown }).items);
-    return { items, source: "database", detail: null };
+    return {
+      items,
+      source: "database",
+      updatedAt: data.updated_at ?? null,
+      detail: null,
+    };
   }
-  return { items: browser ?? newsSeed, source: "browser", detail: null };
+  return {
+    items: browser ?? newsSeed,
+    source: "browser",
+    updatedAt: null,
+    detail: null,
+  };
 }
 
 let memory: NewsLoad | null = null;
@@ -113,18 +131,31 @@ export async function saveNews(items: NewsItem[]) {
   request += 1;
   const supabase = createSupabase();
   if (supabase) {
-    const { error } = await supabase.from("news_board").upsert({
-      id: rowId,
-      payload: toJson({ items }),
-    });
-    if (!error) {
+    const saved = await saveJsonBlob(
+      "news_board",
+      rowId,
+      toJson({ items }),
+      memory?.updatedAt ?? null,
+    );
+    if (saved.ok) {
       if (typeof window !== "undefined") writeBrowser(items);
-      publish({ items, source: "database", detail: null });
+      publish({
+        items,
+        source: "database",
+        updatedAt: saved.updatedAt,
+        detail: null,
+      });
       return { ok: true as const };
     }
+    if (saved.conflict) return { ok: false as const, message: saved.message };
   }
   if (typeof window === "undefined") return { ok: false as const };
   writeBrowser(items);
-  publish({ items, source: "browser", detail: newsMigrationHint });
+  publish({
+    items,
+    source: "browser",
+    updatedAt: memory?.updatedAt ?? null,
+    detail: newsMigrationHint,
+  });
   return { ok: true as const };
 }

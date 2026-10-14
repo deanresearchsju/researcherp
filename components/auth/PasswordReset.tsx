@@ -11,8 +11,7 @@ import { useClientReady } from "@/components/forms/ClientGate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { portalHome, replacePreviewSession } from "@/lib/auth";
-import { loadPortalUsers, updatePortalUser } from "@/lib/users";
+import { portalHome, replacePreviewSession, type PreviewSession } from "@/lib/auth";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
 const schema = z
@@ -47,36 +46,20 @@ export function PasswordReset() {
   async function onSubmit(values: ResetValues) {
     if (!session) return;
     setFormError(null);
-    const load = await loadPortalUsers();
-    const user = load.users.find(
-      (account) =>
-        account.role === session.role &&
-        account.identifier.toLowerCase() === session.identifier.toLowerCase(),
-    );
-    if (!user) {
-      setFormError("This sign-in could not be updated. Sign in again.");
-      return;
-    }
-    if (values.password === user.password) {
-      setFormError("Choose a password that is different from the one you were given.");
-      return;
-    }
-    const saved = await updatePortalUser(
-      user,
-      { name: user.name, password: values.password, mustReset: false, menus: user.menus },
-      load.source,
-    );
-    if (!saved.ok) {
-      setFormError("The new password could not be saved.");
-      return;
-    }
-    replacePreviewSession({
-      role: session.role,
-      identifier: session.identifier,
-      name: saved.user.name,
-      mustReset: false,
+    const response = await fetch("/api/auth/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: values.password }),
     });
-    router.push(portalHome(session.role));
+    const payload = (await response.json()) as
+      | { ok: true; session: PreviewSession }
+      | { ok: false; message: string };
+    if (!payload.ok) {
+      setFormError(payload.message);
+      return;
+    }
+    replacePreviewSession(payload.session);
+    router.push(portalHome(payload.session.role));
   }
 
   const {

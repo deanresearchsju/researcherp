@@ -1,5 +1,6 @@
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
+import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson } from "@/lib/records";
 
 export type ThesisPanel = {
@@ -10,6 +11,7 @@ export type ThesisPanel = {
 };
 
 let memory: ThesisPanel[] | null = null;
+let panelStamp: string | null = null;
 let loading = false;
 const listeners = new Set<() => void>();
 
@@ -67,10 +69,11 @@ async function loadPanels() {
   if (!supabase) return browser;
   const { data, error } = await supabase
     .from("thesis_panels")
-    .select("payload")
+    .select("payload, updated_at")
     .eq("id", "office")
     .maybeSingle();
   if (error || !data?.payload) return browser;
+  panelStamp = data.updated_at ?? null;
   const remote = parse(data.payload);
   const seen = new Set(remote.map((item) => item.thesisId));
   return [...browser.filter((item) => !seen.has(item.thesisId)), ...remote];
@@ -83,14 +86,15 @@ export async function savePanel(panel: ThesisPanel) {
   next.unshift(panel);
   const supabase = createSupabase();
   if (supabase) {
-    const { error } = await supabase
-      .from("thesis_panels")
-      .upsert({ id: "office", payload: toJson(next) });
-    if (!error) {
+    const saved = await saveJsonBlob("thesis_panels", "office", toJson(next), panelStamp);
+    if (saved.ok) {
+      panelStamp = saved.updatedAt;
       publish(next);
-      return;
+      return { ok: true as const };
     }
+    if (saved.conflict) return { ok: false as const, message: saved.message };
   }
   window.localStorage.setItem(storageKeys.thesisPanels, JSON.stringify(next));
   publish(next);
+  return { ok: true as const };
 }

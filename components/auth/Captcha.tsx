@@ -32,7 +32,7 @@ export function Captcha({ challenge, registration, onRefresh, error }: CaptchaPr
       <Label htmlFor="captcha">
         {challenge
           ? `What is ${challenge.left} + ${challenge.right}?`
-          : "Preparing the sign-in check"}
+          : "Sign-in check"}
       </Label>
       <div className="flex items-center gap-2">
         <Input

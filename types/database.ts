@@ -74,6 +74,7 @@ export type Database = {
           department: string;
           step: number;
           payload: Json;
+          token: string;
           updated_at: string;
         };
         Insert: {
@@ -82,6 +83,7 @@ export type Database = {
           department: string;
           step?: number;
           payload: Json;
+          token: string;
           updated_at?: string;
         };
         Update: {
@@ -89,6 +91,7 @@ export type Database = {
           department?: string;
           step?: number;
           payload?: Json;
+          token?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -280,6 +283,10 @@ export type Database = {
           nominees: Json;
           selected_internal: string;
           selected_external: string;
+          remarks?: string;
+          agenda?: string;
+          attendance?: string;
+          minutes?: string;
           created_at: string;
           updated_at: string;
         };
@@ -294,6 +301,10 @@ export type Database = {
           nominees: Json;
           selected_internal?: string;
           selected_external?: string;
+          remarks?: string;
+          agenda?: string;
+          attendance?: string;
+          minutes?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -302,6 +313,10 @@ export type Database = {
           nominees?: Json;
           selected_internal?: string;
           selected_external?: string;
+          remarks?: string;
+          agenda?: string;
+          attendance?: string;
+          minutes?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -348,6 +363,53 @@ export type Database = {
         Update: { payload?: Json; updated_at?: string };
         Relationships: [];
       };
+      audit_log: {
+        Row: {
+          id: string;
+          at: string;
+          actor_role: string;
+          actor_identifier: string;
+          action: string;
+          subject: string;
+          detail: string;
+        };
+        Insert: {
+          id?: string;
+          at?: string;
+          actor_role: string;
+          actor_identifier: string;
+          action: string;
+          subject: string;
+          detail?: string;
+        };
+        Update: {
+          detail?: string;
+        };
+        Relationships: [];
+      };
+      portal_notices: {
+        Row: {
+          id: string;
+          created_at: string;
+          role: string;
+          identifier: string;
+          title: string;
+          detail: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          role: string;
+          identifier: string;
+          title: string;
+          detail?: string;
+        };
+        Update: {
+          title?: string;
+          detail?: string;
+        };
+        Relationships: [];
+      };
       supervisor_applications: {
         Row: {
           id: string;
@@ -377,7 +439,40 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      issue_application_no: {
+        Args: { p_kind: string; p_year: string };
+        Returns: string;
+      };
+      upsert_phd_draft: {
+        Args: {
+          p_token: string;
+          p_mobile: string;
+          p_email: string;
+          p_department: string;
+          p_step: number;
+          p_payload: Json;
+        };
+        Returns: undefined;
+      };
+      get_phd_draft: {
+        Args: { p_token: string };
+        Returns: Json | null;
+      };
+      delete_phd_draft: {
+        Args: { p_token: string };
+        Returns: undefined;
+      };
+      save_json_blob: {
+        Args: {
+          p_table: string;
+          p_id: string;
+          p_payload: Json;
+          p_updated_at: string | null;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

@@ -55,9 +55,6 @@ export function MyScholars() {
         Supervisor
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">My scholars</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Scholars the research office has allotted to you, and the present RAC only.
-      </p>
       {allotted.length === 0 && guided.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">
           No scholar is allotted to you yet.

@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { menuByKind, scholarRecordMenus } from "@/data/scholar-records";
 import { formatIsoDate } from "@/lib/dates";
 import { currentOffice, sameId, subscribeOffice } from "@/lib/office";
@@ -43,9 +44,34 @@ export function ReviewScreen() {
     () => currentScholarRecords("supervisor_change"),
     () => null,
   );
+  const leave = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("leave", onChange),
+    () => currentScholarRecords("leave"),
+    () => null,
+  );
+  const extension = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("extension", onChange),
+    () => currentScholarRecords("extension"),
+    () => null,
+  );
+  const titleChange = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("title_change", onChange),
+    () => currentScholarRecords("title_change"),
+    () => null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
 
-  if (!office || !publication || !report || !cancellation || !change) {
+  if (
+    !office ||
+    !publication ||
+    !report ||
+    !cancellation ||
+    !change ||
+    !leave ||
+    !extension ||
+    !titleChange
+  ) {
     return <p className="text-sm text-muted-foreground">Loading requests…</p>;
   }
   if (!session || session.role !== "supervisor") {
@@ -81,6 +107,9 @@ export function ReviewScreen() {
     ...report.records,
     ...cancellation.records,
     ...change.records,
+    ...leave.records,
+    ...extension.records,
+    ...titleChange.records,
   ]
     .filter((record) => isOwnScholar(record.scholarIdentifier))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -89,7 +118,12 @@ export function ReviewScreen() {
     record: ScholarRecord,
     status: "Supervisor approved" | "Returned",
   ) {
-    const saved = await setScholarRecordStatus(record, status);
+    const note = (remarks[record.id] ?? "").trim();
+    if (status === "Returned" && note.length < 2) {
+      setNotice("Enter the remarks before returning this request.");
+      return;
+    }
+    const saved = await setScholarRecordStatus(record, status, note);
     setNotice(
       saved
         ? `${record.scholarName} marked ${status}.`
@@ -103,11 +137,6 @@ export function ReviewScreen() {
         Supervisor
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Scholar requests</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        Publications, six-month reports, supervisor-change requests, and Ph.D.
-        cancellation requests from your scholars. Approve a publication, or recommend the
-        other requests. The research office approves after you.
-      </p>
       {notice ? (
         <p role="status" className="mt-4 text-sm text-secondary">
           {notice}
@@ -160,7 +189,18 @@ export function ReviewScreen() {
                   ))}
                 </div>
                 {record.status === "Submitted" ? (
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 space-y-2">
+                    <Textarea
+                      aria-label={`Remarks for ${record.scholarName}`}
+                      value={remarks[record.id] ?? ""}
+                      onChange={(event) =>
+                        setRemarks((current) => ({
+                          ...current,
+                          [record.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <div className="flex gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -177,6 +217,7 @@ export function ReviewScreen() {
                     >
                       Return
                     </Button>
+                    </div>
                   </div>
                 ) : null}
               </li>

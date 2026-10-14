@@ -87,10 +87,6 @@ export function ColloquiumScreen({ mode }: { mode: "admin" | "scholar" | "superv
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">Colloquium</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Each sitting is named for May or November. Active scholars and their supervisors
-          see the invitation here.
-        </p>
       </header>
       {mode === "admin" ? (
         <form

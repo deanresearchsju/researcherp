@@ -1,3 +1,4 @@
+
 import { admissionWindow } from "@/data/home";
 import { heroCopy } from "@/data/sections";
 import {
@@ -5,10 +6,23 @@ import {
   type RecordStatus,
   type ScholarRecordKind,
 } from "@/data/scholar-records";
-import { storageKeys } from "@/lib/constants";
+import { pushNotice, recordAudit } from "@/lib/audit";
+import {
+  admissionSessions,
+  admissionSessionsCopy,
+  admissionYear,
+  storageKeys,
+} from "@/lib/constants";
+import { officeViewWriteBlock } from "@/lib/office-view";
 import { createSupabase } from "@/lib/supabase/client";
 import { toJson } from "@/lib/records";
-import { currentRegister, loadRegister, vacancyBeforeAllotment } from "@/lib/register";
+import { ensureAdmission } from "@/lib/admission";
+import {
+  currentRegister,
+  loadRegister,
+  scholarBySignIn,
+  vacancyBeforeAllotment,
+} from "@/lib/register";
 import { syncAllottedVacancies } from "@/lib/vacancies";
 import type { Json } from "@/types/database";
 
@@ -38,6 +52,47 @@ export const defaultSiteSettings: SiteSettings = {
   phdOpen: true,
   supervisorOpen: true,
 };
+
+export type PhdSessionMonth = (typeof admissionSessions)[number];
+
+export function parsePhdSession(value: string): {
+  month: PhdSessionMonth;
+  year: string;
+} {
+  const match = value.match(/\b(January|July)\b[^\d]*(\d{4})/i);
+  if (match) {
+    const month: PhdSessionMonth = /^july$/i.test(match[1] ?? "") ? "July" : "January";
+    return { month, year: match[2] ?? admissionYear };
+  }
+  const monthOnly = value.match(/\b(January|July)\b/i);
+  if (monthOnly) {
+    const month: PhdSessionMonth = /^july$/i.test(monthOnly[1] ?? "")
+      ? "July"
+      : "January";
+    return { month, year: admissionYear };
+  }
+  return { month: admissionSessions[0], year: admissionYear };
+}
+
+export function formatPhdSession(month: string, year: string) {
+  const session: PhdSessionMonth = month === "July" ? "July" : "January";
+  return `${session} ${year.trim()}`.trim();
+}
+
+export function formatPhdWindowLine(settings: SiteSettings) {
+  const parts: string[] = [
+    settings.phdOpen ? settings.admissionLabel : "Admissions closed",
+  ];
+  if (settings.phdOpen && settings.admissionSession.trim()) {
+    parts.push(settings.admissionSession.trim());
+  }
+  parts.push(admissionSessionsCopy.hero);
+  if (settings.phdOpen && settings.deadline.trim()) {
+    const label = settings.deadlineLabel.trim();
+    parts.push(label ? `${label} ${settings.deadline.trim()}` : settings.deadline.trim());
+  }
+  return parts.join(" · ");
+}
 
 export type Allocation = {
   id: string;
@@ -70,6 +125,10 @@ export type RacProposal = {
   nominees: RacNominee[];
   selectedInternal: string;
   selectedExternal: string;
+  remarks: string;
+  agenda: string;
+  attendance: string;
+  minutes: string;
   createdAt: string;
 };
 
@@ -175,7 +234,14 @@ function readAllocations(): Allocation[] {
 
 function readProposals(): RacProposal[] {
   const stored = readJson<RacProposal[]>(storageKeys.racProposals);
-  return Array.isArray(stored) ? stored : [];
+  if (!Array.isArray(stored)) return [];
+  return stored.map((item) => ({
+    ...item,
+    remarks: item.remarks ?? "",
+    agenda: item.agenda ?? "",
+    attendance: item.attendance ?? "",
+    minutes: item.minutes ?? "",
+  }));
 }
 
 function isKind(value: string): value is ScholarRecordKind {
@@ -389,6 +455,10 @@ async function loadOffice(): Promise<OfficeState> {
                 nominees,
                 selectedInternal: row.selected_internal,
                 selectedExternal: row.selected_external,
+                remarks: typeof row.remarks === "string" ? row.remarks : "",
+                agenda: typeof row.agenda === "string" ? row.agenda : "",
+                attendance: typeof row.attendance === "string" ? row.attendance : "",
+                minutes: typeof row.minutes === "string" ? row.minutes : "",
                 createdAt: row.created_at,
               },
             ];
@@ -419,11 +489,21 @@ export async function saveSiteSettings(settings: SiteSettings) {
       supervisor_open: settings.supervisorOpen,
     });
     if (!error) {
+      await recordAudit({
+        action: settings.phdOpen ? "site:phd-open" : "site:phd-close",
+        subject: "phd-applications",
+        detail: `${settings.admissionSession} · Ph.D. ${settings.phdOpen ? "open" : "closed"} · recognition ${settings.supervisorOpen ? "open" : "closed"}`,
+      });
       await refreshOffice();
       return { ok: true as const };
     }
   }
   window.localStorage.setItem(storageKeys.siteSettings, JSON.stringify(settings));
+  await recordAudit({
+    action: settings.phdOpen ? "site:phd-open" : "site:phd-close",
+    subject: "phd-applications",
+    detail: `${settings.admissionSession} · Ph.D. ${settings.phdOpen ? "open" : "closed"} · recognition ${settings.supervisorOpen ? "open" : "closed"}`,
+  });
   await refreshOffice();
   return { ok: true as const };
 }
@@ -443,6 +523,25 @@ export async function saveAllocation(
   const room = vacancyBeforeAllotment(allocation, existing, register.quotas);
   if (room && !room.keeping && room.vacancy < 1) {
     return { ok: false as const, message: `${room.supervisor.name} has no vacancy.` };
+  }
+  const alreadyAllotted = existing.some((item) =>
+    sameId(item.scholarIdentifier, allocation.scholarIdentifier),
+  );
+  if (!alreadyAllotted && !scholarBySignIn(allocation.scholarIdentifier)) {
+    const admission = await ensureAdmission();
+    const verified = admission.cases.some(
+      (item) =>
+        item.verification === "Approved" &&
+        (sameId(item.email, allocation.scholarIdentifier) ||
+          sameId(item.applicationNo, allocation.scholarIdentifier)),
+    );
+    if (!verified) {
+      return {
+        ok: false as const,
+        message:
+          "Allot after certificate verification, or choose a scholar already on the register.",
+      };
+    }
   }
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
@@ -494,9 +593,19 @@ export async function removeAllocation(allocation: Allocation) {
 export async function saveRacProposal(
   proposal: Omit<
     RacProposal,
-    "id" | "createdAt" | "status" | "selectedInternal" | "selectedExternal"
+    | "id"
+    | "createdAt"
+    | "status"
+    | "selectedInternal"
+    | "selectedExternal"
+    | "remarks"
+    | "agenda"
+    | "attendance"
+    | "minutes"
   >,
 ) {
+  const blocked = officeViewWriteBlock();
+  if (blocked) return blocked;
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
     const { error } = await supabase.from("rac_proposals").insert({
@@ -519,6 +628,10 @@ export async function saveRacProposal(
     status: "Submitted",
     selectedInternal: "",
     selectedExternal: "",
+    remarks: "",
+    agenda: "",
+    attendance: "",
+    minutes: "",
     createdAt: new Date().toISOString(),
   });
   window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(all));
@@ -532,19 +645,52 @@ export async function decideRac(
     status: "Approved" | "Returned";
     selectedInternal: string;
     selectedExternal: string;
+    remarks: string;
+    agenda: string;
+    attendance: string;
+    minutes: string;
   },
 ) {
+  if (decision.status === "Approved" && decision.minutes.trim().length < 2) {
+    return false;
+  }
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail && !proposal.id.startsWith("local-")) {
-    const { error } = await supabase
+    const withRemarks = await supabase
       .from("rac_proposals")
       .update({
         status: decision.status,
         selected_internal: decision.selectedInternal,
         selected_external: decision.selectedExternal,
+        remarks: decision.remarks,
+        agenda: decision.agenda,
+        attendance: decision.attendance,
+        minutes: decision.minutes,
       })
       .eq("id", proposal.id);
-    if (!error) {
+    const saved =
+      withRemarks.error
+        ? await supabase
+            .from("rac_proposals")
+            .update({
+              status: decision.status,
+              selected_internal: decision.selectedInternal,
+              selected_external: decision.selectedExternal,
+            })
+            .eq("id", proposal.id)
+        : withRemarks;
+    if (!saved.error) {
+      await recordAudit({
+        action: `rac:${decision.status}`,
+        subject: proposal.id,
+        detail: `${proposal.scholarName} · ${decision.remarks}`.trim(),
+      });
+      await pushNotice({
+        role: "scholar",
+        identifier: proposal.scholarIdentifier,
+        title: `RAC ${decision.status}`,
+        detail: decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
+      });
       await refreshOffice();
       return true;
     }
@@ -556,10 +702,25 @@ export async function decideRac(
           status: decision.status,
           selectedInternal: decision.selectedInternal,
           selectedExternal: decision.selectedExternal,
+          remarks: decision.remarks,
+          agenda: decision.agenda,
+          attendance: decision.attendance,
+          minutes: decision.minutes,
         }
       : item,
   );
   window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(all));
+  await recordAudit({
+    action: `rac:${decision.status}`,
+    subject: proposal.id,
+    detail: `${proposal.scholarName} · ${decision.remarks}`.trim(),
+  });
+  await pushNotice({
+    role: "scholar",
+    identifier: proposal.scholarIdentifier,
+    title: `RAC ${decision.status}`,
+    detail: decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
+  });
   await refreshOffice();
   return true;
 }

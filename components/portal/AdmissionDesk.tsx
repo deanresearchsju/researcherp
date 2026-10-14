@@ -313,12 +313,6 @@ export function AdmissionDesk({
           Admissions
         </p>
         <h1 className="mt-1 font-serif text-3xl text-primary">Selection</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Received applications move through fee approval, a vacancy shortlist, the
-          entrance list, marks out of {writtenMax + interviewMax}, and a provisional list.
-          The allotted guide appears to the scholar and the supervisor only after
-          certificate verification is approved.
-        </p>
         {store.detail ? (
           <p className="mt-2 text-sm text-muted-foreground">{store.detail}</p>
         ) : null}

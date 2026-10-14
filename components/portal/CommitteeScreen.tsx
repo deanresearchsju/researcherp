@@ -41,6 +41,9 @@ export function CommitteeScreen({
   const [file, setFile] = useState<StoredFile | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [minutes, setMinutes] = useState<Record<string, string>>({});
+  const [agenda, setAgenda] = useState<Record<string, string>>({});
+  const [attendance, setAttendance] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -86,6 +89,7 @@ export function CommitteeScreen({
 
   async function decide(id: string, status: "Approved" | "Rejected") {
     const note = remarks[id] ?? "";
+    const minute = (minutes[id] ?? "").trim();
     if (status === "Rejected") {
       const parsed = remarksSchema.safeParse(note);
       if (!parsed.success) {
@@ -93,9 +97,16 @@ export function CommitteeScreen({
         return;
       }
     }
+    if (status === "Approved" && minute.length < 2) {
+      setNotice("Enter the minutes before approving.");
+      return;
+    }
     const saved = await decideCommittee(id, {
       status,
       remarks: note,
+      agenda: (agenda[id] ?? "").trim(),
+      attendance: (attendance[id] ?? "").trim(),
+      minutes: minute,
       decidedOn: new Date().toISOString().slice(0, 10),
     });
     setNotice(saved.ok ? status : saved.message);
@@ -114,9 +125,6 @@ export function CommitteeScreen({
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">{copy.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          {copy.detail}
-        </p>
       </header>
       {mode === "scholar" ? (
         gate ? (
@@ -202,10 +210,47 @@ export function CommitteeScreen({
             {report.remarks ? (
               <p className="text-sm text-muted-foreground">{report.remarks}</p>
             ) : null}
+            {report.minutes ? (
+              <p className="text-sm text-muted-foreground">{report.minutes}</p>
+            ) : null}
             {mode === "admin" && report.status === "Submitted" ? (
               <div className="space-y-2">
                 <Textarea
+                  aria-label="Agenda"
+                  placeholder="Agenda"
+                  value={agenda[report.id] ?? ""}
+                  onChange={(event) =>
+                    setAgenda((current) => ({
+                      ...current,
+                      [report.id]: event.target.value,
+                    }))
+                  }
+                />
+                <Textarea
+                  aria-label="Attendance"
+                  placeholder="Attendance"
+                  value={attendance[report.id] ?? ""}
+                  onChange={(event) =>
+                    setAttendance((current) => ({
+                      ...current,
+                      [report.id]: event.target.value,
+                    }))
+                  }
+                />
+                <Textarea
+                  aria-label="Minutes"
+                  placeholder="Minutes"
+                  value={minutes[report.id] ?? ""}
+                  onChange={(event) =>
+                    setMinutes((current) => ({
+                      ...current,
+                      [report.id]: event.target.value,
+                    }))
+                  }
+                />
+                <Textarea
                   aria-label="Remarks"
+                  placeholder="Remarks"
                   value={remarks[report.id] ?? ""}
                   onChange={(event) =>
                     setRemarks((current) => ({

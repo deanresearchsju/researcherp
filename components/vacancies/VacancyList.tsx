@@ -4,19 +4,28 @@ import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 import { Container } from "@/components/ui/container";
-import { vacancyListNote, vacancyListTitle } from "@/data/vacancies";
+import { vacancyListColumns, vacancyListNote, vacancyListTitle } from "@/data/vacancies";
 import { groupVacancies, type Vacancy } from "@/lib/vacancies";
 import { cn } from "@/lib/utils";
+import type { School } from "@/types";
 
-export function VacancyList({ rows }: { rows: Vacancy[] }) {
-  const groups = groupVacancies(rows);
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+export function VacancyList({
+  rows,
+  schools,
+}: {
+  rows: Vacancy[];
+  schools?: readonly School[];
+}) {
+  const groups = groupVacancies(rows, schools);
+  const [open, setOpen] = useState<ReadonlySet<string>>(
+    () => new Set(groups.map((group) => group.school)),
+  );
 
-  function toggle(department: string) {
+  function toggle(school: string) {
     setOpen((current) => {
       const next = new Set(current);
-      if (next.has(department)) next.delete(department);
-      else next.add(department);
+      if (next.has(school)) next.delete(school);
+      else next.add(school);
       return next;
     });
   }
@@ -29,17 +38,17 @@ export function VacancyList({ rows }: { rows: Vacancy[] }) {
       <p className="mt-2 text-sm text-muted-foreground">{vacancyListNote}</p>
       <div className="mt-6 overflow-hidden rounded-xl border border-border bg-card shadow-card">
         {groups.map((group) => {
-          const expanded = open.has(group.department);
+          const expanded = open.has(group.school);
           return (
-            <section key={group.department} className="border-t border-border first:border-t-0">
+            <section key={group.school} className="border-t border-border first:border-t-0">
               <h2>
                 <button
                   type="button"
                   className="flex w-full items-center justify-between gap-3 bg-primary/5 px-4 py-3 text-left font-semibold text-primary"
                   aria-expanded={expanded}
-                  onClick={() => toggle(group.department)}
+                  onClick={() => toggle(group.school)}
                 >
-                  Department of {group.department}
+                  {group.school}
                   <ChevronDown
                     className={cn("size-4 shrink-0", expanded && "rotate-180")}
                     aria-hidden="true"
@@ -48,37 +57,31 @@ export function VacancyList({ rows }: { rows: Vacancy[] }) {
               </h2>
               {expanded ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
                     <thead className="bg-muted text-primary">
                       <tr>
                         <th scope="col" className="px-4 py-3 font-semibold">
-                          S. No.
+                          {vacancyListColumns.name}
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
-                          Name of the Supervisor, Designation, Department
+                          {vacancyListColumns.designation}
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
-                          Area of Research
+                          {vacancyListColumns.researchArea}
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
-                          No. of Vacancy
+                          {vacancyListColumns.vacancy}
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {group.rows.map((row) => (
                         <tr key={row.id} className="border-t border-border">
-                          <td className="px-4 py-3 align-top">{row.serialNo}</td>
-                          <td className="px-4 py-3 align-top">
-                            <span className="font-semibold text-primary">
-                              {row.supervisorName}
-                            </span>
-                            <span className="mt-1 block text-muted-foreground">
-                              {row.designation}
-                            </span>
-                            <span className="mt-1 block text-muted-foreground">
-                              Department of {row.department}
-                            </span>
+                          <td className="px-4 py-3 align-top font-semibold text-primary">
+                            {row.supervisorName}
+                          </td>
+                          <td className="px-4 py-3 align-top text-muted-foreground">
+                            {row.designation}
                           </td>
                           <td className="px-4 py-3 align-top">{row.researchArea}</td>
                           <td className="px-4 py-3 align-top font-semibold">

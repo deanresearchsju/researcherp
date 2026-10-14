@@ -11,7 +11,7 @@ const inter = Inter({
   display: "swap",
 });
 
-const description = `Ph.D. admissions, scholar milestones, and supervisor recognition at ${university.name}. ${university.tagline}.`;
+const description = `Ph.D. admissions in January and July, scholar milestones, and supervisor recognition at ${university.name}. ${university.tagline}.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(university.siteUrl),
@@ -54,7 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full bg-background font-sans text-foreground">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-primary"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-card focus:px-3 focus:py-2 focus:text-primary"
         >
           Skip to content
         </a>

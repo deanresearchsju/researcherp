@@ -199,10 +199,6 @@ export function SupervisorRegister({
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Supervisor register</h1>
-      <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
-        Approve or reject a recognition application. Open a supervisor&apos;s name to read
-        that guide&apos;s portal.
-      </p>
       {notice ? (
         <p role="status" className="mt-4 text-sm text-secondary">
           {notice}

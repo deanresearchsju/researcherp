@@ -7,6 +7,7 @@ import {
 import { schools } from "@/data/schools";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
+import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson, type StoredApplication } from "@/lib/records";
 import type { Json } from "@/types/database";
 import type { Vacancy } from "@/lib/vacancies";
@@ -52,10 +53,16 @@ export type AdmissionCase = {
 export type AdmissionState = {
   cases: AdmissionCase[];
   letter: LetterConfig;
+  updatedAt: string | null;
   detail: string | null;
 };
 
-const empty: AdmissionState = { cases: [], letter: defaultLetter, detail: null };
+const empty: AdmissionState = {
+  cases: [],
+  letter: defaultLetter,
+  updatedAt: null,
+  detail: null,
+};
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -310,7 +317,7 @@ function parseLetter(value: unknown): LetterConfig {
   return next;
 }
 
-function parseStored(value: unknown): Omit<AdmissionState, "detail"> {
+function parseStored(value: unknown): { cases: AdmissionCase[]; letter: LetterConfig } {
   if (!value || typeof value !== "object") return { cases: [], letter: defaultLetter };
   const row = value as Record<string, unknown>;
   const cases = Array.isArray(row.cases)
@@ -335,6 +342,13 @@ export function currentAdmission() {
   return memory;
 }
 
+export async function ensureAdmission() {
+  if (memory) return memory;
+  const value = await loadAdmission();
+  publish(value);
+  return value;
+}
+
 export function subscribeAdmission(onChange: () => void) {
   listeners.add(onChange);
   if (!loading) {
@@ -347,7 +361,7 @@ export function subscribeAdmission(onChange: () => void) {
   return () => listeners.delete(onChange);
 }
 
-function readBrowser(): Omit<AdmissionState, "detail"> {
+function readBrowser(): { cases: AdmissionCase[]; letter: LetterConfig } {
   if (typeof window === "undefined") return { cases: [], letter: defaultLetter };
   try {
     const raw = window.localStorage.getItem(storageKeys.admission);
@@ -362,14 +376,14 @@ function readBrowser(): Omit<AdmissionState, "detail"> {
 async function loadAdmission(): Promise<AdmissionState> {
   const browser = readBrowser();
   const supabase = createSupabase();
-  if (!supabase) return { ...browser, detail: null };
+  if (!supabase) return { ...browser, updatedAt: null, detail: null };
   const { data, error } = await supabase
     .from("admission_office")
-    .select("payload")
+    .select("payload, updated_at")
     .eq("id", "office")
     .maybeSingle();
-  if (error) return { ...browser, detail: admissionMigrationHint };
-  if (!data?.payload) return { ...browser, detail: null };
+  if (error) return { ...browser, updatedAt: null, detail: admissionMigrationHint };
+  if (!data?.payload) return { ...browser, updatedAt: null, detail: null };
   const remote = parseStored(data.payload);
   const seen = new Set(remote.cases.map((item) => item.applicationNo));
   return {
@@ -378,6 +392,7 @@ async function loadAdmission(): Promise<AdmissionState> {
       ...remote.cases,
     ],
     letter: remote.letter,
+    updatedAt: data.updated_at ?? null,
     detail: null,
   };
 }
@@ -386,13 +401,17 @@ export async function saveAdmission(next: Omit<AdmissionState, "detail">) {
   const stored = { cases: next.cases, letter: next.letter };
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
-    const { error } = await supabase
-      .from("admission_office")
-      .upsert({ id: "office", payload: toJson(stored) });
-    if (!error) {
-      publish({ ...stored, detail: null });
+    const saved = await saveJsonBlob(
+      "admission_office",
+      "office",
+      toJson(stored),
+      memory.updatedAt,
+    );
+    if (saved.ok) {
+      publish({ ...stored, updatedAt: saved.updatedAt, detail: null });
       return { ok: true as const };
     }
+    if (saved.conflict) return { ok: false as const, message: saved.message };
   }
   try {
     window.localStorage.setItem(storageKeys.admission, JSON.stringify(stored));
@@ -403,7 +422,11 @@ export async function saveAdmission(next: Omit<AdmissionState, "detail">) {
         "This browser cannot store the admission file. Run the SQL migration, then try again.",
     };
   }
-  publish({ ...stored, detail: memory?.detail ?? admissionMigrationHint });
+  publish({
+    ...stored,
+    updatedAt: memory?.updatedAt ?? null,
+    detail: memory?.detail ?? admissionMigrationHint,
+  });
   return { ok: true as const };
 }
 

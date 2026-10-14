@@ -8,6 +8,8 @@ import { sectionCopy } from "@/data/sections";
 
 export function Checklist() {
   const documents = sectionCopy.documents;
+  const requiredCount = checklist.filter((item) => item.required).length;
+  const optionalCount = checklist.length - requiredCount;
 
   return (
     <section
@@ -21,7 +23,21 @@ export function Checklist() {
           title={documents.title}
           id="documents-title"
         />
-        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <dl className="mt-8 grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-card">
+            <dd className="grid size-14 place-items-center rounded-full bg-secondary font-heading text-2xl text-secondary-foreground">
+              {requiredCount}
+            </dd>
+            <dt className="font-semibold text-primary">Required</dt>
+          </div>
+          <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-card">
+            <dd className="grid size-14 place-items-center rounded-full bg-primary font-heading text-2xl text-primary-foreground">
+              {optionalCount}
+            </dd>
+            <dt className="font-semibold text-primary">Optional</dt>
+          </div>
+        </dl>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {checklist.map((item, index) => (
             <Reveal key={item.id} delay={index * 0.03}>
               <li className="h-full rounded-xl border border-border bg-card p-5 shadow-card">

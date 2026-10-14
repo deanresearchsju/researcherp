@@ -175,11 +175,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
     <section className="space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-primary">Six-month report</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          A June admission reports in December and June. A January admission reports in
-          June and December. A missed period stays closed until the research office grants
-          access.
-        </p>
       </header>
       {mode === "scholar" ? (
         !enrollment || !batch ? (
@@ -380,7 +375,8 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">{record.payload.progress}</p>
-            {mode === "admin" && record.status === "Submitted" ? (
+            {mode === "admin" &&
+            (record.status === "Submitted" || record.status === "Supervisor approved") ? (
               <div className="space-y-2">
                 <Textarea
                   aria-label="Remarks"

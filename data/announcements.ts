@@ -10,7 +10,7 @@ export const announcements: Announcement[] = [
     isoDate: "2026-09-01",
     category: "Admissions",
     summary:
-      "Online applications are invited for full-time and part-time doctoral programmes across all research schools.",
+      "Online applications are invited for full-time and part-time doctoral programmes across all research schools. There are two Ph.D. admission sessions each year: January and July.",
   },
   {
     id: "written-test",

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { university } from "@/lib/constants";
 import { formatIsoDate } from "@/lib/dates";
 import {
@@ -171,6 +172,10 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [kindFilter, setKindFilter] = useState("");
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [agenda, setAgenda] = useState<Record<string, string>>({});
+  const [attendance, setAttendance] = useState<Record<string, string>>({});
+  const [minutes, setMinutes] = useState<Record<string, string>>({});
   const [choice, setChoice] = useState<
     Record<string, { internal: string; external: string }>
   >({});
@@ -237,14 +242,28 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
 
   async function decide(proposal: RacProposal, status: "Approved" | "Returned") {
     const picked = choice[proposal.id] ?? { internal: "", external: "" };
+    const note = (remarks[proposal.id] ?? "").trim();
+    const minute = (minutes[proposal.id] ?? "").trim();
     if (status === "Approved" && (!picked.internal || !picked.external)) {
       setNotice("Select one internal member and one external member.");
+      return;
+    }
+    if (status === "Returned" && note.length < 2) {
+      setNotice("Enter the remarks before returning a nomination.");
+      return;
+    }
+    if (status === "Approved" && minute.length < 2) {
+      setNotice("Enter the minutes before approving.");
       return;
     }
     const saved = await decideRac(proposal, {
       status,
       selectedInternal: status === "Approved" ? picked.internal : "",
       selectedExternal: status === "Approved" ? picked.external : "",
+      remarks: note,
+      agenda: (agenda[proposal.id] ?? "").trim(),
+      attendance: (attendance[proposal.id] ?? "").trim(),
+      minutes: minute,
     });
     setNotice(saved ? `RAC marked ${status}.` : "That decision could not be saved.");
   }
@@ -261,11 +280,6 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
             ? "RAC proposal"
             : "RAC members"}
       </h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {mode === "admin"
-          ? "Every nomination is kept here. Choose one internal member and one external member, then approve. Scholars and supervisors see only the present guide and the two approved members."
-          : "The present guide, internal member, and external member. Earlier nominees stay with the research office."}
-      </p>
       {office.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
           {office.detail}
@@ -570,24 +584,76 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                     </tbody>
                   </table>
                 </div>
+                {proposal.remarks ? (
+                  <p className="mt-3 text-sm text-muted-foreground">{proposal.remarks}</p>
+                ) : null}
+                {proposal.minutes ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{proposal.minutes}</p>
+                ) : null}
                 {proposal.status === "Submitted" ? (
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      type="button"
-                      variant="gold"
-                      size="sm"
-                      onClick={() => void decide(proposal, "Approved")}
-                    >
-                      Approve selected
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="maroon"
-                      size="sm"
-                      onClick={() => void decide(proposal, "Returned")}
-                    >
-                      Return
-                    </Button>
+                  <div className="mt-4 space-y-2">
+                    <Textarea
+                      aria-label="Agenda"
+                      placeholder="Agenda"
+                      value={agenda[proposal.id] ?? ""}
+                      onChange={(event) =>
+                        setAgenda((current) => ({
+                          ...current,
+                          [proposal.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <Textarea
+                      aria-label="Attendance"
+                      placeholder="Attendance"
+                      value={attendance[proposal.id] ?? ""}
+                      onChange={(event) =>
+                        setAttendance((current) => ({
+                          ...current,
+                          [proposal.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <Textarea
+                      aria-label="Minutes"
+                      placeholder="Minutes"
+                      value={minutes[proposal.id] ?? ""}
+                      onChange={(event) =>
+                        setMinutes((current) => ({
+                          ...current,
+                          [proposal.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <Textarea
+                      aria-label="Remarks"
+                      placeholder="Remarks"
+                      value={remarks[proposal.id] ?? ""}
+                      onChange={(event) =>
+                        setRemarks((current) => ({
+                          ...current,
+                          [proposal.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="gold"
+                        size="sm"
+                        onClick={() => void decide(proposal, "Approved")}
+                      >
+                        Approve selected
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="maroon"
+                        size="sm"
+                        onClick={() => void decide(proposal, "Returned")}
+                      >
+                        Return
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
               </article>

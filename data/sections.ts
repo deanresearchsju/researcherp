@@ -4,9 +4,9 @@ export const heroCopy = {
   summary: "A supervised Ph.D. at St. Joseph University, from application to thesis.",
   primaryCta: "Apply for Ph.D.",
   primaryHref: "/apply",
-  secondaryCta: "Scholar Login",
-  secondaryHref: "/login/scholar",
-  tertiaryCta: "Become a Supervisor",
+  secondaryCta: "Announcements",
+  secondaryHref: "/announcements",
+  tertiaryCta: "Supervisors List",
   tertiaryHref: "/supervisors",
   factsTitle: "At a glance",
   facts: [
@@ -36,13 +36,13 @@ export const sectionCopy = {
   },
   fees: {
     eyebrow: "Programmes",
-    title: "Programmes and fee structure",
+    title: "Programmes",
   },
   admission: {
     eyebrow: "Admissions",
     title: "Admission process",
     description:
-      "From the online application to the first doctoral committee and supervisor allotment.",
+      "Two Ph.D. admission sessions each year: January and July. From the online application to the first doctoral committee and supervisor allotment.",
     journeyLabel: "Scholar journey",
     journeyHref: "/scholar-journey",
   },

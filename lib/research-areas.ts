@@ -1,5 +1,6 @@
 import { schools as schoolSeed } from "@/data/schools";
 import { storageKeys } from "@/lib/constants";
+import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson } from "@/lib/records";
 import { createSupabase } from "@/lib/supabase/client";
 import type { School, SchoolIcon } from "@/types";
@@ -21,6 +22,7 @@ const icons = new Set<SchoolIcon>([
 export type AreaLoad = {
   schools: School[];
   source: "database" | "browser";
+  updatedAt: string | null;
   detail: string | null;
 };
 
@@ -68,25 +70,41 @@ export async function loadResearchAreas(): Promise<AreaLoad> {
   const browser = readBrowser();
   const supabase = createSupabase();
   if (!supabase) {
-    return { schools: browser ?? schoolSeed, source: "browser", detail: null };
+    return {
+      schools: browser ?? schoolSeed,
+      source: "browser",
+      updatedAt: null,
+      detail: null,
+    };
   }
   const { data, error } = await supabase
     .from("research_areas")
-    .select("payload")
+    .select("payload, updated_at")
     .eq("id", rowId)
     .maybeSingle();
   if (error) {
     return {
       schools: browser ?? schoolSeed,
       source: "browser",
+      updatedAt: null,
       detail: researchAreaMigrationHint,
     };
   }
   if (data?.payload && typeof data.payload === "object" && !Array.isArray(data.payload)) {
     const schools = parseSchools((data.payload as { schools?: unknown }).schools);
-    return { schools, source: "database", detail: null };
+    return {
+      schools,
+      source: "database",
+      updatedAt: data.updated_at ?? null,
+      detail: null,
+    };
   }
-  return { schools: browser ?? schoolSeed, source: "browser", detail: null };
+  return {
+    schools: browser ?? schoolSeed,
+    source: "browser",
+    updatedAt: null,
+    detail: null,
+  };
 }
 
 let memory: AreaLoad | null = null;
@@ -125,19 +143,32 @@ export async function saveResearchAreas(schools: School[]) {
   request += 1;
   const supabase = createSupabase();
   if (supabase) {
-    const { error } = await supabase.from("research_areas").upsert({
-      id: rowId,
-      payload: toJson({ schools }),
-    });
-    if (!error) {
+    const saved = await saveJsonBlob(
+      "research_areas",
+      rowId,
+      toJson({ schools }),
+      memory?.updatedAt ?? null,
+    );
+    if (saved.ok) {
       if (typeof window !== "undefined") writeBrowser(schools);
-      publish({ schools, source: "database", detail: null });
+      publish({
+        schools,
+        source: "database",
+        updatedAt: saved.updatedAt,
+        detail: null,
+      });
       return { ok: true as const };
     }
+    if (saved.conflict) return { ok: false as const, message: saved.message };
   }
   if (typeof window === "undefined") return { ok: false as const };
   writeBrowser(schools);
-  publish({ schools, source: "browser", detail: researchAreaMigrationHint });
+  publish({
+    schools,
+    source: "browser",
+    updatedAt: memory?.updatedAt ?? null,
+    detail: researchAreaMigrationHint,
+  });
   return { ok: true as const };
 }
 

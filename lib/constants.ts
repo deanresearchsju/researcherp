@@ -45,7 +45,14 @@ export const researchWordLimit = { min: 150, max: 200 } as const;
 
 export const admissionYear = "2026";
 
-export const admissionSessions = ["June", "January"] as const;
+export const admissionSessions = ["January", "July"] as const;
+
+export const admissionSessionsCopy = {
+  short: "January and July",
+  hero: "Two sessions a year · January and July",
+  sentence:
+    "The University holds two Ph.D. admission sessions each year: January and July.",
+} as const;
 
 export const applicationNumbers = {
   scholarPattern: "SJU/PHD/YEAR/0001",
@@ -55,6 +62,7 @@ export const applicationNumbers = {
 export const storageKeys = {
   scholarDraft: "sju-phd-draft",
   scholarProgress: "sju-phd-progress",
+  draftTokens: "sju-phd-draft-tokens",
   scholarReceipts: "sju-phd-receipts",
   scholarSubmissions: "sju-phd-submissions",
   scholarSeq: "sju-phd-seq",
@@ -75,6 +83,8 @@ export const storageKeys = {
   researchAreas: "sju-research-areas",
   menuRights: "sju-menu-rights",
   profilePhotos: "sju-profile-photo",
+  auditLog: "sju-audit-log",
+  inbox: "sju-inbox",
 } as const;
 
 export const sessionStorageKey = "sju-research-session";
@@ -86,53 +96,53 @@ const mb = (value: number) => value * 1024 * 1024;
 
 export const fileLimits = {
   photo: {
-    minBytes: kb(200),
-    maxBytes: kb(600),
+    minBytes: 1,
+    maxBytes: kb(100) - 1,
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, 200–600 KB",
+    label: "JPG or PNG, below 100 KB",
   },
   teamPhoto: {
     minBytes: 1,
-    maxBytes: Number.MAX_SAFE_INTEGER,
+    maxBytes: kb(100) - 1,
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, any size",
+    label: "JPG or PNG, below 100 KB",
   },
   newsPoster: {
     minBytes: 1,
-    maxBytes: 2 * 1024 * 1024,
+    maxBytes: kb(100) - 1,
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, up to 2 MB",
+    label: "JPG or PNG, below 100 KB",
   },
   scholarSignature: {
-    minBytes: kb(20),
-    maxBytes: kb(40),
+    minBytes: 1,
+    maxBytes: kb(100) - 1,
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, 20–40 KB",
+    label: "JPG or PNG, below 100 KB",
   },
   supervisorSignature: {
-    minBytes: kb(20),
-    maxBytes: kb(50),
+    minBytes: 1,
+    maxBytes: kb(100) - 1,
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, 20–50 KB",
+    label: "JPG or PNG, below 100 KB",
   },
   document: {
     minBytes: 1,
-    maxBytes: mb(5),
+    maxBytes: kb(250) - 1,
     types: ["application/pdf", "image/jpeg", "image/png"],
     accept: "application/pdf,image/jpeg,image/png",
-    label: "PDF, JPG, or PNG, up to 5 MB",
+    label: "PDF below 250 KB, or JPG or PNG below 100 KB",
   },
   resume: {
     minBytes: 1,
-    maxBytes: mb(5),
+    maxBytes: kb(250) - 1,
     types: ["application/pdf"],
     accept: "application/pdf",
-    label: "PDF, up to 5 MB",
+    label: "PDF, below 250 KB",
   },
   spreadsheet: {
     minBytes: 1,

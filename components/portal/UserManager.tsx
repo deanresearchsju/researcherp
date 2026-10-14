@@ -16,7 +16,6 @@ import { roleProfiles } from "@/data/roles";
 import { isPrincipalAdmin, menuHrefs, storedMenus } from "@/lib/access";
 import {
   activateRegisterAccounts,
-  issuedPassword,
   type ActivationReport,
 } from "@/lib/register-access";
 import {
@@ -55,7 +54,7 @@ function activationNotice(report: ActivationReport) {
   const parts = [
     report.created > 0 ? `${report.created} sign-ins are now active.` : null,
     report.alreadyActive > 0 ? `${report.alreadyActive} already had sign-in.` : null,
-    `The sign-in id is the mail id. The first password is ${issuedPassword}. They choose a new password the first time they sign in, then fill personal details that are still blank.`,
+    "The sign-in id is the mail id. They receive a first password from the office, choose a new one the first time they sign in, then fill personal details that are still blank.",
   ];
   if (report.scholarsWithoutEmail > 0) {
     parts.push(
@@ -92,6 +91,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   const [menuRole, setMenuRole] = useState<(typeof accessRoles)[number]>("scholar");
   const [selectedMenus, setSelectedMenus] = useState<string[]>(menuHrefs("scholar"));
   const [editMenus, setEditMenus] = useState<string[]>([]);
+  const [issued, setIssued] = useState<ActivationReport["issued"]>([]);
   if (createRole !== menuRole) {
     setMenuRole(createRole);
     setSelectedMenus(menuHrefs(createRole));
@@ -187,6 +187,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
     setUsers(report.load.users);
     setSource(report.load.source);
     setDetail(report.load.detail);
+    setIssued(report.issued);
     setNotice(activationNotice(report));
   }
 
@@ -196,17 +197,13 @@ export function UserManager({ initial }: { initial: UserLoad }) {
         Admin
       </p>
       <h1 className="mt-2 font-heading text-4xl text-primary">Users</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-        {users.length} sign-in records. Create a user and choose the portal they can open.
-        Reset a name or password here. The sign-in id stays the same.
-      </p>
       <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-card">
         <h2 className="font-semibold text-primary">Register sign-in</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Scholar and supervisor sign-in uses the mail id on the register. The first
-          password is {issuedPassword}. The first visit asks for a new password, then for
-          any personal details that are still blank. Existing sign-ins keep the password
-          they already have. A person with no mail id on the register stays inactive.
+          Scholar and supervisor sign-in uses the mail id on the register. The office
+          issues a first password. The first visit asks for a new password, then for any
+          personal details that are still blank. Existing sign-ins keep the password they
+          already have. A person with no mail id on the register stays inactive.
         </p>
         <Button
           type="button"
@@ -222,6 +219,20 @@ export function UserManager({ initial }: { initial: UserLoad }) {
         <p role="status" className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
           {notice}
         </p>
+      ) : null}
+      {issued.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-card">
+          <p className="text-sm font-semibold text-primary">
+            First passwords for new sign-ins. Copy them now; they are not shown again.
+          </p>
+          <ul className="mt-3 space-y-1 text-sm">
+            {issued.map((row) => (
+              <li key={row.identifier}>
+                {row.identifier} · {row.password}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       {detail ? (
         <p className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
