@@ -1,4 +1,3 @@
-
 import { admissionWindow } from "@/data/home";
 import { heroCopy } from "@/data/sections";
 import {
@@ -21,6 +20,8 @@ import {
   currentRegister,
   loadRegister,
   scholarBySignIn,
+  scholarSignInId,
+  scholarsGuidedBy,
   vacancyBeforeAllotment,
 } from "@/lib/register";
 import { syncAllottedVacancies } from "@/lib/vacancies";
@@ -163,6 +164,28 @@ export function allocationFor(allocations: Allocation[], scholarIdentifier: stri
   return (
     allocations.find((item) => sameId(item.scholarIdentifier, scholarIdentifier)) ?? null
   );
+}
+
+export function scholarsStillGuidedBy(
+  name: string,
+  identifier: string,
+  allocations: readonly Allocation[],
+) {
+  return scholarsGuidedBy(name, identifier).filter((scholar) => {
+    const keys = [
+      scholarSignInId(scholar),
+      scholar.email,
+      scholar.registrationNumber,
+      scholar.applicationNumber,
+      scholar.fileNumber,
+      scholar.id,
+    ];
+    return !allocations.some(
+      (item) =>
+        keys.some((key) => key.trim() && sameId(item.scholarIdentifier, key)) ||
+        item.scholarName.trim().toLowerCase() === scholar.name.trim().toLowerCase(),
+    );
+  });
 }
 
 export function presentRac(proposals: RacProposal[], scholarIdentifier: string) {
@@ -668,17 +691,16 @@ export async function decideRac(
         minutes: decision.minutes,
       })
       .eq("id", proposal.id);
-    const saved =
-      withRemarks.error
-        ? await supabase
-            .from("rac_proposals")
-            .update({
-              status: decision.status,
-              selected_internal: decision.selectedInternal,
-              selected_external: decision.selectedExternal,
-            })
-            .eq("id", proposal.id)
-        : withRemarks;
+    const saved = withRemarks.error
+      ? await supabase
+          .from("rac_proposals")
+          .update({
+            status: decision.status,
+            selected_internal: decision.selectedInternal,
+            selected_external: decision.selectedExternal,
+          })
+          .eq("id", proposal.id)
+      : withRemarks;
     if (!saved.error) {
       await recordAudit({
         action: `rac:${decision.status}`,
@@ -689,7 +711,8 @@ export async function decideRac(
         role: "scholar",
         identifier: proposal.scholarIdentifier,
         title: `RAC ${decision.status}`,
-        detail: decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
+        detail:
+          decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
       });
       await refreshOffice();
       return true;
@@ -719,7 +742,8 @@ export async function decideRac(
     role: "scholar",
     identifier: proposal.scholarIdentifier,
     title: `RAC ${decision.status}`,
-    detail: decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
+    detail:
+      decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
   });
   await refreshOffice();
   return true;

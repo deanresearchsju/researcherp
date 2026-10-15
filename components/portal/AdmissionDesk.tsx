@@ -10,6 +10,8 @@ import {
   AttendanceSheet,
   ProvisionalSheet,
 } from "@/components/portal/AdmissionPrint";
+import { EntranceMarksScreen } from "@/components/portal/EntranceMarksScreen";
+import { ViewFilesButton } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,6 @@ import {
   attendanceOrder,
   currentAdmission,
   displayName,
-  marksError,
   mergeApplications,
   missingItems,
   paymentMarks,
@@ -634,32 +635,10 @@ export function AdmissionDesk({
 
       {step === "marks" ? (
         <Stage
-          title="Marks"
-          text={`Written test ${writtenMax} and interview ${interviewMax}. Only candidates marked present can be given marks.`}
+          title="Entrance marks"
+          text={`Written test ${writtenMax} and interview ${interviewMax}. Enter marks 25 scholars at a time, then save and continue.`}
         >
-          <Rows
-            rows={visible.filter((row) => row.attendance === "Present")}
-            empty="Mark a shortlisted candidate present before entering marks."
-            headers={["Name", "Department", "Written", "Interview", "Total", ""]}
-            render={(row) => (
-              <MarksCells
-                row={row}
-                onSave={(written, interview) => {
-                  const error = marksError(written, interview);
-                  if (error) return error;
-                  void commitRow(row.applicationId, {
-                    written: Number(written),
-                    interview: Number(interview),
-                    selected: false,
-                    guideName: "",
-                    guideIdentifier: "",
-                    verification: "Pending",
-                  });
-                  return null;
-                }}
-              />
-            )}
-          />
+          <EntranceMarksScreen embedded />
         </Stage>
       ) : null}
 
@@ -957,12 +936,13 @@ export function AdmissionDesk({
                           <div>
                             <p className="text-sm">{item.title}</p>
                             {upload ? (
-                              <a
-                                className="text-sm font-semibold text-primary underline"
-                                href={upload.fileData}
-                              >
-                                {upload.fileName}
-                              </a>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm">{upload.fileName}</p>
+                                <ViewFilesButton
+                                  fileName={upload.fileName}
+                                  data={upload.fileData}
+                                />
+                              </div>
                             ) : null}
                           </div>
                           <NativeSelect
@@ -1074,55 +1054,5 @@ function Rows({
         </tbody>
       </table>
     </div>
-  );
-}
-
-function MarksCells({
-  row,
-  onSave,
-}: {
-  row: AdmissionCase;
-  onSave: (written: string, interview: string) => string | null;
-}) {
-  const [written, setWritten] = useState(row.written === null ? "" : String(row.written));
-  const [interview, setInterview] = useState(
-    row.interview === null ? "" : String(row.interview),
-  );
-  const [error, setError] = useState("");
-  return (
-    <>
-      <td className="px-3 py-2">{displayName(row)}</td>
-      <td className="px-3 py-2">{row.department}</td>
-      <td className="px-3 py-2">
-        <Input
-          inputMode="numeric"
-          value={written}
-          onChange={(event) => setWritten(event.target.value)}
-          aria-label={`Written marks for ${row.name}`}
-        />
-      </td>
-      <td className="px-3 py-2">
-        <Input
-          inputMode="numeric"
-          value={interview}
-          onChange={(event) => setInterview(event.target.value)}
-          aria-label={`Interview marks for ${row.name}`}
-        />
-      </td>
-      <td className="px-3 py-2">{totalMarks(row) ?? "—"}</td>
-      <td className="px-3 py-2">
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            const next = onSave(written, interview);
-            setError(next ?? "");
-          }}
-        >
-          Save marks
-        </Button>
-        {error ? <p className="mt-1 text-secondary">{error}</p> : null}
-      </td>
-    </>
   );
 }

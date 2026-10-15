@@ -48,7 +48,11 @@ export function usePortalSession(): PreviewSession | null {
   const pathname = usePathname();
   const session = usePreviewSession();
   const view = useOfficeView();
-  if (!view || session?.role !== "admin") return session;
+  if (!view || !session) return session;
+  const canView =
+    session.role === "admin" ||
+    (session.role === "supervisor" && view.role === "scholar");
+  if (!canView) return session;
   if (view.role === "scholar" && pathname.startsWith("/scholar")) {
     return {
       role: "scholar",
@@ -58,7 +62,11 @@ export function usePortalSession(): PreviewSession | null {
       menus: null,
     };
   }
-  if (view.role === "supervisor" && pathname.startsWith("/supervisor")) {
+  if (
+    session.role === "admin" &&
+    view.role === "supervisor" &&
+    pathname.startsWith("/supervisor")
+  ) {
     return {
       role: "supervisor",
       identifier: view.identifier,

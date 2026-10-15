@@ -4,15 +4,24 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
 import { scholarRecordMenus } from "@/data/scholar-records";
+import { personFileCopy } from "@/data/person-file";
 import { portalIntro } from "@/data/portal";
-import { batchOf, scholarBySignIn, scholarsGuidedBy } from "@/lib/register";
-import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
+import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
+import { ScholarFeeStatus } from "@/components/portal/ScholarFeeStatus";
+import { currentAdmission, scholarIsAdmitted, subscribeAdmission } from "@/lib/admission";
+import { batchOf, scholarBySignIn } from "@/lib/register";
+import {
+  downloadAllScholarDetails,
+  downloadAllSupervisorDetails,
+} from "@/lib/person-file";
+import { currentApplications, subscribeApplications } from "@/lib/records";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import {
   allocationFor,
   currentOffice,
   presentRac,
   sameId,
+  scholarsStillGuidedBy,
   subscribeOffice,
   type OfficeRecord,
 } from "@/lib/office";
@@ -43,45 +52,6 @@ const reviewKinds = new Set(
   scholarRecordMenus.filter((menu) => menu.needsSupervisor).map((menu) => menu.kind),
 );
 
-function MissingDetails({ identifier }: { identifier: string }) {
-  const personal = useSyncExternalStore(
-    (onChange) => subscribeScholarRecords("personal_details", onChange),
-    () => currentScholarRecords("personal_details"),
-    () => null,
-  );
-  const menu = scholarRecordMenus.find((item) => item.kind === "personal_details");
-  if (!menu) return null;
-  const saved = personal?.records.find((record) =>
-    sameId(record.scholarIdentifier, identifier),
-  );
-  const missing = menu.fields.filter(
-    (field) => field.required && !(saved?.payload[field.name] ?? "").trim(),
-  );
-  if (personal && missing.length === 0) return null;
-
-  return (
-    <section className="mt-4 rounded-xl border border-border bg-card p-4 shadow-card">
-      <h2 className="font-semibold text-primary">Details still to fill</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-        Complete the personal details that are still blank.
-      </p>
-      {personal && missing.length > 0 ? (
-        <ul className="mt-3 list-disc pl-5 text-sm leading-6">
-          {missing.map((field) => (
-            <li key={field.name}>{field.label}</li>
-          ))}
-        </ul>
-      ) : null}
-      <Link
-        href={`/scholar/records/${menu.slug}`}
-        className="mt-4 inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
-      >
-        Open personal details
-      </Link>
-    </section>
-  );
-}
-
 function ScholarRecordLine({
   identifier,
   allocations,
@@ -90,19 +60,20 @@ function ScholarRecordLine({
   allocations: Parameters<typeof allocationFor>[0];
 }) {
   const record = scholarBySignIn(identifier);
+  const guide = allocationFor(allocations, identifier);
   if (record) {
     const batch = batchOf(record.batchId);
     return (
       <p className="mt-3 max-w-2xl text-sm leading-6 text-accent">
         {batch ? `${batch.name}. ` : null}
-        Guide: {record.guideName || "—"}.{record.title ? ` Title: ${record.title}.` : ""}
+        Guide: {guide?.supervisorName || record.guideName || "—"}.
+        {record.title ? ` Title: ${record.title}.` : ""}
         {record.registrationNumber
           ? ` Registration number: ${record.registrationNumber}.`
           : " Registration number is to be allotted."}
       </p>
     );
   }
-  const guide = allocationFor(allocations, identifier);
   return (
     <p className="mt-3 text-sm text-accent">
       {guide
@@ -121,6 +92,13 @@ export function DashboardHome({ role }: { role: Role }) {
     currentPortalUsers,
     () => null,
   );
+  const admission = useSyncExternalStore(
+    subscribeAdmission,
+    currentAdmission,
+    () => null,
+  );
+  const admitted =
+    role !== "scholar" || scholarIsAdmitted(session?.identifier ?? "", admission?.cases);
   const name =
     session && session.role === role
       ? session.name.trim() || session.identifier
@@ -150,25 +128,21 @@ export function DashboardHome({ role }: { role: Role }) {
   const payments = records.filter((record) => record.kind === "payment");
   const myPayments = mine.filter((record) => record.kind === "payment");
   const rac = session && office ? presentRac(office.proposals, session.identifier) : null;
+  useSyncExternalStore(subscribeApplications, currentApplications, () => null);
 
   const registerScholars =
     session && role === "supervisor"
-      ? scholarsGuidedBy(session.name, session.identifier).filter(
-          (scholar) =>
-            !allotted.some(
-              (item) => item.scholarName.toLowerCase() === scholar.name.toLowerCase(),
-            ),
-        )
+      ? scholarsStillGuidedBy(session.name, session.identifier, office?.allocations ?? [])
       : [];
 
-  const cards =
-    role === "scholar"
+  const scholarCards = [
+    {
+      label: "Payments",
+      value: String(myPayments.length),
+      note: `₹${formatInr(money(myPayments))} recorded`,
+    },
+    ...(admitted
       ? [
-          {
-            label: "Payments",
-            value: String(myPayments.length),
-            note: `₹${formatInr(money(myPayments))} recorded`,
-          },
           {
             label: "Publications",
             value: String(mine.filter((record) => record.kind === "publication").length),
@@ -187,6 +161,12 @@ export function DashboardHome({ role }: { role: Role }) {
             note: rac ? "Guide, internal, and external" : "Not constituted yet",
           },
         ]
+      : []),
+  ];
+
+  const cards =
+    role === "scholar"
+      ? scholarCards
       : role === "supervisor"
         ? [
             {
@@ -274,12 +254,14 @@ export function DashboardHome({ role }: { role: Role }) {
 
   const links =
     role === "scholar"
-      ? [
-          ["/scholar/records/publications", "Add a publication"],
-          ["/scholar/records/six-month-report", "Six-month report"],
-          ["/scholar/records/payment-history", "Payment history"],
-          ["/scholar/rac", "Present RAC"],
-        ]
+      ? admitted
+        ? [
+            ["/scholar/records/publications", "Add a publication"],
+            ["/scholar/records/six-month-report", "Six-month report"],
+            ["/scholar/records/payment-history", "Payment history"],
+            ["/scholar/rac", "Present RAC"],
+          ]
+        : [["/scholar/admission", "Admission file"]]
       : role === "supervisor"
         ? [
             ["/supervisor/scholars", "My scholars"],
@@ -289,11 +271,15 @@ export function DashboardHome({ role }: { role: Role }) {
         : [
             ["/admin/site", "Application window"],
             ["/admin/news", "News and events"],
+            ["/admin/entrance-marks", "Entrance marks"],
             ["/admin/allocations", "Allot a scholar"],
+            ["/admin/results", "Course results"],
+            ["/admin/transfers", "Transfer a supervisor"],
+            ["/admin/promotions", "Promote a semester"],
             ["/admin/rac", "RAC decisions"],
-            ["/admin/people", "View a person"],
             ["/admin/register", "Scholar register"],
             ["/admin/supervisors", "Supervisor register"],
+            ["/admin/payments", "Payment approvals"],
             ["/admin/records/payment-history", "All payments"],
           ];
 
@@ -319,8 +305,41 @@ export function DashboardHome({ role }: { role: Role }) {
           </div>
         </section>
       )}
+      {session &&
+      session.role === role &&
+      (role === "scholar" || role === "supervisor") ? (
+        <PersonalDetailsPanel
+          role={role}
+          identifier={session.identifier}
+          name={session.name.trim() || session.identifier}
+        />
+      ) : null}
       {session && session.role === role && role === "scholar" ? (
-        <MissingDetails identifier={session.identifier} />
+        <ScholarFeeStatus identifier={session.identifier} />
+      ) : null}
+      {session && session.role === role && role === "scholar" && !admitted ? (
+        <p className="mt-4 text-sm leading-6 text-secondary">
+          Course work, requests, and doctoral progress open after the research office
+          completes admission.
+        </p>
+      ) : null}
+      {role === "admin" ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
+            onClick={() => downloadAllScholarDetails()}
+          >
+            {personFileCopy.downloadAllScholars}
+          </button>
+          <button
+            type="button"
+            className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
+            onClick={() => downloadAllSupervisorDetails()}
+          >
+            {personFileCopy.downloadAllSupervisors}
+          </button>
+        </div>
       ) : null}
       {office?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{office.detail}</p>

@@ -1,25 +1,31 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { personFileCopy } from "@/data/person-file";
 import { researchRegister, type ResearchSupervisor } from "@/data/research-register";
 import { currentOffice, subscribeOffice } from "@/lib/office";
-import { openOfficeView } from "@/lib/office-view";
+import {
+  downloadAllSupervisorDetails,
+  supervisorApplicationCells,
+  supervisorWideHeaders,
+} from "@/lib/person-file";
 import {
   currentQuotas,
   guideFigures,
   sameGuide,
   saveApprovedQuota,
   subscribeRegister,
+  supervisorDownloadRow,
 } from "@/lib/register";
 import { decideSupervisorApplication, type StoredApplication } from "@/lib/records";
 import type { Json } from "@/types/database";
@@ -224,7 +230,13 @@ export function SupervisorRegister({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-primary">{row.applicantName}</h3>
+                  <h3 className="font-semibold text-primary">
+                    <PersonNameLink
+                      role="supervisor"
+                      name={row.applicantName}
+                      identifier={row.email.trim() || row.applicationNo}
+                    />
+                  </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {row.applicationNo}
                     {payloadText(row.payload, "designation")
@@ -286,7 +298,13 @@ export function SupervisorRegister({
               {decided.map((row) => (
                 <tr key={row.id} className="border-t border-border">
                   <td className="px-3 py-3">
-                    <p className="font-medium text-primary">{row.applicantName}</p>
+                    <p className="font-medium text-primary">
+                      <PersonNameLink
+                        role="supervisor"
+                        name={row.applicantName}
+                        identifier={row.email.trim() || row.applicationNo}
+                      />
+                    </p>
                     <p className="text-muted-foreground">{row.applicationNo}</p>
                   </td>
                   <td className="px-3 py-3">
@@ -307,6 +325,17 @@ export function SupervisorRegister({
           </table>
         </div>
       ) : null}
+
+      <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => downloadAllSupervisorDetails()}
+        >
+          {personFileCopy.downloadAllSupervisors}
+        </Button>
+      </div>
 
       <h2 className="mt-10 font-heading text-2xl text-primary">Supervisors</h2>
       <ListToolbar
@@ -330,37 +359,15 @@ export function SupervisorRegister({
         total={directory.length}
         filename="supervisor-register.csv"
         downloadLabel="Download filtered supervisors"
-        headers={[
-          "S. No.",
-          "Guide",
-          "Supervisor ID",
-          "Department",
-          "Designation",
-          "Area of research",
-          "Active",
-          "Quota",
-          "Vacancy",
-          "Campus",
-          "Phone",
-          "Mail ID",
-        ]}
-        rows={supervisors.map((supervisor) => {
-          const figures = guideFigures(supervisor, quotas, allocations);
-          return [
-            supervisor.serialNo ? String(supervisor.serialNo) : "",
+        headers={supervisorWideHeaders()}
+        rows={supervisors.map((supervisor) => [
+          ...supervisorDownloadRow(supervisor, quotas, allocations),
+          ...supervisorApplicationCells(
+            supervisor.email.trim() || supervisor.supervisorId.trim() || supervisor.name,
             supervisor.name,
-            supervisor.supervisorId,
-            supervisor.department,
-            supervisor.designation,
-            supervisor.researchArea,
-            supervisor.active ? "Yes" : "No",
-            String(figures.quota),
-            String(figures.vacancy),
-            supervisor.campus,
-            supervisor.phone,
-            supervisor.email,
-          ];
-        })}
+            rows,
+          ),
+        ])}
       />
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -399,22 +406,15 @@ export function SupervisorRegister({
                 >
                   <td className="px-3 py-3">{supervisor.serialNo || "—"}</td>
                   <td className="px-3 py-3">
-                    <Link
-                      href="/supervisor/dashboard"
-                      className="font-medium text-primary underline-offset-2 hover:underline"
-                      onClick={() =>
-                        openOfficeView({
-                          role: "supervisor",
-                          name: supervisor.name,
-                          identifier:
-                            supervisor.email.trim() ||
-                            supervisor.supervisorId.trim() ||
-                            supervisor.name,
-                        })
+                    <PersonNameLink
+                      role="supervisor"
+                      name={supervisor.name}
+                      identifier={
+                        supervisor.email.trim() ||
+                        supervisor.supervisorId.trim() ||
+                        supervisor.name
                       }
-                    >
-                      {supervisor.name}
-                    </Link>
+                    />
                   </td>
                   <td className="px-3 py-3">{supervisor.supervisorId.trim() || "—"}</td>
                   <td className="px-3 py-3">{supervisor.department.trim() || "—"}</td>

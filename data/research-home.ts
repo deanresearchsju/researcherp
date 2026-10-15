@@ -4,6 +4,7 @@ import { university } from "@/lib/constants";
 
 export const researchPage = {
   title: university.researchOffice,
+  badge: "Research · Innovation · Impact",
   summary:
     "SJU fosters a dynamic research culture focused on innovation, industry collaboration, and real-world impact. With multidisciplinary initiatives, state-of-the-art facilities, and a commitment to societal progress, SJU empowers researchers to develop solutions that shape the future.",
   programmesTitle: "Ph.D. Programmes",

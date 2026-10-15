@@ -106,7 +106,8 @@ function payloadOf(value: unknown) {
 
 export async function loadRegister(): Promise<RegisterLoad> {
   const supabase = createSupabase();
-  if (!supabase) return { ...readStored(), source: "browser", updatedAt: null, detail: null };
+  if (!supabase)
+    return { ...readStored(), source: "browser", updatedAt: null, detail: null };
   const { data, error } = await supabase
     .from("research_register")
     .select("payload, updated_at")
@@ -212,6 +213,16 @@ export function personalDetailsFromRegister(identifier: string, fallbackName: st
   };
 }
 
+export function scholarSignInId(scholar: ResearchScholar) {
+  return (
+    scholar.email.trim() ||
+    scholar.registrationNumber.trim() ||
+    scholar.applicationNumber.trim() ||
+    scholar.fileNumber.trim() ||
+    scholar.id
+  );
+}
+
 export function scholarBySignIn(identifier: string) {
   const id = identifier.trim().toLowerCase();
   if (!id) return null;
@@ -225,6 +236,18 @@ export function scholarBySignIn(identifier: string) {
         scholar.id,
       ].some((value) => value.toLowerCase() === id),
     ) ?? null
+  );
+}
+
+export function supervisorBySignIn(identifier: string) {
+  const id = identifier.trim().toLowerCase();
+  if (!id) return null;
+  return (
+    researchRegister.supervisors.find((supervisor) =>
+      [supervisor.email, supervisor.supervisorId, supervisor.name].some(
+        (value) => value.trim().toLowerCase() === id,
+      ),
+    ) ?? supervisorForGuide(identifier)
   );
 }
 
@@ -507,26 +530,136 @@ export async function saveApprovedQuota(entry: ApprovedQuota) {
   return persistRegister({ ...current, quotas });
 }
 
+function numberTaken(
+  current: RegisterLoad,
+  scholarId: string,
+  registrationNumber: string,
+  extra: readonly RegistrationAllotment[],
+) {
+  const key = registrationNumber.toLowerCase();
+  const overlayTaken = [...current.allotments, ...extra].some(
+    (item) =>
+      item.scholarId !== scholarId && item.registrationNumber.toLowerCase() === key,
+  );
+  const rollTaken = researchRegister.scholars.some(
+    (item) =>
+      item.id !== scholarId && item.registrationNumber.trim().toLowerCase() === key,
+  );
+  return overlayTaken || rollTaken;
+}
+
 export async function allotRegistration(scholarId: string, registrationNumber: string) {
   const number = registrationNumber.trim();
   if (!number) {
     return { ok: false as const, message: "Enter a registration number." };
   }
   const current = memory ?? (await loadRegister());
-  const key = number.toLowerCase();
-  const overlayTaken = current.allotments.some(
-    (item) => item.scholarId !== scholarId && item.registrationNumber.toLowerCase() === key,
-  );
-  const rollTaken = researchRegister.scholars.some(
-    (item) =>
-      item.id !== scholarId && item.registrationNumber.trim().toLowerCase() === key,
-  );
-  if (overlayTaken || rollTaken) {
-    return { ok: false as const, message: "That registration number is already allotted." };
+  if (numberTaken(current, scholarId, number, [])) {
+    return {
+      ok: false as const,
+      message: "That registration number is already allotted.",
+    };
   }
   const allotments = [
     ...current.allotments.filter((item) => item.scholarId !== scholarId),
     { scholarId, registrationNumber: number },
   ];
   return persistRegister({ ...current, allotments });
+}
+
+export function scholarForRegistrationCsv(record: {
+  scholarId: string;
+  applicationNumber: string;
+  fileNumber: string;
+  email: string;
+}) {
+  const id = record.scholarId.trim().toLowerCase();
+  const application = record.applicationNumber.trim().toLowerCase();
+  const fileNumber = record.fileNumber.trim().toLowerCase();
+  const email = record.email.trim().toLowerCase();
+  return (
+    researchRegister.scholars.find((scholar) => {
+      if (id && scholar.id.toLowerCase() === id) return true;
+      if (application && scholar.applicationNumber.trim().toLowerCase() === application) {
+        return true;
+      }
+      if (fileNumber && scholar.fileNumber.trim().toLowerCase() === fileNumber) {
+        return true;
+      }
+      return Boolean(email && scholar.email.trim().toLowerCase() === email);
+    }) ?? null
+  );
+}
+
+export async function allotRegistrations(
+  rows: readonly {
+    scholarId: string;
+    applicationNumber: string;
+    fileNumber: string;
+    email: string;
+    registrationNumber: string;
+  }[],
+) {
+  const current = memory ?? (await loadRegister());
+  const extra: RegistrationAllotment[] = [];
+  let saved = 0;
+  let skipped = 0;
+  const messages: string[] = [];
+  for (const row of rows) {
+    const number = row.registrationNumber.trim();
+    if (!number) {
+      skipped += 1;
+      continue;
+    }
+    const scholar = scholarForRegistrationCsv(row);
+    if (!scholar) {
+      skipped += 1;
+      messages.push("A row did not match a scholar on the register.");
+      continue;
+    }
+    if (number.length < 8 || number.length > 20) {
+      skipped += 1;
+      messages.push(
+        `${scholar.applicationNumber || scholar.id}: registration number is not valid.`,
+      );
+      continue;
+    }
+    if (numberTaken(current, scholar.id, number, extra)) {
+      skipped += 1;
+      messages.push(
+        `${scholar.applicationNumber || scholar.id}: that registration number is already allotted.`,
+      );
+      continue;
+    }
+    const existingIndex = extra.findIndex((item) => item.scholarId === scholar.id);
+    if (existingIndex >= 0)
+      extra[existingIndex] = { scholarId: scholar.id, registrationNumber: number };
+    else extra.push({ scholarId: scholar.id, registrationNumber: number });
+    saved += 1;
+  }
+  if (saved === 0) {
+    return {
+      ok: false as const,
+      message: messages[0] ?? "No registration number could be allotted from that file.",
+      saved,
+      skipped,
+    };
+  }
+  const allotments = [
+    ...current.allotments.filter(
+      (item) => !extra.some((entry) => entry.scholarId === item.scholarId),
+    ),
+    ...extra,
+  ];
+  const persisted = await persistRegister({ ...current, allotments });
+  if (!persisted.ok) return { ...persisted, saved: 0, skipped: rows.length };
+  return {
+    ok: true as const,
+    saved,
+    skipped,
+    message:
+      skipped > 0
+        ? `${saved} registration numbers were allotted. ${skipped} rows were skipped.`
+        : `${saved} registration numbers were allotted.`,
+  };
 }

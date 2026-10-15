@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
+import {
+  DeskPage,
+  DeskSection,
+  GateBanner,
+  ProcessFlow,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +20,7 @@ import { currentOffice, sameId, subscribeOffice } from "@/lib/office";
 import { scholarBySignIn, scholarsGuidedBy, sameGuide } from "@/lib/register";
 import {
   currentScholarRecords,
+  loadRecordFile,
   setScholarRecordStatus,
   subscribeScholarRecords,
   type ScholarRecord,
@@ -132,102 +140,108 @@ export function ReviewScreen() {
   }
 
   return (
-    <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Supervisor
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Scholar requests</h1>
+    <DeskPage kicker="Supervisor" title="Scholar requests">
+      <ProcessFlow>
+        Scholar submits &gt;&gt; Supervisor recommendation &gt;&gt; Research office
+      </ProcessFlow>
       {notice ? (
-        <p role="status" className="mt-4 text-sm text-secondary">
+        <p role="status" className="text-sm text-secondary">
           {notice}
         </p>
       ) : null}
       {allotted.length === 0 && guided.length === 0 ? (
-        <p className="mt-6 text-sm text-muted-foreground">
-          No scholar is allotted to you yet.
-        </p>
+        <GateBanner>No scholar is allotted to you yet.</GateBanner>
       ) : null}
       {records.length === 0 ? (
-        <p className="mt-6 text-sm text-muted-foreground">No requests yet.</p>
+        <GateBanner>No requests yet.</GateBanner>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {records.map((record) => {
-            const menu = menuByKind(record.kind);
-            return (
-              <li
-                key={record.id}
-                className="rounded-xl border border-border bg-card p-4 shadow-card"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-primary">
-                      {menu.label} · {record.scholarName}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatIsoDate(record.createdAt.slice(0, 10))}
-                      {record.fileName ? ` · ${record.fileName}` : ""}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      record.status === "Approved"
-                        ? "gold"
-                        : record.status === "Returned"
-                          ? "maroon"
-                          : "purple"
-                    }
-                  >
-                    {record.status}
-                  </Badge>
-                </div>
-                <div className="mt-3 text-sm">
-                  {menu.fields.map((field) => (
-                    <p key={field.name}>
-                      <span className="text-muted-foreground">{field.label}: </span>
-                      {record.payload[field.name] || "—"}
-                    </p>
-                  ))}
-                </div>
-                {record.status === "Submitted" ? (
-                  <div className="mt-3 space-y-2">
-                    <Textarea
-                      aria-label={`Remarks for ${record.scholarName}`}
-                      value={remarks[record.id] ?? ""}
-                      onChange={(event) =>
-                        setRemarks((current) => ({
-                          ...current,
-                          [record.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="gold"
-                      onClick={() => void decide(record, "Supervisor approved")}
-                    >
-                      {record.kind === "publication" ? "Approve" : "Recommend"}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="maroon"
-                      onClick={() => void decide(record, "Returned")}
-                    >
-                      Return
-                    </Button>
+        <DeskSection title="Requests waiting">
+          <ul className="space-y-3 p-4">
+            {records.map((record) => {
+              const menu = menuByKind(record.kind);
+              return (
+                <li
+                  key={record.id}
+                  className="rounded-xl border border-border bg-card p-4 shadow-card"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-primary">
+                        {menu.label} · {record.scholarName}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatIsoDate(record.createdAt.slice(0, 10))}
+                        {record.fileName ? ` · ${record.fileName}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ViewFilesButton
+                        fileName={record.fileName}
+                        load={() => loadRecordFile(record)}
+                        onMissing={setNotice}
+                      />
+                      <Badge
+                        variant={
+                          record.status === "Approved"
+                            ? "gold"
+                            : record.status === "Returned"
+                              ? "maroon"
+                              : "purple"
+                        }
+                      >
+                        {record.status}
+                      </Badge>
                     </div>
                   </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                  <div className="mt-3 text-sm">
+                    {menu.fields.map((field) => (
+                      <p key={field.name}>
+                        <span className="text-muted-foreground">{field.label}: </span>
+                        {record.payload[field.name] || "—"}
+                      </p>
+                    ))}
+                  </div>
+                  {record.status === "Submitted" ? (
+                    <div className="mt-3 space-y-2">
+                      <Textarea
+                        aria-label={`Remarks for ${record.scholarName}`}
+                        value={remarks[record.id] ?? ""}
+                        onChange={(event) =>
+                          setRemarks((current) => ({
+                            ...current,
+                            [record.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="gold"
+                          onClick={() => void decide(record, "Supervisor approved")}
+                        >
+                          {record.kind === "publication" ? "Approve" : "Recommend"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="maroon"
+                          onClick={() => void decide(record, "Returned")}
+                        >
+                          Return
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </DeskSection>
       )}
-      <p className="mt-4 text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Menus covered: {reviewMenus.map((menu) => menu.label).join(", ")}.
       </p>
-    </div>
+    </DeskPage>
   );
 }

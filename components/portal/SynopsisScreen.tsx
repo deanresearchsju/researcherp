@@ -6,6 +6,16 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskPage,
+  DeskSection,
+  DeskTable,
+  DeskTabs,
+  GateBanner,
+  ProcessFlow,
+  ScholarIdentityHeader,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +26,7 @@ import {
   schoolNeedsIndexedPair,
   synopsisChecklist,
 } from "@/data/doctoral";
+import { processFlows } from "@/data/portal-desk";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
   currentDoctoral,
@@ -23,6 +34,7 @@ import {
   enrollmentFor,
   latestCommittee,
   latestSynopsis,
+  latestThesis,
   publicationEligibility,
   reportTarget,
   saveSynopsis,
@@ -54,6 +66,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [tab, setTab] = useState("new");
 
   if (!ready || !doctoral || !reports || !papers) {
     return <p className="text-sm text-muted-foreground">Loading synopsis…</p>;
@@ -145,23 +158,104 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
   });
 
+  const thesis = latestThesis(doctoral, identifier);
+
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Synopsis</h1>
-      </header>
-      {mode === "scholar" && review ? (
+    <DeskPage title="Synopsis">
+      <ProcessFlow>{processFlows.synopsis}</ProcessFlow>
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
+      {mode === "scholar" ? (
+        <DeskTabs
+          tabs={[
+            { id: "details", label: "Synopsis details" },
+            { id: "new", label: "New request" },
+            { id: "history", label: "Request history" },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      ) : null}
+      {mode === "scholar" && tab === "details" ? (
+        <>
+          <DeskSection title="Indian examiner">
+            <DeskTable
+              headers={["Name", "Institution", "Email"]}
+              empty={(thesis?.indian.length ?? 0) === 0}
+            >
+              {(thesis?.indian ?? []).map((person) => (
+                <tr key={`${person.email}-in`} className="border-t border-border">
+                  <td className="px-4 py-3">{person.name}</td>
+                  <td className="px-4 py-3">{person.institution}</td>
+                  <td className="px-4 py-3">{person.email}</td>
+                </tr>
+              ))}
+            </DeskTable>
+          </DeskSection>
+          <DeskSection title="Foreign examiner">
+            <DeskTable
+              headers={["Name", "Institution", "Email"]}
+              empty={(thesis?.foreign.length ?? 0) === 0}
+            >
+              {(thesis?.foreign ?? []).map((person) => (
+                <tr key={`${person.email}-fr`} className="border-t border-border">
+                  <td className="px-4 py-3">{person.name}</td>
+                  <td className="px-4 py-3">{person.institution}</td>
+                  <td className="px-4 py-3">{person.email}</td>
+                </tr>
+              ))}
+            </DeskTable>
+          </DeskSection>
+          <DeskSection title="Synopsis details">
+            <DeskTable headers={["File", "Status", "Remarks", ""]} empty={!own}>
+              {own ? (
+                <tr className="border-t border-border">
+                  <td className="px-4 py-3">{own.fileName}</td>
+                  <td className="px-4 py-3">{own.status}</td>
+                  <td className="px-4 py-3">{own.remarks || "—"}</td>
+                  <td className="px-4 py-3 text-right">
+                    <ViewFilesButton
+                      fileName={own.fileName}
+                      data={own.fileData}
+                      onMissing={setNotice}
+                    />
+                  </td>
+                </tr>
+              ) : null}
+            </DeskTable>
+          </DeskSection>
+        </>
+      ) : null}
+      {mode === "scholar" && review && tab === "new" ? (
         own && own.status !== "Rejected" ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
-            {own.fileName} · {own.status}
-            {own.remarks ? ` · ${own.remarks}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <GateBanner>
+              {own.fileName} · {own.status}
+              {own.remarks ? ` · ${own.remarks}` : ""}
+            </GateBanner>
+            <ViewFilesButton
+              fileName={own.fileName}
+              data={own.fileData}
+              onMissing={setNotice}
+            />
+          </div>
+        ) : review.missing.length ? (
+          <GateBanner tone="danger">
+            Synopsis proforma will be enabled after the checklist is complete. Still
+            needed: {review.missing.join("; ")}.
+          </GateBanner>
         ) : (
           <div className="space-y-3 rounded-xl border border-border bg-card p-4">
             {own?.status === "Rejected" ? (
-              <p className="text-sm text-secondary">
-                Returned: {own.remarks}. Upload the corrected synopsis.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-secondary">
+                  Returned: {own.remarks}. Upload the corrected synopsis.
+                </p>
+                <ViewFilesButton
+                  fileName={own.fileName}
+                  data={own.fileData}
+                  onMissing={setNotice}
+                />
+              </div>
             ) : null}
             <p className="text-sm text-muted-foreground">
               {review.enrollment
@@ -228,67 +322,81 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
           total={doctoral.synopses.length}
           filename="synopsis.csv"
           headers={["scholar", "file", "status", "remarks"]}
-          rows={queue.map((item) => [item.scholarName, item.fileName, item.status, item.remarks])}
+          rows={queue.map((item) => [
+            item.scholarName,
+            item.fileName,
+            item.status,
+            item.remarks,
+          ])}
         />
       ) : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
-      <ul className="space-y-3">
-        {queue.map((item) => (
-          <li
-            key={item.id}
-            className="space-y-3 rounded-xl border border-border bg-card p-4"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="font-semibold text-primary">
-                {item.scholarName} · {item.fileName}
-              </p>
-              <Badge
-                variant={
-                  item.status === "Approved"
-                    ? "gold"
-                    : item.status === "Rejected"
-                      ? "maroon"
-                      : "purple"
-                }
-              >
-                {item.status}
-              </Badge>
-            </div>
-            {mode === "admin" && item.status === "Submitted" ? (
-              <div className="space-y-2">
-                <Textarea
-                  aria-label="Remarks"
-                  value={remarks[item.id] ?? ""}
-                  onChange={(event) =>
-                    setRemarks((current) => ({
-                      ...current,
-                      [item.id]: event.target.value,
-                    }))
-                  }
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="gold"
-                    onClick={() => void decide(item.id, "Approved")}
+      {mode === "scholar" && tab !== "history" ? null : (
+        <ul className="space-y-3">
+          {queue.map((item) => (
+            <li
+              key={item.id}
+              className="space-y-3 rounded-xl border border-border bg-card p-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-semibold text-primary">
+                  {item.scholarName} · {item.fileName}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ViewFilesButton
+                    fileName={item.fileName}
+                    data={item.fileData}
+                    onMissing={setNotice}
+                  />
+                  <Badge
+                    variant={
+                      item.status === "Approved"
+                        ? "gold"
+                        : item.status === "Rejected"
+                          ? "maroon"
+                          : "purple"
+                    }
                   >
-                    Approve
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="maroon"
-                    onClick={() => void decide(item.id, "Rejected")}
-                  >
-                    Reject
-                  </Button>
+                    {item.status}
+                  </Badge>
                 </div>
               </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+              {mode === "admin" && item.status === "Submitted" ? (
+                <div className="space-y-2">
+                  <Textarea
+                    aria-label="Remarks"
+                    value={remarks[item.id] ?? ""}
+                    onChange={(event) =>
+                      setRemarks((current) => ({
+                        ...current,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="gold"
+                      onClick={() => void decide(item.id, "Approved")}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="maroon"
+                      onClick={() => void decide(item.id, "Rejected")}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
       {popup ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4"
@@ -312,6 +420,6 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
           </div>
         </div>
       ) : null}
-    </section>
+    </DeskPage>
   );
 }

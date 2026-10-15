@@ -4,9 +4,9 @@ export const heroCopy = {
   summary: "A supervised Ph.D. at St. Joseph University, from application to thesis.",
   primaryCta: "Apply for Ph.D.",
   primaryHref: "/apply",
-  secondaryCta: "Announcements",
+  secondaryCta: "View announcements",
   secondaryHref: "/announcements",
-  tertiaryCta: "Supervisors List",
+  tertiaryCta: "Explore our supervisors",
   tertiaryHref: "/supervisors",
   factsTitle: "At a glance",
   facts: [

@@ -463,9 +463,7 @@ export async function setScholarRecordStatus(
   if (cached) {
     publish(record.kind, {
       ...cached,
-      records: cached.records.map((item) =>
-        item.id === record.id ? next : item,
-      ),
+      records: cached.records.map((item) => (item.id === record.id ? next : item)),
     });
   }
   await recordAudit({
@@ -502,18 +500,42 @@ export function recordSchema(menu: ScholarRecordMenu) {
   const shape: Record<string, z.ZodType<string>> = {};
   for (const field of menu.fields) {
     if (field.kind === "email") {
-      shape[field.name] = z.string().trim().email("Enter a valid email address.");
+      shape[field.name] = field.required
+        ? z.string().trim().email("Enter a valid email address.")
+        : z
+            .string()
+            .trim()
+            .refine(
+              (value) => value === "" || z.string().email().safeParse(value).success,
+              "Enter a valid email address.",
+            );
       continue;
     }
     if (field.kind === "tel") {
-      shape[field.name] = z
-        .string()
-        .trim()
-        .regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number.");
+      shape[field.name] = field.required
+        ? z
+            .string()
+            .trim()
+            .regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number.")
+        : z
+            .string()
+            .trim()
+            .refine(
+              (value) => value === "" || /^[6-9]\d{9}$/.test(value),
+              "Enter a 10-digit mobile number.",
+            );
       continue;
     }
     if (field.kind === "date") {
-      shape[field.name] = z.string().trim().refine(isValidIsoDate, "Enter a valid date.");
+      shape[field.name] = field.required
+        ? z.string().trim().refine(isValidIsoDate, "Enter a valid date.")
+        : z
+            .string()
+            .trim()
+            .refine(
+              (value) => value === "" || isValidIsoDate(value),
+              "Enter a valid date.",
+            );
       continue;
     }
     if (field.kind === "amount") {
@@ -546,7 +568,7 @@ export function recordSchema(menu: ScholarRecordMenu) {
         .string()
         .trim()
         .refine(
-          (value) => options.includes(value),
+          (value) => options.includes(value) || (!field.required && value === ""),
           `Select ${field.label.toLowerCase()}.`,
         );
       continue;
@@ -566,4 +588,33 @@ export function downloadStoredFile(filename: string, dataUrl: string) {
   document.body.append(link);
   link.click();
   link.remove();
+}
+
+function blobFromDataUrl(dataUrl: string) {
+  const match = /^data:([^;]+)(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+  const mime = match[1] || "application/octet-stream";
+  const body = match[3] ?? "";
+  const binary = match[2] ? atob(body) : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+export function openStoredFile(filename: string, dataUrl: string) {
+  const blob = blobFromDataUrl(dataUrl);
+  if (!blob) {
+    downloadStoredFile(filename, dataUrl);
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    downloadStoredFile(filename, dataUrl);
+    URL.revokeObjectURL(url);
+    return;
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

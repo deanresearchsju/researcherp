@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -264,11 +265,23 @@ export function AllocationScreen() {
               .map((item) => (
                 <tr key={item.id} className="border-t border-border">
                   <td className="px-3 py-3">
-                    <p className="font-semibold text-primary">{item.scholarName}</p>
+                    <p className="font-semibold text-primary">
+                      <PersonNameLink
+                        role="scholar"
+                        name={item.scholarName}
+                        identifier={item.scholarIdentifier}
+                      />
+                    </p>
                     <p className="text-muted-foreground">{item.scholarIdentifier}</p>
                   </td>
                   <td className="px-3 py-3">
-                    <p className="font-semibold text-primary">{item.supervisorName}</p>
+                    <p className="font-semibold text-primary">
+                      <PersonNameLink
+                        role="supervisor"
+                        name={item.supervisorName}
+                        identifier={item.supervisorIdentifier}
+                      />
+                    </p>
                     <p className="text-muted-foreground">{item.supervisorIdentifier}</p>
                   </td>
                   <td className="px-3 py-3 text-right">

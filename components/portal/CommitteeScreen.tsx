@@ -6,6 +6,12 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskPage,
+  GateBanner,
+  ScholarIdentityHeader,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,20 +59,21 @@ export function CommitteeScreen({
   const identifier = session?.identifier ?? "";
   const mine = latestCommittee(doctoral, kind, identifier);
   const second = latestCommittee(doctoral, "second", identifier);
-  const third = latestCommittee(doctoral, "third", identifier);
   const synopsis = latestSynopsis(doctoral, identifier);
   const gate =
-    kind === "second"
-      ? confirmationReady(doctoral, identifier)
-        ? null
-        : "Semester 1 and semester 2 results have to be published first. That is four papers."
-      : kind === "third"
-        ? second?.status === "Approved"
+    kind === "first"
+      ? null
+      : kind === "second"
+        ? confirmationReady(doctoral, identifier)
           ? null
-          : "The second doctoral committee has to be approved first."
-        : synopsis?.status === "Approved"
-          ? null
-          : "The synopsis has to be approved first.";
+          : "Semester 1 and semester 2 results have to be published first. That is four papers."
+        : kind === "third"
+          ? second?.status === "Approved"
+            ? null
+            : "The second doctoral committee has to be approved first."
+          : synopsis?.status === "Approved"
+            ? null
+            : "The synopsis has to be approved first.";
 
   async function upload() {
     if (!session) return;
@@ -122,24 +129,36 @@ export function CommitteeScreen({
   });
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">{copy.title}</h1>
-      </header>
+    <DeskPage title={copy.title}>
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
       {mode === "scholar" ? (
         gate ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">{gate}</p>
+          <GateBanner tone="danger">{gate}</GateBanner>
         ) : mine && mine.status !== "Rejected" ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
-            {mine.fileName} · {mine.status}
-            {mine.remarks ? ` · ${mine.remarks}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm">
+            <p>
+              {mine.fileName} · {mine.status}
+              {mine.remarks ? ` · ${mine.remarks}` : ""}
+            </p>
+            <ViewFilesButton
+              fileName={mine.fileName}
+              data={mine.fileData}
+              onMissing={setNotice}
+            />
+          </div>
         ) : (
           <div className="space-y-3 rounded-xl border border-border bg-card p-4">
             {mine?.status === "Rejected" ? (
-              <p className="text-sm text-secondary">
-                Returned: {mine.remarks}. Upload the corrected report.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-secondary">
+                  Returned: {mine.remarks}. Upload the corrected report.
+                </p>
+                <ViewFilesButton
+                  fileName={mine.fileName}
+                  data={mine.fileData}
+                  onMissing={setNotice}
+                />
+              </div>
             ) : null}
             <FormField label="Committee report" htmlFor={`${kind}-report`} required>
               <FileUpload
@@ -195,17 +214,24 @@ export function CommitteeScreen({
               <p className="font-semibold text-primary">
                 {report.scholarName} · {report.fileName}
               </p>
-              <Badge
-                variant={
-                  report.status === "Approved"
-                    ? "gold"
-                    : report.status === "Rejected"
-                      ? "maroon"
-                      : "purple"
-                }
-              >
-                {report.status}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <ViewFilesButton
+                  fileName={report.fileName}
+                  data={report.fileData}
+                  onMissing={setNotice}
+                />
+                <Badge
+                  variant={
+                    report.status === "Approved"
+                      ? "gold"
+                      : report.status === "Rejected"
+                        ? "maroon"
+                        : "purple"
+                  }
+                >
+                  {report.status}
+                </Badge>
+              </div>
             </div>
             {report.remarks ? (
               <p className="text-sm text-muted-foreground">{report.remarks}</p>
@@ -282,6 +308,6 @@ export function CommitteeScreen({
           </li>
         ))}
       </ul>
-    </section>
+    </DeskPage>
   );
 }

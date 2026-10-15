@@ -6,6 +6,13 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskPage,
+  GateBanner,
+  ProcessFlow,
+  ScholarIdentityHeader,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { PrintActions, PrintPages } from "@/components/forms/PrintForm";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -14,11 +21,8 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  completionKinds,
-  examinerOutcomes,
-  vivaOutcomes,
-} from "@/data/doctoral";
+import { completionKinds, examinerOutcomes, vivaOutcomes } from "@/data/doctoral";
+import { processFlows } from "@/data/portal-desk";
 import { university } from "@/lib/constants";
 import {
   completionBlocked,
@@ -119,19 +123,25 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
   });
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Plagiarism</h1>
-      </header>
+    <DeskPage title="Plagiarism">
+      <ProcessFlow>{processFlows.plagiarism}</ProcessFlow>
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
       {mode === "scholar" ? (
         gate ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">{gate}</p>
+          <GateBanner tone="danger">{gate}</GateBanner>
         ) : mine && mine.status !== "Rejected" ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
-            {mine.fileName} · {mine.similarity}% · {mine.status}
-            {mine.remarks ? ` · ${mine.remarks}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm">
+            <p>
+              {mine.fileName} · {mine.similarity}% · {mine.status}
+              {mine.remarks ? ` · ${mine.remarks}` : ""}
+            </p>
+            <ViewFilesButton
+              fileName={mine.fileName}
+              data={mine.fileData}
+              onMissing={setNotice}
+            />
+          </div>
         ) : (
           <form
             className="space-y-4 rounded-xl border border-border bg-card p-4"
@@ -140,6 +150,18 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
               void upload();
             }}
           >
+            {mine ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-secondary">
+                  Previous file: {mine.fileName} · {mine.status}
+                </p>
+                <ViewFilesButton
+                  fileName={mine.fileName}
+                  data={mine.fileData}
+                  onMissing={setNotice}
+                />
+              </div>
+            ) : null}
             <FormField label="Similarity %" htmlFor="similarity" required>
               <Input
                 id="similarity"
@@ -185,14 +207,24 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
           />
           <ul className="space-y-3">
             {queue.map((item) => (
-              <li key={item.id} className="space-y-2 rounded-xl border border-border bg-card p-4">
+              <li
+                key={item.id}
+                className="space-y-2 rounded-xl border border-border bg-card p-4"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="font-semibold text-primary">
                     {item.scholarName} · {item.similarity}% · {item.fileName}
                   </p>
-                  <Badge variant={item.status === "Approved" ? "gold" : "purple"}>
-                    {item.status}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ViewFilesButton
+                      fileName={item.fileName}
+                      data={item.fileData}
+                      onMissing={setNotice}
+                    />
+                    <Badge variant={item.status === "Approved" ? "gold" : "purple"}>
+                      {item.status}
+                    </Badge>
+                  </div>
                 </div>
                 {item.status === "Submitted" ? (
                   <div className="space-y-2">
@@ -231,7 +263,7 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
           </ul>
         </>
       )}
-    </section>
+    </DeskPage>
   );
 }
 
@@ -267,7 +299,11 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
     };
   };
 
-  async function record(thesis: ThesisSubmission, group: "local" | "indian" | "foreign", name: string) {
+  async function record(
+    thesis: ThesisSubmission,
+    group: "local" | "indian" | "foreign",
+    name: string,
+  ) {
     const key = `${thesis.id}-${group}`;
     const chosen = draft[key] ?? { outcome: "Recommended" as const, remarks: "" };
     if (chosen.outcome !== "Recommended" && chosen.remarks.trim().length < 2) {
@@ -322,26 +358,36 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
   });
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Examiner reports</h1>
-      </header>
+    <DeskPage title="Examiner reports">
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
       {mode === "scholar" ? (
         !mine || mine.status !== "Approved" ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
+          <GateBanner>
             Examiner reports open after the research office records the examiners.
-          </p>
+          </GateBanner>
         ) : (
           <div className="space-y-4">
-            <p className="rounded-xl border border-border bg-card p-4 text-sm">
-              Thesis version {mine.version} · {mine.fileName}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm">
+              <p>
+                Thesis version {mine.version} · {mine.fileName}
+              </p>
+              <ViewFilesButton
+                fileName={mine.fileName}
+                data={mine.fileData}
+                onMissing={setNotice}
+              />
+            </div>
             <ul className="space-y-2">
               {doctoral.examinerReports
-                .filter((item) => item.thesisId === mine.id && item.version === mine.version)
+                .filter(
+                  (item) => item.thesisId === mine.id && item.version === mine.version,
+                )
                 .map((item) => (
-                  <li key={item.id} className="rounded-xl border border-border bg-card p-4 text-sm">
+                  <li
+                    key={item.id}
+                    className="rounded-xl border border-border bg-card p-4 text-sm"
+                  >
                     {item.group}: {item.outcome}
                     {item.remarks ? ` · ${item.remarks}` : ""}
                   </li>
@@ -380,7 +426,11 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
             total={doctoral.theses.length}
             filename="examiner-reports.csv"
             headers={["scholar", "title", "version"]}
-            rows={queue.map((item) => [item.scholarName, item.title, String(item.version)])}
+            rows={queue.map((item) => [
+              item.scholarName,
+              item.title,
+              String(item.version),
+            ])}
           />
           <ul className="space-y-4">
             {queue.map((thesis) => {
@@ -391,10 +441,20 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                 ["foreign", names.foreign],
               ] as const;
               return (
-                <li key={thesis.id} className="space-y-3 rounded-xl border border-border bg-card p-4">
-                  <p className="font-semibold text-primary">
-                    {thesis.scholarName} · version {thesis.version}
-                  </p>
+                <li
+                  key={thesis.id}
+                  className="space-y-3 rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-semibold text-primary">
+                      {thesis.scholarName} · version {thesis.version}
+                    </p>
+                    <ViewFilesButton
+                      fileName={thesis.fileName}
+                      data={thesis.fileData}
+                      onMissing={setNotice}
+                    />
+                  </div>
                   {slots.map(([group, name]) => {
                     const key = `${thesis.id}-${group}`;
                     const existing = doctoral.examinerReports.find(
@@ -423,7 +483,10 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                       remarks: "",
                     };
                     return (
-                      <div key={group} className="space-y-2 rounded-lg border border-border p-3">
+                      <div
+                        key={group}
+                        className="space-y-2 rounded-lg border border-border p-3"
+                      >
                         <p className="text-sm font-semibold text-primary">
                           {group}: {name}
                         </p>
@@ -481,7 +544,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
           </ul>
         </>
       )}
-    </section>
+    </DeskPage>
   );
 }
 
@@ -551,14 +614,12 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
   });
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Viva</h1>
-      </header>
+    <DeskPage title="Viva">
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
       {mode === "scholar" ? (
         gate && !mine ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">{gate}</p>
+          <GateBanner tone="danger">{gate}</GateBanner>
         ) : mine ? (
           <p className="rounded-xl border border-border bg-card p-4 text-sm">
             {mine.scheduledOn} · {mine.venue} · {mine.status}
@@ -615,7 +676,14 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
           />
           <ul className="space-y-3">
             {readyTheses
-              .filter((item) => !doctoral.vivas.some((viva) => viva.scholarIdentifier === item.scholarIdentifier && viva.status === "Scheduled"))
+              .filter(
+                (item) =>
+                  !doctoral.vivas.some(
+                    (viva) =>
+                      viva.scholarIdentifier === item.scholarIdentifier &&
+                      viva.status === "Scheduled",
+                  ),
+              )
               .filter((item) => textMatches(query, [item.scholarName, item.title]))
               .map((thesis) => (
                 <li
@@ -623,13 +691,21 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
                   className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"
                 >
                   <p className="font-semibold text-primary">{thesis.scholarName}</p>
-                  <Button type="button" size="sm" variant="gold" onClick={() => void schedule(thesis)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="gold"
+                    onClick={() => void schedule(thesis)}
+                  >
                     Schedule
                   </Button>
                 </li>
               ))}
             {doctoral.vivas.map((viva) => (
-              <li key={viva.id} className="space-y-2 rounded-xl border border-border bg-card p-4">
+              <li
+                key={viva.id}
+                className="space-y-2 rounded-xl border border-border bg-card p-4"
+              >
                 <p className="font-semibold text-primary">
                   {viva.scholarName} · {viva.scheduledOn} · {viva.status}
                 </p>
@@ -679,7 +755,7 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
           </ul>
         </>
       )}
-    </section>
+    </DeskPage>
   );
 }
 
@@ -699,7 +775,9 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
   }
 
   const identifier = session?.identifier ?? "";
-  const mine = doctoral.completions.filter((item) => item.scholarIdentifier === identifier);
+  const mine = doctoral.completions.filter(
+    (item) => item.scholarIdentifier === identifier,
+  );
   const readyScholars = doctoral.vivas.filter((item) => item.status === "Passed");
 
   async function issue(scholarIdentifier: string, scholarName: string) {
@@ -728,20 +806,22 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
   );
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Completion</h1>
-      </header>
+    <DeskPage title="Completion">
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
       {mode === "scholar" ? (
         mine.length === 0 ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
-            {completionBlocked(doctoral, identifier) ?? "No certificate has been issued yet."}
-          </p>
+          <GateBanner>
+            {completionBlocked(doctoral, identifier) ??
+              "No certificate has been issued yet."}
+          </GateBanner>
         ) : (
           <ul className="space-y-3">
             {mine.map((item) => (
-              <li key={item.id} className="rounded-xl border border-border bg-card p-4 text-sm">
+              <li
+                key={item.id}
+                className="rounded-xl border border-border bg-card p-4 text-sm"
+              >
                 {item.kind} · {item.issuedOn}
                 {item.remarks ? ` · ${item.remarks}` : ""}
               </li>
@@ -777,7 +857,11 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
                 onChange={(event) => setIssuedOn(event.target.value)}
               />
             </FormField>
-            <FormField label="Remarks" htmlFor="completion-remarks" className="sm:col-span-2">
+            <FormField
+              label="Remarks"
+              htmlFor="completion-remarks"
+              className="sm:col-span-2"
+            >
               <Textarea
                 id="completion-remarks"
                 value={remarks}
@@ -813,7 +897,10 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
               </li>
             ))}
             {shown.map((item) => (
-              <li key={item.id} className="rounded-xl border border-border bg-card p-4 text-sm">
+              <li
+                key={item.id}
+                className="rounded-xl border border-border bg-card p-4 text-sm"
+              >
                 {item.scholarName} · {item.kind} · {item.issuedOn}
               </li>
             ))}
@@ -830,7 +917,9 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
                   <p className="text-xs font-semibold tracking-wide text-secondary uppercase">
                     {university.researchOffice}
                   </p>
-                  <h2 className="mt-4 font-serif text-3xl text-primary">{kind} certificate</h2>
+                  <h2 className="mt-4 font-serif text-3xl text-primary">
+                    {kind} certificate
+                  </h2>
                   <p className="mt-6 text-sm">{sheet}</p>
                   <p className="mt-2 text-sm">{issuedOn}</p>
                   <p className="mt-8 text-sm text-muted-foreground">{university.name}</p>
@@ -840,6 +929,6 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
           ) : null}
         </>
       )}
-    </section>
+    </DeskPage>
   );
 }

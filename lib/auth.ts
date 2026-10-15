@@ -45,13 +45,18 @@ export async function mockLogin(input: LoginInput): Promise<LoginResult> {
       remember: input.remember,
     }),
   });
-  let payload: { ok: true; redirectTo: string; session: PreviewSession } | { ok: false; message: string };
+  let payload:
+    | { ok: true; redirectTo: string; session: PreviewSession }
+    | { ok: false; message: string };
   try {
     payload = (await response.json()) as typeof payload;
   } catch {
     return {
       ok: false,
-      message: "Those credentials were not recognised. Check the details and try again.",
+      message:
+        response.status >= 500
+          ? "Sign-in is not available yet."
+          : "Those credentials were not recognised. Check the details and try again.",
     };
   }
   if (!payload.ok) {

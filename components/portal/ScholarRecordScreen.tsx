@@ -7,6 +7,17 @@ import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskModal,
+  DeskPage,
+  DeskSection,
+  DeskTable,
+  GateBanner,
+  ProcessFlow,
+  ScholarIdentityHeader,
+  StatusPill,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,12 +25,12 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ScholarRecordMenu } from "@/data/scholar-records";
+import { processFlows } from "@/data/portal-desk";
+import type { ScholarRecordKind, ScholarRecordMenu } from "@/data/scholar-records";
 import { formatIsoDate } from "@/lib/dates";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
   currentScholarRecords,
-  downloadStoredFile,
   loadRecordFile,
   recordSchema,
   saveScholarRecord,
@@ -41,6 +52,37 @@ import {
 } from "@/lib/register";
 import { currentPortalUsers } from "@/lib/users";
 import { usePortalSession } from "@/lib/use-preview-session";
+
+function flowFor(kind: ScholarRecordKind) {
+  if (kind === "publication") return processFlows.publication;
+  if (kind === "phd_cancellation") return processFlows.cancellation;
+  if (kind === "supervisor_change") return processFlows.supervisorChange;
+  if (kind === "leave") return processFlows.leave;
+  if (kind === "extension") return processFlows.extension;
+  if (kind === "title_change") return processFlows.titleChange;
+  if (kind === "study_mode_change") return processFlows.studyMode;
+  if (kind === "six_month_report") return processFlows.sixMonth;
+  return null;
+}
+
+const personalGroups = [
+  {
+    title: "General details",
+    names: ["fullName", "programme", "studyMode", "mobile", "email"],
+  },
+  {
+    title: "Personal details",
+    names: ["dateOfBirth", "gender", "nationality", "bloodGroup"],
+  },
+  {
+    title: "Parent details",
+    names: ["fatherName", "motherName", "parentContact", "parentEmail"],
+  },
+  {
+    title: "Address for communication",
+    names: ["address", "pincode", "district", "state"],
+  },
+] as const;
 
 function statusVariant(status: ScholarRecord["status"]) {
   if (status === "Approved") return "gold" as const;
@@ -190,9 +232,15 @@ function RecordForm({
             onChange={setFile}
           />
           {!file && existing?.fileName ? (
-            <p className="text-xs text-muted-foreground">
-              Current file: {existing.fileName}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-muted-foreground">
+                Current file: {existing.fileName}
+              </p>
+              <ViewFilesButton
+                fileName={existing.fileName}
+                load={() => loadRecordFile(existing)}
+              />
+            </div>
           ) : null}
         </FormField>
       ) : null}
@@ -225,6 +273,7 @@ export function ScholarRecordScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
 
   if (!load) {
     return (
@@ -280,17 +329,6 @@ export function ScholarRecordScreen({
     ).entries(),
   );
 
-  async function downloadFile(record: ScholarRecord) {
-    setBusyId(record.id);
-    const data = await loadRecordFile(record);
-    setBusyId(null);
-    if (!data || !record.fileName) {
-      setNotice("That file is not stored with the record.");
-      return;
-    }
-    downloadStoredFile(record.fileName, data);
-  }
-
   async function decide(record: ScholarRecord, status: "Approved" | "Returned") {
     const note = (remarks[record.id] ?? "").trim();
     if (status === "Returned" && note.length < 2) {
@@ -332,25 +370,35 @@ export function ScholarRecordScreen({
     );
   }
 
+  const opened = mine.find((record) => record.id === openId) ?? null;
+  const flow = flowFor(menu.kind);
+  const canForm =
+    mode === "scholar" &&
+    signedIn &&
+    session &&
+    (!menu.needsSupervisor || Boolean(guide)) &&
+    existing?.status !== "Approved";
+
   return (
-    <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        {mode === "admin" ? "Admin" : "Scholar"}
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">{menu.label}</h1>
+    <DeskPage kicker={mode === "admin" ? "Admin" : "Scholar"} title={menu.label}>
+      {flow ? <ProcessFlow>{flow}</ProcessFlow> : null}
       {load.detail ? (
-        <p role="status" className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
+        <p role="status" className="max-w-2xl text-sm leading-6 text-secondary">
           {load.detail} {scholarRecordMigrationHint}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="mt-4 text-sm text-secondary">
+        <p role="status" className="text-sm text-secondary">
           {notice}
         </p>
       ) : null}
 
+      {mode === "scholar" ? (
+        <ScholarIdentityHeader identifier={session?.identifier ?? ""} />
+      ) : null}
+
       {mode === "scholar" && !signedIn ? (
-        <p className="mt-6 text-sm text-muted-foreground">
+        <GateBanner>
           <Link
             href="/login/scholar"
             className="font-semibold text-primary hover:underline"
@@ -358,7 +406,7 @@ export function ScholarRecordScreen({
             Sign in as a scholar
           </Link>{" "}
           to upload this record.
-        </p>
+        </GateBanner>
       ) : null}
 
       {mode === "scholar" &&
@@ -367,112 +415,233 @@ export function ScholarRecordScreen({
       menu.needsSupervisor &&
       office &&
       !guide ? (
-        <p className="mt-6 text-sm text-muted-foreground">
+        <GateBanner>
           A supervisor has to be allotted before you can submit this.
-        </p>
+        </GateBanner>
       ) : null}
 
-      {mode === "scholar" && signedIn && session && (!menu.needsSupervisor || guide) ? (
-        existing?.status === "Approved" ? (
-          <p className="mt-6 rounded-xl border border-border bg-card p-4 text-sm">
-            This record is approved and locked
-            {existing.fileName ? ` · ${existing.fileName}` : ""}.
-          </p>
-        ) : (
-          <RecordForm
-            key={existing?.id ?? "new"}
-            menu={menu}
-            scholarIdentifier={session.identifier}
-            scholarName={session.name.trim() || session.identifier}
-            supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
-            supervisorName={guide?.supervisorName ?? ""}
-            existing={existing}
-          />
-        )
+      {mode === "scholar" && menu.kind === "personal_details" && existing ? (
+        <>
+          {personalGroups.map((group) => (
+            <DeskSection key={group.title} title={group.title}>
+              <dl>
+                {group.names.map((name) => {
+                  const field = menu.fields.find((item) => item.name === name);
+                  if (!field) return null;
+                  return (
+                    <div
+                      key={name}
+                      className="grid grid-cols-[12rem_1fr] gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0"
+                    >
+                      <dt className="text-muted-foreground">{field.label}</dt>
+                      <dd className="font-semibold text-primary">
+                        {existing.payload[name] || "—"}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </DeskSection>
+          ))}
+        </>
+      ) : null}
+
+      {mode === "scholar" && menu.kind !== "personal_details" ? (
+        <DeskSection
+          title={
+            menu.kind === "payment" ? "Fees payment details" : "Already submitted request"
+          }
+        >
+          {menu.kind === "payment" ? (
+            <DeskTable
+              headers={[
+                "Date",
+                "Amount",
+                "Mode",
+                "Transaction number",
+                "Purpose",
+                "Status",
+                "",
+              ]}
+              empty={mine.length === 0}
+            >
+              {mine.map((record) => (
+                <tr key={record.id} className="border-t border-border">
+                  <td className="px-4 py-3">
+                    {record.payload.paidOn
+                      ? formatIsoDate(record.payload.paidOn)
+                      : formatIsoDate(record.createdAt.slice(0, 10))}
+                  </td>
+                  <td className="px-4 py-3">₹{record.payload.amount || "—"}</td>
+                  <td className="px-4 py-3">{record.payload.mode || "—"}</td>
+                  <td className="px-4 py-3">{record.payload.transactionNumber || "—"}</td>
+                  <td className="px-4 py-3">{record.payload.purpose || "—"}</td>
+                  <td className="px-4 py-3">
+                    <StatusPill status={record.status} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <ViewFilesButton
+                        fileName={record.fileName}
+                        load={() => loadRecordFile(record)}
+                        onMissing={setNotice}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setOpenId(record.id)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </DeskTable>
+          ) : (
+            <DeskTable
+              headers={["Submitted on", "Reason", "Status", ""]}
+              empty={mine.length === 0}
+            >
+              {mine.map((record) => (
+                <tr key={record.id} className="border-t border-border">
+                  <td className="px-4 py-3">
+                    {formatIsoDate(record.createdAt.slice(0, 10))}
+                  </td>
+                  <td className="px-4 py-3">
+                    {record.payload.reason ||
+                      record.payload.title ||
+                      record.payload.examName ||
+                      record.payload.abcId ||
+                      "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill status={record.status} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <ViewFilesButton
+                        fileName={record.fileName}
+                        load={() => loadRecordFile(record)}
+                        onMissing={setNotice}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setOpenId(record.id)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </DeskTable>
+          )}
+        </DeskSection>
       ) : null}
 
       {menu.kind === "payment" ? (
-        <p className="mt-6 text-sm text-foreground">
+        <p className="text-sm text-foreground">
           {mode === "scholar" ? "Your payments" : "Overall"}: {mine.length} · ₹
           {paymentTotal.toLocaleString("en-IN")}
         </p>
       ) : null}
-      {mode === "admin" ? (
-        <ListToolbar
-          query={query}
-          onQuery={setQuery}
-          filters={[
-            {
-              id: "scholar",
-              label: "Scholar",
-              value: scholarFilter,
-              options: scholarOptions.map(([identifier, name]) => ({
-                value: identifier,
-                label: `${name} · ${identifier}`,
-              })),
-              onChange: setScholarFilter,
-            },
-            {
-              id: "status",
-              label: "Status",
-              value: statusFilter,
-              options: ["Submitted", "Supervisor approved", "Approved", "Returned"].map(
-                (status) => ({ value: status, label: status }),
-              ),
-              onChange: setStatusFilter,
-            },
-          ]}
-          shown={mine.length}
-          total={owned.length}
-          filename={`${menu.slug}.csv`}
-          headers={[
-            "scholar_name",
-            "scholar_identifier",
-            "status",
-            "submitted",
-            ...menu.fields.map((field) => field.name),
-            "file_name",
-          ]}
-          rows={mine.map((record) => [
-            record.scholarName,
-            record.scholarIdentifier,
-            record.status,
-            record.createdAt.slice(0, 10),
-            ...menu.fields.map((field) => record.payload[field.name] ?? ""),
-            record.fileName ?? "",
-          ])}
-        />
+
+      {canForm && session ? (
+        <DeskSection
+          title={menu.single ? `Update ${menu.label}` : "New request"}
+          tone={menu.single ? "primary" : "new"}
+        >
+          <div className="p-4">
+            {existing?.status === "Approved" ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm">
+                  This record is approved and locked
+                  {existing.fileName ? ` · ${existing.fileName}` : ""}.
+                </p>
+                <ViewFilesButton
+                  fileName={existing.fileName}
+                  load={() => loadRecordFile(existing)}
+                  onMissing={setNotice}
+                />
+              </div>
+            ) : (
+              <RecordForm
+                key={existing?.id ?? "new"}
+                menu={menu}
+                scholarIdentifier={session.identifier}
+                scholarName={session.name.trim() || session.identifier}
+                supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
+                supervisorName={guide?.supervisorName ?? ""}
+                existing={existing}
+              />
+            )}
+          </div>
+        </DeskSection>
       ) : null}
 
-      {mine.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">No records yet.</p>
-      ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-          <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
-            <thead className="bg-muted text-primary">
-              <tr>
-                {mode === "admin" ? (
-                  <th className="px-3 py-3 font-semibold">Scholar</th>
-                ) : null}
-                <th className="px-3 py-3 font-semibold">Details</th>
-                <th className="px-3 py-3 font-semibold">Submitted</th>
-                <th className="px-3 py-3 font-semibold">Status</th>
-                <th className="px-3 py-3 font-semibold">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+      {mode === "admin" ? (
+        <>
+          <ListToolbar
+            query={query}
+            onQuery={setQuery}
+            filters={[
+              {
+                id: "scholar",
+                label: "Scholar",
+                value: scholarFilter,
+                options: scholarOptions.map(([identifier, name]) => ({
+                  value: identifier,
+                  label: `${name} · ${identifier}`,
+                })),
+                onChange: setScholarFilter,
+              },
+              {
+                id: "status",
+                label: "Status",
+                value: statusFilter,
+                options: ["Submitted", "Supervisor approved", "Approved", "Returned"].map(
+                  (status) => ({ value: status, label: status }),
+                ),
+                onChange: setStatusFilter,
+              },
+            ]}
+            shown={mine.length}
+            total={owned.length}
+            filename={`${menu.slug}.csv`}
+            headers={[
+              "scholar_name",
+              "scholar_identifier",
+              "status",
+              "submitted",
+              ...menu.fields.map((field) => field.name),
+              "file_name",
+            ]}
+            rows={mine.map((record) => [
+              record.scholarName,
+              record.scholarIdentifier,
+              record.status,
+              record.createdAt.slice(0, 10),
+              ...menu.fields.map((field) => record.payload[field.name] ?? ""),
+              record.fileName ?? "",
+            ])}
+          />
+          <DeskSection title={menu.label}>
+            <DeskTable
+              headers={["Scholar", "Details", "Submitted", "Status", ""]}
+              empty={mine.length === 0}
+            >
               {mine.map((record) => (
                 <tr key={record.id} className="border-t border-border align-top">
-                  {mode === "admin" ? (
-                    <td className="px-3 py-3">
-                      <p className="font-semibold text-primary">{record.scholarName}</p>
-                      <p className="text-muted-foreground">{record.scholarIdentifier}</p>
-                    </td>
-                  ) : null}
-                  <td className="px-3 py-3">
-                    {menu.fields.map((field) => (
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-primary">{record.scholarName}</p>
+                    <p className="text-muted-foreground">{record.scholarIdentifier}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    {menu.fields.slice(0, 4).map((field) => (
                       <p key={field.name}>
                         <span className="text-muted-foreground">{field.label}: </span>
                         {record.payload[field.name] || "—"}
@@ -482,72 +651,102 @@ export function ScholarRecordScreen({
                       <p className="text-muted-foreground">File: {record.fileName}</p>
                     ) : null}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3">
                     {formatIsoDate(record.createdAt.slice(0, 10))}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3">
                     <Badge variant={statusVariant(record.status)}>{record.status}</Badge>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3">
                     <div className="flex flex-wrap justify-end gap-2">
-                      {mode === "admin" && record.fileName ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={busyId === record.id}
-                          onClick={() => void downloadFile(record)}
-                        >
-                          Download file
-                        </Button>
-                      ) : null}
-                      {mode === "admin" ? (
-                        <>
-                          <Textarea
-                            aria-label={`Remarks for ${record.scholarName}`}
-                            className="min-h-16"
-                            value={remarks[record.id] ?? ""}
-                            onChange={(event) =>
-                              setRemarks((current) => ({
-                                ...current,
-                                [record.id]: event.target.value,
-                              }))
-                            }
-                          />
-                          <Button
-                            type="button"
-                            variant="gold"
-                            size="sm"
-                            disabled={
-                              busyId === record.id ||
-                              (menu.needsSupervisor &&
-                                record.status !== "Supervisor approved")
-                            }
-                            onClick={() => void decide(record, "Approved")}
-                          >
-                            {menu.needsSupervisor && record.status === "Submitted"
-                              ? "With supervisor"
-                              : "Approve"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="maroon"
-                            size="sm"
-                            disabled={busyId === record.id}
-                            onClick={() => void decide(record, "Returned")}
-                          >
-                            Return
-                          </Button>
-                        </>
-                      ) : null}
+                      <ViewFilesButton
+                        fileName={record.fileName}
+                        load={() => loadRecordFile(record)}
+                        onMissing={setNotice}
+                      />
+                      <Textarea
+                        aria-label={`Remarks for ${record.scholarName}`}
+                        className="min-h-16"
+                        value={remarks[record.id] ?? ""}
+                        onChange={(event) =>
+                          setRemarks((current) => ({
+                            ...current,
+                            [record.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="gold"
+                        size="sm"
+                        disabled={
+                          busyId === record.id ||
+                          (menu.needsSupervisor &&
+                            record.status !== "Supervisor approved")
+                        }
+                        onClick={() => void decide(record, "Approved")}
+                      >
+                        {menu.needsSupervisor && record.status === "Submitted"
+                          ? "With supervisor"
+                          : "Approve"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="maroon"
+                        size="sm"
+                        disabled={busyId === record.id}
+                        onClick={() => void decide(record, "Returned")}
+                      >
+                        Return
+                      </Button>
                     </div>
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+            </DeskTable>
+          </DeskSection>
+        </>
+      ) : null}
+
+      {opened ? (
+        <DeskModal title={menu.label} onClose={() => setOpenId(null)}>
+          <ScholarIdentityHeader identifier={opened.scholarIdentifier} />
+          <DeskSection title="Request details">
+            <dl>
+              {menu.fields.map((field) => (
+                <div
+                  key={field.name}
+                  className="grid grid-cols-[12rem_1fr] gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0"
+                >
+                  <dt className="text-muted-foreground">{field.label}</dt>
+                  <dd className="font-semibold text-primary">
+                    {opened.payload[field.name] || "—"}
+                  </dd>
+                </div>
+              ))}
+              <div className="grid grid-cols-[12rem_1fr] gap-3 px-4 py-3 text-sm">
+                <dt className="text-muted-foreground">Status</dt>
+                <dd>
+                  <StatusPill status={opened.status} />
+                </dd>
+              </div>
+              {opened.fileName ? (
+                <div className="grid grid-cols-[12rem_1fr] gap-3 px-4 py-3 text-sm">
+                  <dt className="text-muted-foreground">File</dt>
+                  <dd className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-primary">{opened.fileName}</span>
+                    <ViewFilesButton
+                      fileName={opened.fileName}
+                      load={() => loadRecordFile(opened)}
+                      onMissing={setNotice}
+                    />
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </DeskSection>
+        </DeskModal>
+      ) : null}
+    </DeskPage>
   );
 }

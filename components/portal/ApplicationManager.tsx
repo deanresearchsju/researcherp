@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -86,7 +87,13 @@ function ApplicationTable({
                     ) : null}
                   </td>
                   <td className="px-3 py-3">
-                    <p>{row.applicantName}</p>
+                    <p>
+                      <PersonNameLink
+                        role={row.kind === "phd" ? "scholar" : "supervisor"}
+                        name={row.applicantName}
+                        identifier={row.email.trim() || row.applicationNo}
+                      />
+                    </p>
                     <p className="mt-1 text-muted-foreground">{row.email}</p>
                     <p className="mt-1 text-muted-foreground">
                       Date of birth {dateLabel(row.dateOfBirth)}
@@ -108,7 +115,9 @@ function ApplicationTable({
                       onChange={(event) => onStatus(row, event.target.value)}
                     >
                       {applicationStatuses
-                        .filter((status) => canChangeApplicationStatus(row.status, status))
+                        .filter((status) =>
+                          canChangeApplicationStatus(row.status, status),
+                        )
                         .map((status) => (
                           <option key={status} value={status}>
                             {status}
@@ -274,7 +283,10 @@ export function ApplicationManager({
             id: "status",
             label: "Status",
             value: statusFilter,
-            options: applicationStatuses.map((status) => ({ value: status, label: status })),
+            options: applicationStatuses.map((status) => ({
+              value: status,
+              label: status,
+            })),
             onChange: setStatusFilter,
           },
         ]}

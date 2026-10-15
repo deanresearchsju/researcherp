@@ -14,10 +14,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { portalGroups } from "@/data/portal";
 import { roleProfiles } from "@/data/roles";
 import { isPrincipalAdmin, menuHrefs, storedMenus } from "@/lib/access";
-import {
-  activateRegisterAccounts,
-  type ActivationReport,
-} from "@/lib/register-access";
+import { activateRegisterAccounts, type ActivationReport } from "@/lib/register-access";
 import {
   createPortalUser,
   removePortalUser,
@@ -475,11 +472,13 @@ function MenuPicker({
       <legend className="text-sm font-semibold text-primary">Menus</legend>
       <div className="mt-3 grid gap-4 sm:grid-cols-2">
         {portalGroups[role].map((group) => (
-          <div key={group.heading}>
-            <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-              {group.heading}
-            </p>
-            <ul className="mt-2 space-y-1">
+          <div key={group.heading || group.items[0]?.href}>
+            {group.heading ? (
+              <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                {group.heading}
+              </p>
+            ) : null}
+            <ul className={group.heading ? "mt-2 space-y-1" : "space-y-1"}>
               {group.items.map((item) => {
                 const dashboard = item.href.endsWith("/dashboard");
                 return (

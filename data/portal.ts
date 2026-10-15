@@ -9,7 +9,7 @@ const record = (role: Role, slug: string, label: string) => ({
 export const portalGroups: Record<Role, PortalNavGroup[]> = {
   scholar: [
     {
-      heading: "Overview",
+      heading: "",
       items: [{ label: "Dashboard", href: "/scholar/dashboard", ready: true }],
     },
     {
@@ -21,7 +21,6 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [
         record("scholar", "abc-id", "ABC ID"),
         record("scholar", "hall-ticket", "Hall ticket"),
-        record("scholar", "personal-details", "Personal details"),
         record("scholar", "payment-history", "Payment history"),
       ],
     },
@@ -46,6 +45,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
     {
       heading: "Doctoral progress",
       items: [
+        { label: "First committee", href: "/scholar/dc-first", ready: true },
         { label: "Ph.D. confirmation", href: "/scholar/confirmation", ready: true },
         { label: "Colloquium", href: "/scholar/colloquium", ready: true },
         record("scholar", "publications", "Publications"),
@@ -64,7 +64,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
   ],
   supervisor: [
     {
-      heading: "Overview",
+      heading: "",
       items: [{ label: "Dashboard", href: "/supervisor/dashboard", ready: true }],
     },
     {
@@ -84,7 +84,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
   ],
   admin: [
     {
-      heading: "Overview",
+      heading: "",
       items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
     },
     {
@@ -93,10 +93,10 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
         { label: "Application window", href: "/admin/site", ready: true },
         { label: "News and events", href: "/admin/news", ready: true },
         { label: "Research areas", href: "/admin/research-areas", ready: true },
-        { label: "People", href: "/admin/people", ready: true },
         { label: "Scholar register", href: "/admin/register", ready: true },
         { label: "Supervisor register", href: "/admin/supervisors", ready: true },
         { label: "Users", href: "/admin/users", ready: true },
+        { label: "Payment approvals", href: "/admin/payments", ready: true },
         { label: "Our Team", href: "/admin/team", ready: true },
       ],
     },
@@ -104,7 +104,9 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       heading: "Admissions",
       items: [
         { label: "Selection", href: "/admin/admission", ready: true },
+        { label: "Entrance marks", href: "/admin/entrance-marks", ready: true },
         { label: "Scholar allotment", href: "/admin/allocations", ready: true },
+        { label: "Supervisor transfer", href: "/admin/transfers", ready: true },
         { label: "Vacancies", href: "/admin/vacancies", ready: true },
         { label: "Applications", href: "/admin/applications", ready: true },
         { label: "RAC", href: "/admin/rac", ready: true },
@@ -115,7 +117,6 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [
         record("admin", "abc-id", "ABC ID"),
         record("admin", "hall-ticket", "Hall ticket"),
-        record("admin", "personal-details", "Personal details"),
         record("admin", "payment-history", "Payment history"),
       ],
     },
@@ -134,12 +135,14 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       heading: "Course work",
       items: [
         { label: "Registration", href: "/admin/course-work", ready: true },
+        { label: "Semester promotion", href: "/admin/promotions", ready: true },
         { label: "Results", href: "/admin/results", ready: true },
       ],
     },
     {
       heading: "Doctoral progress",
       items: [
+        { label: "First committee", href: "/admin/dc-first", ready: true },
         { label: "Ph.D. confirmation", href: "/admin/confirmation", ready: true },
         { label: "Colloquium", href: "/admin/colloquium", ready: true },
         record("admin", "publications", "Publications"),
@@ -156,6 +159,13 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
     },
   ],
 };
+
+export const portalShellCopy = {
+  workspace: "workspace",
+  active: "Active",
+  assistanceTitle: "Need assistance?",
+  assistanceDetail: "Write to the research office for ERP support.",
+} as const;
 
 export const portalIntro: Record<Role, { title: string; summary: string }> = {
   scholar: {

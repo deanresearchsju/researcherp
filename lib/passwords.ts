@@ -13,6 +13,7 @@ export function isHashedSecret(stored: string) {
 }
 
 export function verifySecret(plain: string, stored: string) {
+  if (!plain || !stored) return false;
   if (!isHashedSecret(stored)) return stored === plain;
   const parts = stored.split("$");
   const salt = parts[1];

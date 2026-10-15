@@ -7,7 +7,13 @@ import { useSyncExternalStore } from "react";
 import { university, fileLimits } from "@/lib/constants";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { fileError, fileToDataUrl } from "@/lib/files";
-import { sameId } from "@/lib/office";
+import {
+  currentOffice,
+  sameId,
+  scholarsStillGuidedBy,
+  subscribeOffice,
+} from "@/lib/office";
+import { scholarSemesterLabel } from "@/lib/scholar-identity";
 import { portraitFor, currentPortraits, subscribePortraits } from "@/lib/portraits";
 import {
   profilePhotoReady,
@@ -18,7 +24,6 @@ import {
 import {
   registrationOf,
   scholarBySignIn,
-  scholarsGuidedBy,
   supervisorForGuide,
   currentAllotments,
   subscribeRegister,
@@ -42,18 +47,21 @@ function rowsFor(role: Role, identifier: string, name: string) {
       ["Department", guide?.department.trim() || "—"],
       ["Designation", guide?.designation.trim() || "—"],
       ["Campus", guide?.campus.trim() || "—"],
-      ["Scholars", String(scholarsGuidedBy(name, identifier).length)],
+      [
+        "Scholars",
+        String(
+          (currentOffice()?.allocations.filter((item) =>
+            sameId(item.supervisorIdentifier, identifier),
+          ).length ?? 0) +
+            scholarsStillGuidedBy(name, identifier, currentOffice()?.allocations ?? [])
+              .length,
+        ),
+      ],
     ];
   }
 
   const scholar = scholarBySignIn(identifier);
   const allotments = currentAllotments();
-  const doctoral = currentDoctoral();
-  const semesters =
-    doctoral?.registrations
-      .filter((item) => sameId(item.scholarIdentifier, identifier))
-      .map((item) => item.semester) ?? [];
-  const semester = semesters.length > 0 ? String(Math.max(...semesters)) : "—";
   const programme = scholar?.department.trim()
     ? `Ph.D. - ${scholar.department.trim()}`
     : "Ph.D.";
@@ -64,7 +72,7 @@ function rowsFor(role: Role, identifier: string, name: string) {
     ["Email ID", scholar?.email.trim() || (identifier.includes("@") ? identifier : "—")],
     ["Institution", scholar?.institution.trim() || university.name],
     ["Program", programme],
-    ["Semester", semester],
+    ["Semester", scholarSemesterLabel(identifier)],
   ];
 }
 
@@ -92,6 +100,7 @@ export function ProfileCard({ role }: { role: Extract<Role, "scholar" | "supervi
   );
   useSyncExternalStore(subscribeRegister, currentAllotments, currentAllotments);
   useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const shown = photo || (identifier ? portraitFor(portraits, identifier, name) : null);

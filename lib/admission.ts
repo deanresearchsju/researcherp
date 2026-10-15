@@ -5,10 +5,12 @@ import {
   writtenMax,
 } from "@/data/admission";
 import { schools } from "@/data/schools";
+import { pushNotice, recordAudit } from "@/lib/audit";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson, type StoredApplication } from "@/lib/records";
+import { scholarBySignIn } from "@/lib/register";
 import type { Json } from "@/types/database";
 import type { Vacancy } from "@/lib/vacancies";
 
@@ -50,9 +52,16 @@ export type AdmissionCase = {
   feeReceiptData: string | null;
 };
 
+export type EntranceScore = {
+  key: string;
+  written: number | null;
+  interview: number | null;
+};
+
 export type AdmissionState = {
   cases: AdmissionCase[];
   letter: LetterConfig;
+  entranceScores: EntranceScore[];
   updatedAt: string | null;
   detail: string | null;
 };
@@ -60,6 +69,7 @@ export type AdmissionState = {
 const empty: AdmissionState = {
   cases: [],
   letter: defaultLetter,
+  entranceScores: [],
   updatedAt: null,
   detail: null,
 };
@@ -141,6 +151,57 @@ export function sameDepartment(left: string, right: string) {
   return a === b;
 }
 
+export function schoolNameFromLabel(label: string) {
+  const trimmed = label.trim();
+  if (!trimmed || trimmed === "—") return "";
+  const byName = schools.find((item) => sameDepartment(item.name, trimmed));
+  if (byName) return byName.name;
+  const byArea = schools.find((item) =>
+    item.areas.some((area) => sameDepartment(area, trimmed)),
+  );
+  return byArea?.name ?? "";
+}
+
+export function admissionCaseForIdentifier(
+  identifier: string,
+  cases: readonly AdmissionCase[],
+) {
+  const id = identifier.trim().toLowerCase();
+  if (!id) return null;
+  const scholar = scholarBySignIn(identifier);
+  if (scholar) return admissionCaseForScholar(scholar, cases);
+  return (
+    cases.find((row) => row.applicationNo.trim().toLowerCase() === id) ??
+    cases.find((row) => row.email.trim().toLowerCase() === id) ??
+    null
+  );
+}
+
+export function scholarIsAdmitted(
+  identifier: string,
+  cases?: readonly AdmissionCase[] | null,
+) {
+  if (!identifier.trim()) return false;
+  if (scholarBySignIn(identifier)) return true;
+  const list = cases ?? currentAdmission()?.cases;
+  if (!list) return false;
+  return admissionCaseForIdentifier(identifier, list)?.verification === "Approved";
+}
+
+export function scholarSchoolName(identifier: string, extra?: string) {
+  const candidates = [
+    extra,
+    scholarBySignIn(identifier)?.department,
+    admissionCaseForIdentifier(identifier, currentAdmission()?.cases ?? [])?.department,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const named = schoolNameFromLabel(candidate);
+    if (named) return named;
+  }
+  return extra?.trim() || scholarBySignIn(identifier)?.department || "";
+}
+
 export function sameSubject(candidateDepartment: string, vacancyDepartment: string) {
   const school = schools.find((item) => sameDepartment(item.name, candidateDepartment));
   const names = school && school.areas.length > 0 ? school.areas : [candidateDepartment];
@@ -153,7 +214,7 @@ export function seatsFor(department: string, vacancies: readonly Vacancy[]) {
     .reduce((sum, row) => sum + row.vacancyCount, 0);
 }
 
-export function totalMarks(row: AdmissionCase) {
+export function totalMarks(row: Pick<AdmissionCase, "written" | "interview">) {
   if (row.written === null || row.interview === null) return null;
   return row.written + row.interview;
 }
@@ -317,8 +378,26 @@ function parseLetter(value: unknown): LetterConfig {
   return next;
 }
 
-function parseStored(value: unknown): { cases: AdmissionCase[]; letter: LetterConfig } {
-  if (!value || typeof value !== "object") return { cases: [], letter: defaultLetter };
+function parseScore(value: unknown): EntranceScore | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const key = text(row.key);
+  if (!key) return null;
+  return {
+    key,
+    written: numberOrNull(row.written, writtenMax),
+    interview: numberOrNull(row.interview, interviewMax),
+  };
+}
+
+function parseStored(value: unknown): {
+  cases: AdmissionCase[];
+  letter: LetterConfig;
+  entranceScores: EntranceScore[];
+} {
+  if (!value || typeof value !== "object") {
+    return { cases: [], letter: defaultLetter, entranceScores: [] };
+  }
   const row = value as Record<string, unknown>;
   const cases = Array.isArray(row.cases)
     ? row.cases.flatMap((item) => {
@@ -326,7 +405,13 @@ function parseStored(value: unknown): { cases: AdmissionCase[]; letter: LetterCo
         return parsed ? [parsed] : [];
       })
     : [];
-  return { cases, letter: parseLetter(row.letter) };
+  const entranceScores = Array.isArray(row.entranceScores)
+    ? row.entranceScores.flatMap((item) => {
+        const parsed = parseScore(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  return { cases, letter: parseLetter(row.letter), entranceScores };
 }
 
 let memory: AdmissionState | null = null;
@@ -361,16 +446,27 @@ export function subscribeAdmission(onChange: () => void) {
   return () => listeners.delete(onChange);
 }
 
-function readBrowser(): { cases: AdmissionCase[]; letter: LetterConfig } {
-  if (typeof window === "undefined") return { cases: [], letter: defaultLetter };
+function readBrowser(): {
+  cases: AdmissionCase[];
+  letter: LetterConfig;
+  entranceScores: EntranceScore[];
+} {
+  if (typeof window === "undefined") {
+    return { cases: [], letter: defaultLetter, entranceScores: [] };
+  }
   try {
     const raw = window.localStorage.getItem(storageKeys.admission);
     return raw
       ? parseStored(JSON.parse(raw) as unknown)
-      : { cases: [], letter: defaultLetter };
+      : { cases: [], letter: defaultLetter, entranceScores: [] };
   } catch {
-    return { cases: [], letter: defaultLetter };
+    return { cases: [], letter: defaultLetter, entranceScores: [] };
   }
+}
+
+function mergeScores(local: EntranceScore[], remote: EntranceScore[]) {
+  const seen = new Set(remote.map((item) => item.key));
+  return [...local.filter((item) => !seen.has(item.key)), ...remote];
 }
 
 async function loadAdmission(): Promise<AdmissionState> {
@@ -392,24 +488,27 @@ async function loadAdmission(): Promise<AdmissionState> {
       ...remote.cases,
     ],
     letter: remote.letter,
+    entranceScores: mergeScores(browser.entranceScores, remote.entranceScores),
     updatedAt: data.updated_at ?? null,
     detail: null,
   };
 }
 
 export async function saveAdmission(
-  next: Pick<AdmissionState, "cases" | "letter"> & { updatedAt?: string | null },
+  next: Pick<AdmissionState, "cases" | "letter"> & {
+    entranceScores?: EntranceScore[];
+    updatedAt?: string | null;
+  },
 ) {
-  const stored = { cases: next.cases, letter: next.letter };
+  const stored = {
+    cases: next.cases,
+    letter: next.letter,
+    entranceScores: next.entranceScores ?? memory?.entranceScores ?? [],
+  };
   const stamp = next.updatedAt ?? memory?.updatedAt ?? null;
   const supabase = createSupabase();
   if (supabase && memory && !memory.detail) {
-    const saved = await saveJsonBlob(
-      "admission_office",
-      "office",
-      toJson(stored),
-      stamp,
-    );
+    const saved = await saveJsonBlob("admission_office", "office", toJson(stored), stamp);
     if (saved.ok) {
       publish({ ...stored, updatedAt: saved.updatedAt, detail: null });
       return { ok: true as const };
@@ -453,4 +552,99 @@ export function marksError(written: string, interview: string) {
     return `The interview is marked out of ${interviewMax}.`;
   }
   return null;
+}
+
+export function marksDraftError(written: string, interview: string) {
+  if (written.trim() === "" && interview.trim() === "") return null;
+  return marksError(written, interview);
+}
+
+export function scoreFor(scores: readonly EntranceScore[], key: string) {
+  return scores.find((item) => item.key === key) ?? null;
+}
+
+export function admissionCaseForScholar(
+  scholar: { email: string; applicationNumber: string },
+  cases: readonly AdmissionCase[],
+) {
+  const email = scholar.email.trim().toLowerCase();
+  const application = scholar.applicationNumber.trim().toLowerCase();
+  return (
+    cases.find((row) => row.applicationNo.trim().toLowerCase() === application) ??
+    (email ? cases.find((row) => row.email.trim().toLowerCase() === email) : undefined) ??
+    null
+  );
+}
+
+export async function saveEntrancePage(
+  patches: readonly {
+    key: string;
+    applicationId: string;
+    written: string;
+    interview: string;
+  }[],
+) {
+  const current = memory ?? (await ensureAdmission());
+  const scores = [...current.entranceScores];
+  let cases = current.cases;
+  for (const patch of patches) {
+    const error = marksDraftError(patch.written, patch.interview);
+    if (error) return { ok: false as const, message: error };
+    const written = patch.written.trim() === "" ? null : Number(patch.written);
+    const interview = patch.interview.trim() === "" ? null : Number(patch.interview);
+    const nextScore: EntranceScore = { key: patch.key, written, interview };
+    const index = scores.findIndex((item) => item.key === patch.key);
+    if (index >= 0) scores[index] = nextScore;
+    else scores.push(nextScore);
+    if (patch.applicationId && written !== null && interview !== null) {
+      cases = cases.map((row) =>
+        row.applicationId === patch.applicationId && row.attendance === "Present"
+          ? { ...row, written, interview }
+          : row,
+      );
+    }
+  }
+  const saved = await saveAdmission({
+    cases,
+    letter: current.letter,
+    entranceScores: scores,
+  });
+  if (!saved.ok) return saved;
+  return { ok: true as const };
+}
+
+export async function setApplicationFee(applicationId: string, payment: PaymentMark) {
+  const current = memory ?? (await ensureAdmission());
+  const row = current.cases.find((item) => item.applicationId === applicationId);
+  if (!row) {
+    return { ok: false as const, message: "That application was not found." };
+  }
+  const nextRow: AdmissionCase = {
+    ...row,
+    payment,
+    shortlisted: payment === "Approved" && row.shortlisted,
+  };
+  const cases = current.cases.map((item) =>
+    item.applicationId === applicationId ? nextRow : item,
+  );
+  const saved = await saveAdmission({
+    cases,
+    letter: current.letter,
+    entranceScores: current.entranceScores,
+  });
+  if (!saved.ok) return saved;
+  await recordAudit({
+    action: `payment:${payment}`,
+    subject: `application-fee:${applicationId}`,
+    detail: `${row.name} · application fee`,
+  });
+  if (row.email) {
+    await pushNotice({
+      role: "scholar",
+      identifier: row.email,
+      title: `Application fee ${payment}`,
+      detail: `The research office marked the application fee ${payment}.`,
+    });
+  }
+  return { ok: true as const };
 }

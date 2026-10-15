@@ -8,6 +8,13 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskPage,
+  GateBanner,
+  ProcessFlow,
+  ScholarIdentityHeader,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { PrintActions, PrintPages } from "@/components/forms/PrintForm";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +23,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { thesisChecklist } from "@/data/doctoral";
+import { processFlows } from "@/data/portal-desk";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
   currentDoctoral,
@@ -113,7 +121,12 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
       ? doctoral.theses.filter(
           (thesis) =>
             (statusFilter === "" || thesis.status === statusFilter) &&
-            textMatches(query, [thesis.scholarName, thesis.title, thesis.domain, thesis.status]),
+            textMatches(query, [
+              thesis.scholarName,
+              thesis.title,
+              thesis.domain,
+              thesis.status,
+            ]),
         )
       : [];
 
@@ -228,19 +241,32 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
   ] as const;
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Thesis</h1>
-      </header>
+    <DeskPage title="Thesis">
+      <ProcessFlow>{processFlows.thesis}</ProcessFlow>
+      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
+      {mode === "scholar" && !open && !own ? (
+        <GateBanner tone="danger">
+          The thesis section opens after the fourth doctoral committee is approved.
+        </GateBanner>
+      ) : null}
       {mode === "scholar" ? (
         own && own.status !== "Rejected" ? (
           <div className="rounded-xl border border-border bg-card p-4 text-sm">
-            <p className="font-semibold text-primary">{own.title}</p>
-            <p className="text-muted-foreground">{own.domain}</p>
-            <p className="mt-2">
-              {own.status}
-              {deadline ? ` · Submit by ${deadline}` : ""}
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-primary">{own.title}</p>
+                <p className="text-muted-foreground">{own.domain}</p>
+                <p className="mt-2">
+                  {own.status}
+                  {deadline ? ` · Submit by ${deadline}` : ""}
+                </p>
+              </div>
+              <ViewFilesButton
+                fileName={own.fileName}
+                data={own.fileData}
+                onMissing={setNotice}
+              />
+            </div>
             {latestPlagiarism(doctoral, identifier)?.status !== "Approved" ? (
               <p className="mt-2 text-muted-foreground">
                 Upload the plagiarism certificate. Examiners cannot be recorded until it
@@ -363,80 +389,93 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
               thesis.status,
             ])}
           />
-        <ul className="space-y-4">
-          {queue.map((thesis) => (
-            <li
-              key={thesis.id}
-              className="space-y-3 rounded-xl border border-border bg-card p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-primary">{thesis.scholarName}</p>
-                  <p className="text-sm">{thesis.title}</p>
-                  <p className="text-sm text-muted-foreground">{thesis.domain}</p>
-                </div>
-                <Badge variant={thesis.status === "Approved" ? "gold" : "purple"}>
-                  {thesis.status}
-                </Badge>
-              </div>
-              {thesis.remarks ? (
-                <p className="text-sm text-muted-foreground">{thesis.remarks}</p>
-              ) : null}
-              {thesis.status === "Submitted" ? (
-                <>
-                  {latestPlagiarism(doctoral, thesis.scholarIdentifier)?.status !==
-                  "Approved" ? (
-                    <p className="text-sm text-muted-foreground">
-                      The plagiarism certificate has to be approved before examiners can
-                      be recorded.
-                    </p>
-                  ) : null}
-                  {groups.map(([key, label]) => (
-                    <fieldset key={key}>
-                      <legend className="text-sm font-semibold text-primary">{label}</legend>
-                      {thesis[key].map((person: ThesisEvaluator) => (
-                        <label
-                          key={person.email}
-                          className="mt-1 flex items-center gap-2 text-sm"
-                        >
-                          <input
-                            type="radio"
-                            name={`${thesis.id}-${key}`}
-                            checked={chosen(thesis, key) === person.name}
-                            onChange={() => choose(thesis, key, person.name)}
-                          />
-                          {person.name} · {person.institution}
-                        </label>
-                      ))}
-                    </fieldset>
-                  ))}
-                  <Textarea
-                    aria-label="Remarks"
-                    value={remarks[thesis.id] ?? ""}
-                    onChange={(event) =>
-                      setRemarks((current) => ({
-                        ...current,
-                        [thesis.id]: event.target.value,
-                      }))
-                    }
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="gold" onClick={() => void seal(thesis)}>
-                      Record examiners and open the sheet
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="maroon"
-                      onClick={() => void rejectThesis(thesis)}
-                    >
-                      Return
-                    </Button>
+          <ul className="space-y-4">
+            {queue.map((thesis) => (
+              <li
+                key={thesis.id}
+                className="space-y-3 rounded-xl border border-border bg-card p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-primary">{thesis.scholarName}</p>
+                    <p className="text-sm">{thesis.title}</p>
+                    <p className="text-sm text-muted-foreground">{thesis.domain}</p>
                   </div>
-                </>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ViewFilesButton
+                      fileName={thesis.fileName}
+                      data={thesis.fileData}
+                      onMissing={setNotice}
+                    />
+                    <Badge variant={thesis.status === "Approved" ? "gold" : "purple"}>
+                      {thesis.status}
+                    </Badge>
+                  </div>
+                </div>
+                {thesis.remarks ? (
+                  <p className="text-sm text-muted-foreground">{thesis.remarks}</p>
+                ) : null}
+                {thesis.status === "Submitted" ? (
+                  <>
+                    {latestPlagiarism(doctoral, thesis.scholarIdentifier)?.status !==
+                    "Approved" ? (
+                      <p className="text-sm text-muted-foreground">
+                        The plagiarism certificate has to be approved before examiners can
+                        be recorded.
+                      </p>
+                    ) : null}
+                    {groups.map(([key, label]) => (
+                      <fieldset key={key}>
+                        <legend className="text-sm font-semibold text-primary">
+                          {label}
+                        </legend>
+                        {thesis[key].map((person: ThesisEvaluator) => (
+                          <label
+                            key={person.email}
+                            className="mt-1 flex items-center gap-2 text-sm"
+                          >
+                            <input
+                              type="radio"
+                              name={`${thesis.id}-${key}`}
+                              checked={chosen(thesis, key) === person.name}
+                              onChange={() => choose(thesis, key, person.name)}
+                            />
+                            {person.name} · {person.institution}
+                          </label>
+                        ))}
+                      </fieldset>
+                    ))}
+                    <Textarea
+                      aria-label="Remarks"
+                      value={remarks[thesis.id] ?? ""}
+                      onChange={(event) =>
+                        setRemarks((current) => ({
+                          ...current,
+                          [thesis.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="gold"
+                        onClick={() => void seal(thesis)}
+                      >
+                        Record examiners and open the sheet
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="maroon"
+                        onClick={() => void rejectThesis(thesis)}
+                      >
+                        Return
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
@@ -486,6 +525,6 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
           </PrintPages>
         </>
       ) : null}
-    </section>
+    </DeskPage>
   );
 }

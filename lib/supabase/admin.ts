@@ -1,6 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { createSupabase } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 
 export function createAdminSupabase(): SupabaseClient<Database> | null {
@@ -15,5 +14,5 @@ export function createAdminSupabase(): SupabaseClient<Database> | null {
 
 export function portalAuthClient() {
   if (typeof window !== "undefined") return null;
-  return createAdminSupabase() ?? createSupabase();
+  return createAdminSupabase();
 }

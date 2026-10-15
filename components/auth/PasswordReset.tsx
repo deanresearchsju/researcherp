@@ -52,8 +52,7 @@ export function PasswordReset() {
       body: JSON.stringify({ password: values.password }),
     });
     const payload = (await response.json()) as
-      | { ok: true; session: PreviewSession }
-      | { ok: false; message: string };
+      { ok: true; session: PreviewSession } | { ok: false; message: string };
     if (!payload.ok) {
       setFormError(payload.message);
       return;
@@ -89,8 +88,8 @@ export function PasswordReset() {
         </p>
         {session.role === "scholar" ? (
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            After you save it, open Personal details and fill anything that is still
-            blank.
+            After you save it, open the dashboard to review the personal details from your
+            application.
           </p>
         ) : null}
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>

@@ -4,6 +4,10 @@ export { admissionSessions };
 
 export const courseSemesters = [1, 2, 3, 4] as const;
 
+export const programmeSemesters = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+] as const;
+
 export const courseWorkFee = 1000;
 
 export const standardSubjects: Record<
@@ -15,6 +19,18 @@ export const standardSubjects: Record<
   3: ["Elective", "Major"],
   4: ["Elective", "Major"],
 };
+
+export const commonSchoolValue = "all";
+export const commonSchoolLabel = "Common to all schools";
+
+export function isCommonSchool(school: string) {
+  const value = school.trim().toLowerCase();
+  return value === "" || value === commonSchoolValue;
+}
+
+export function subjectSchoolLabel(school: string) {
+  return isCommonSchool(school) ? commonSchoolLabel : school.trim();
+}
 
 export const colloquiumSittings = ["May", "November"] as const;
 
@@ -38,6 +54,11 @@ export const thesisChecklist = [
 ] as const;
 
 export const dcCopy = {
+  first: {
+    title: "First doctoral committee",
+    detail:
+      "The first doctoral committee meets after admission. Upload the report. Course-work papers are confirmed in this meeting.",
+  },
   second: {
     title: "Ph.D. confirmation",
     detail:

@@ -184,6 +184,7 @@ export const indexingOptions = [
   "Peer Reviewed",
   "None",
 ] as const;
+export const qualityPanels = ["Q1", "Q2", "Q3", "Q4", "Not listed"] as const;
 
 export const indexedSources = ["WOS", "SCI", "SCIE", "SEI"] as const;
 export const months = [

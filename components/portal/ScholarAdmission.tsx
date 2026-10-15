@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { AdmissionLetter } from "@/components/portal/AdmissionPrint";
+import { StatusPill, ViewFilesButton } from "@/components/portal/Desk";
 import { Button } from "@/components/ui/button";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
@@ -60,8 +61,8 @@ export function ScholarAdmission() {
           Sign in as a scholar
         </Link>
         .
-    </p>
-  );
+      </p>
+    );
   }
 
   const row = store.cases.find(
@@ -111,7 +112,9 @@ export function ScholarAdmission() {
       <section className="rounded-xl border border-border p-4">
         <h2 className="font-semibold">Where the application stands</h2>
         <ul className="mt-2 list-disc pl-5 text-sm leading-6">
-          <li>Application fee: {row.payment}.</li>
+          <li className="flex flex-wrap items-center gap-2">
+            Application fee: <StatusPill status={row.payment} />
+          </li>
           <li>
             {row.shortlisted
               ? "Shortlisted for the entrance and interview."
@@ -162,11 +165,14 @@ export function ScholarAdmission() {
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Tuition fee</h2>
           {row.feeReceiptName ? (
-            <p className="mt-2 text-sm">
-              Uploaded {row.feeReceiptName}
-              {row.feeAmount ? ` for ₹${row.feeAmount}` : ""}. Reference{" "}
-              {row.feeReference}.
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+              <p>
+                Uploaded {row.feeReceiptName}
+                {row.feeAmount ? ` for ₹${row.feeAmount}` : ""}. Reference{" "}
+                {row.feeReference}.
+              </p>
+              <ViewFilesButton fileName={row.feeReceiptName} data={row.feeReceiptData} />
+            </div>
           ) : (
             <form
               className="mt-3 grid max-w-lg gap-3"
@@ -220,6 +226,30 @@ export function ScholarAdmission() {
               </Button>
             </form>
           )}
+        </section>
+      ) : null}
+
+      {admissionChecklist.some((item) => row.uploads[item.id]) ? (
+        <section className="rounded-xl border border-border p-4">
+          <h2 className="font-semibold">Submitted documents</h2>
+          <ul className="mt-3 space-y-2">
+            {admissionChecklist.map((item) => {
+              const upload = row.uploads[item.id];
+              if (!upload) return null;
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+                >
+                  <div>
+                    <p className="text-sm font-semibold">{item.title}</p>
+                    <p className="text-xs text-muted-foreground">{upload.fileName}</p>
+                  </div>
+                  <ViewFilesButton fileName={upload.fileName} data={upload.fileData} />
+                </li>
+              );
+            })}
+          </ul>
         </section>
       ) : null}
 

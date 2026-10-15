@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
@@ -9,26 +8,30 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { examCopy, registrationCsvHeaders } from "@/data/exams";
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { PersonNameLink } from "@/components/portal/PersonNameLink";
+import { downloadCsv, field, toCsv } from "@/lib/csv";
 import { currentOffice, subscribeOffice } from "@/lib/office";
-import { openOfficeView } from "@/lib/office-view";
+import { scholarWideDownloadRow, scholarWideHeaders } from "@/lib/person-file";
 import {
   allotRegistration,
+  allotRegistrations,
   batchOf,
   currentAllotments,
   currentQuotas,
   currentRegister,
   registerMigrationHint,
   registrationOf,
-  scholarDownloadHeaders,
-  scholarDownloadRow,
+  scholarSignInId,
   subscribeRegister,
   supervisorForGuide,
 } from "@/lib/register";
+import { currentApplications, subscribeApplications } from "@/lib/records";
 
 const allotSchema = z.object({
   registrationNumber: z
@@ -71,7 +74,12 @@ export function ResearchRegister() {
     currentRegister,
   );
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
-  const office = useSyncExternalStore(subscribeOffice, currentOffice, currentOffice);
+  useSyncExternalStore(subscribeOffice, currentOffice, currentOffice);
+  const applications = useSyncExternalStore(
+    subscribeApplications,
+    currentApplications,
+    () => null,
+  );
   const [query, setQuery] = useState("");
   const [batchId, setBatchId] = useState("");
   const [department, setDepartment] = useState("");
@@ -81,7 +89,6 @@ export function ResearchRegister() {
   const [notice, setNotice] = useState<string | null>(null);
   const shownAllotments = ready ? allotments : [];
   const shownQuotas = ready ? quotas : [];
-  const allocations = ready && office ? office.allocations : [];
   const scholarRows = researchRegister.scholars.filter(
     (scholar) =>
       (batchId === "" || scholar.batchId === batchId) &&
@@ -101,17 +108,16 @@ export function ResearchRegister() {
         registrationOf(scholar, shownAllotments),
       ]),
   );
+  const storedApplications = applications ?? [];
   const scholarFileRows = scholarRows.map((scholar) =>
-    scholarDownloadRow(scholar, shownAllotments, shownQuotas, allocations),
+    scholarWideDownloadRow(scholar, storedApplications),
   );
   const allScholarRows = [...researchRegister.scholars]
     .sort(
       (left, right) =>
         left.guideName.localeCompare(right.guideName) || left.serialNo - right.serialNo,
     )
-    .map((scholar) =>
-      scholarDownloadRow(scholar, shownAllotments, shownQuotas, allocations),
-    );
+    .map((scholar) => scholarWideDownloadRow(scholar, storedApplications));
   const allotScholar =
     researchRegister.scholars.find((scholar) => scholar.id === allotId) ?? null;
 
@@ -164,9 +170,9 @@ export function ResearchRegister() {
             downloadCsv(
               "all-scholars.csv",
               toCsv(
-                scholarDownloadHeaders,
+                scholarWideHeaders(),
                 researchRegister.scholars.map((scholar) =>
-                  scholarDownloadRow(scholar, shownAllotments, shownQuotas, allocations),
+                  scholarWideDownloadRow(scholar, storedApplications),
                 ),
               ),
             )
@@ -180,13 +186,51 @@ export function ResearchRegister() {
           onClick={() =>
             downloadCsv(
               "supervisor-wise-scholars.csv",
-              toCsv(scholarDownloadHeaders, allScholarRows),
+              toCsv(scholarWideHeaders(), allScholarRows),
             )
           }
         >
           Supervisor-wise scholars
         </Button>
       </div>
+
+      <h2 className="mt-10 font-heading text-2xl text-primary">
+        {examCopy.registrationTitle}
+      </h2>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+        {examCopy.registrationDetail}
+      </p>
+      <SpreadsheetBar
+        filename="registration-numbers-template.csv"
+        headers={registrationCsvHeaders}
+        rows={researchRegister.scholars.map((scholar) => [
+          scholar.id,
+          scholar.name,
+          scholar.applicationNumber,
+          scholar.fileNumber,
+          scholar.email,
+          registrationOf(scholar, shownAllotments),
+          "",
+        ])}
+        canUpload
+        busy={false}
+        onUpload={(records) => {
+          void allotRegistrations(
+            records.map((record) => ({
+              scholarId: field(record, ["scholar_id", "id"]),
+              applicationNumber: field(record, ["application_number", "application no."]),
+              fileNumber: field(record, ["file_number", "file no."]),
+              email: field(record, ["email", "mail"]),
+              registrationNumber: field(record, [
+                "registration_number",
+                "registration number",
+                "register no.",
+              ]),
+            })),
+          ).then((saved) => setNotice(saved.message));
+        }}
+        onError={setNotice}
+      />
 
       <h2 className="mt-10 font-heading text-2xl text-primary">Scholars</h2>
       <ListToolbar
@@ -235,7 +279,7 @@ export function ResearchRegister() {
         total={researchRegister.scholars.length}
         filename="scholars-filtered.csv"
         downloadLabel="Download filtered scholars"
-        headers={scholarDownloadHeaders}
+        headers={scholarWideHeaders()}
         rows={scholarFileRows}
       />
 
@@ -300,24 +344,11 @@ export function ResearchRegister() {
                   <td className="px-3 py-3">{blank(scholar.fileNumber)}</td>
                   <td className="px-3 py-3">{blank(scholar.applicationNumber)}</td>
                   <td className="px-3 py-3">
-                    <Link
-                      href="/scholar/dashboard"
-                      className="font-medium text-primary underline-offset-2 hover:underline"
-                      onClick={() =>
-                        openOfficeView({
-                          role: "scholar",
-                          name: scholar.name,
-                          identifier:
-                            scholar.email.trim() ||
-                            registration ||
-                            scholar.applicationNumber.trim() ||
-                            scholar.fileNumber.trim() ||
-                            scholar.id,
-                        })
-                      }
-                    >
-                      {scholar.name}
-                    </Link>
+                    <PersonNameLink
+                      role="scholar"
+                      name={scholar.name}
+                      identifier={scholarSignInId(scholar)}
+                    />
                   </td>
                   <td className="px-3 py-3">{blank(scholar.department)}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{batch?.name ?? "—"}</td>
@@ -349,13 +380,8 @@ export function ResearchRegister() {
                         onClick={() =>
                           downloadCsv(
                             `scholar-${fileSlug(scholar.name)}.csv`,
-                            toCsv(scholarDownloadHeaders, [
-                              scholarDownloadRow(
-                                scholar,
-                                shownAllotments,
-                                shownQuotas,
-                                allocations,
-                              ),
+                            toCsv(scholarWideHeaders(), [
+                              scholarWideDownloadRow(scholar, storedApplications),
                             ]),
                           )
                         }
@@ -419,7 +445,9 @@ function AllotForm({
     setBusy(false);
     if (!saved.ok) {
       setError(
-        "message" in saved ? saved.message : "The registration number could not be saved.",
+        "message" in saved
+          ? saved.message
+          : "The registration number could not be saved.",
       );
       return;
     }

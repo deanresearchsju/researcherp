@@ -21,20 +21,41 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 400 },
     );
   }
   if (!body || typeof body !== "object") {
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 400 },
     );
   }
-  const input = body as { role?: unknown; identifier?: unknown; password?: unknown; remember?: unknown };
-  if (!isRole(input.role) || typeof input.identifier !== "string" || typeof input.password !== "string") {
+  const input = body as {
+    role?: unknown;
+    identifier?: unknown;
+    password?: unknown;
+    remember?: unknown;
+  };
+  if (
+    !isRole(input.role) ||
+    typeof input.identifier !== "string" ||
+    typeof input.password !== "string"
+  ) {
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 400 },
     );
   }
@@ -66,9 +87,20 @@ export async function POST(request: Request) {
       : null;
   const { data, error } = fallback ?? full;
 
-  if (error || !data || !isRole(data.role)) {
+  if (error) {
+    console.error("portal login lookup failed", error.message);
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      { ok: false, message: "Sign-in is not available yet." },
+      { status: 503 },
+    );
+  }
+  if (!data || !isRole(data.role) || typeof data.password !== "string") {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 401 },
     );
   }
@@ -80,13 +112,21 @@ export async function POST(request: Request) {
     })
   ) {
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 401 },
     );
   }
   if (!verifySecret(input.password, data.password)) {
     return NextResponse.json(
-      { ok: false, message: "Those credentials were not recognised. Check the details and try again." },
+      {
+        ok: false,
+        message:
+          "Those credentials were not recognised. Check the details and try again.",
+      },
       { status: 401 },
     );
   }

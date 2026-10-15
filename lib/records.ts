@@ -13,7 +13,7 @@ export const applicationStatuses = [
 const applicationTransitions: Record<string, readonly string[]> = {
   "Acknowledgement sent": ["Under review"],
   "Under review": ["Shortlisted", "Not selected"],
-  "Shortlisted": ["Selected", "Not selected"],
+  Shortlisted: ["Selected", "Not selected"],
   Selected: [],
   "Not selected": [],
 };
@@ -209,6 +209,32 @@ export async function loadStoredApplications(): Promise<{
   ];
 
   return { records, detail: null };
+}
+
+let applicationMemory: StoredApplication[] | null = null;
+let applicationStarted = false;
+const applicationListeners = new Set<() => void>();
+
+function notifyApplications() {
+  applicationListeners.forEach((listener) => listener());
+}
+
+export function currentApplications() {
+  return applicationMemory;
+}
+
+export function subscribeApplications(onChange: () => void) {
+  applicationListeners.add(onChange);
+  if (!applicationStarted) {
+    applicationStarted = true;
+    void loadStoredApplications().then((loaded) => {
+      applicationMemory = loaded.records;
+      notifyApplications();
+    });
+  }
+  return () => {
+    applicationListeners.delete(onChange);
+  };
 }
 
 function applicationTable(kind: ApplicationKind) {

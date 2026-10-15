@@ -8,11 +8,29 @@ import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
+import {
+  DeskPage,
+  DeskSection,
+  DeskTable,
+  GateBanner,
+  ProcessFlow,
+  ScholarIdentityHeader,
+  StatusPill,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  conferenceLevels,
+  patentStatuses,
+  processFlows,
+  programmeNatures,
+} from "@/data/portal-desk";
 import { university } from "@/lib/constants";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
@@ -27,6 +45,7 @@ import {
 import {
   annotateScholarRecord,
   currentScholarRecords,
+  loadRecordFile,
   saveScholarRecord,
   subscribeScholarRecords,
   type ScholarRecord,
@@ -35,7 +54,37 @@ import { usePortalSession } from "@/lib/use-preview-session";
 
 const schema = z.object({
   progress: z.string().trim().min(10, "Describe the work done in this period."),
+  coursesCompleted: z.string().trim(),
+  nextTargets: z
+    .string()
+    .trim()
+    .min(10, "Enter the aim and objectives of the work to be done."),
 });
+
+type PaperRow = {
+  title: string;
+  journal: string;
+  volume: string;
+  issue: string;
+  indexedIn: string;
+};
+type ConferenceRow = {
+  nature: string;
+  name: string;
+  level: string;
+  institute: string;
+  fromTo: string;
+};
+type PatentRow = {
+  number: string;
+  status: string;
+  inventor: string;
+  title: string;
+  filedOn: string;
+};
+type ManuscriptRow = { title: string; authors: string; remarks: string };
+type ActivityRow = { type: string; details: string; date: string; remarks: string };
+
 const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
 
 type Values = z.infer<typeof schema>;
@@ -57,8 +106,21 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [statusFilter, setStatusFilter] = useState("");
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
-    defaultValues: { progress: "" },
+    defaultValues: { progress: "", coursesCompleted: "", nextTargets: "" },
   });
+  const [papers, setPapers] = useState<PaperRow[]>([]);
+  const [conferences, setConferences] = useState<ConferenceRow[]>([]);
+  const [patents, setPatents] = useState<PatentRow[]>([]);
+  const [manuscripts, setManuscripts] = useState<ManuscriptRow[]>([]);
+  const [activities, setActivities] = useState<ActivityRow[]>([]);
+  const [paperDraft, setPaperDraft] = useState<PaperRow>({
+    title: "",
+    journal: "",
+    volume: "",
+    issue: "",
+    indexedIn: "",
+  });
+  const [addingPaper, setAddingPaper] = useState(false);
 
   if (!ready || !doctoral || !load)
     return <p className="text-sm text-muted-foreground">Loading reports…</p>;
@@ -111,7 +173,17 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
         kind: "six_month_report",
         scholarIdentifier: session.identifier,
         scholarName: session.name,
-        payload: { period, progress: values.progress },
+        payload: {
+          period,
+          progress: values.progress,
+          coursesCompleted: values.coursesCompleted,
+          nextTargets: values.nextTargets,
+          papers: JSON.stringify(papers),
+          conferences: JSON.stringify(conferences),
+          patents: JSON.stringify(patents),
+          manuscripts: JSON.stringify(manuscripts),
+          activities: JSON.stringify(activities),
+        },
         fileName: file.file.name,
         fileData: data || null,
       },
@@ -121,6 +193,12 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (saved.ok) {
       form.reset();
       setFile(null);
+      setPapers([]);
+      setConferences([]);
+      setPatents([]);
+      setManuscripts([]);
+      setActivities([]);
+      setAddingPaper(false);
     }
   }
 
@@ -172,26 +250,48 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
       : ownReports;
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-primary">Six-month report</h1>
-      </header>
+    <DeskPage title="Six-month report">
+      <ProcessFlow>{processFlows.sixMonth}</ProcessFlow>
+      {mode === "scholar" ? (
+        <ScholarIdentityHeader identifier={session?.identifier ?? ""} />
+      ) : null}
       {mode === "scholar" ? (
         !enrollment || !batch ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
+          <GateBanner>
             The research office has to place you in a course-work batch before reports
             open.
-          </p>
+          </GateBanner>
         ) : (
-          <form
-            className="space-y-4 rounded-xl border border-border bg-card p-4"
-            onSubmit={form.handleSubmit(upload)}
-            noValidate
-          >
+          <form className="space-y-4" onSubmit={form.handleSubmit(upload)} noValidate>
             <p className="text-sm text-muted-foreground">
               {batch.name} · {enrollment.studyMode}
               {current ? ` · Current period ${current.label}` : " · No period is due yet"}
             </p>
+            <DeskSection title="Already submitted report">
+              <DeskTable
+                headers={["Requested on", "Status", "Remark", ""]}
+                empty={ownReports.length === 0}
+              >
+                {ownReports.map((record) => (
+                  <tr key={record.id} className="border-t border-border">
+                    <td className="px-4 py-3">
+                      {record.payload.period} · {record.createdAt.slice(0, 10)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill status={record.status} />
+                    </td>
+                    <td className="px-4 py-3">{record.payload.remarks || "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <ViewFilesButton
+                        fileName={record.fileName}
+                        load={() => loadRecordFile(record)}
+                        onMissing={setNotice}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
             <ul className="space-y-2 text-sm">
               {periods.map((item) => {
                 const report = reportFor(item.label, ownReports);
@@ -217,7 +317,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                       {report?.payload.approvedOn
                         ? ` · approved ${report.payload.approvedOn}`
                         : ""}
-                      {report?.payload.remarks ? ` · ${report.payload.remarks}` : ""}
                     </span>
                     {missed && access?.status !== "Requested" ? (
                       <Button
@@ -235,42 +334,371 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                 );
               })}
             </ul>
-            <FormField label="Period" htmlFor="report-period" required>
-              <select
-                id="report-period"
-                className="h-11 w-full rounded-xl border border-input bg-white px-3 text-sm"
-                value={period}
-                onChange={(event) => setPeriod(event.target.value)}
-              >
-                <option value="">Select</option>
-                {periods
-                  .filter((item) => canUpload(item.label))
-                  .map((item) => (
-                    <option key={item.label} value={item.label}>
-                      {item.label}
-                    </option>
-                  ))}
-              </select>
-            </FormField>
-            <FormField
-              label="Work done"
-              htmlFor="report-progress"
-              required
-              error={form.formState.errors.progress?.message}
+            <DeskSection
+              title="Paper published details"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAddingPaper((open) => !open)}
+                >
+                  Add new
+                </Button>
+              }
             >
-              <Textarea id="report-progress" {...form.register("progress")} />
-            </FormField>
-            <FormField label="Report" htmlFor="report-file" required>
-              <FileUpload
-                id="report-file"
-                acceptRule="document"
-                value={file}
-                onChange={setFile}
-              />
-            </FormField>
-            <Button type="submit" variant="gold">
-              Upload report
-            </Button>
+              {addingPaper ? (
+                <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-2">
+                  <Input
+                    placeholder="Title of paper"
+                    value={paperDraft.title}
+                    onChange={(event) =>
+                      setPaperDraft((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                  />
+                  <Input
+                    placeholder="Title of journal"
+                    value={paperDraft.journal}
+                    onChange={(event) =>
+                      setPaperDraft((current) => ({
+                        ...current,
+                        journal: event.target.value,
+                      }))
+                    }
+                  />
+                  <Input
+                    placeholder="Volume"
+                    value={paperDraft.volume}
+                    onChange={(event) =>
+                      setPaperDraft((current) => ({
+                        ...current,
+                        volume: event.target.value,
+                      }))
+                    }
+                  />
+                  <Input
+                    placeholder="Issue"
+                    value={paperDraft.issue}
+                    onChange={(event) =>
+                      setPaperDraft((current) => ({
+                        ...current,
+                        issue: event.target.value,
+                      }))
+                    }
+                  />
+                  <Input
+                    placeholder="Indexed in"
+                    value={paperDraft.indexedIn}
+                    onChange={(event) =>
+                      setPaperDraft((current) => ({
+                        ...current,
+                        indexedIn: event.target.value,
+                      }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="gold"
+                    onClick={() => {
+                      if (paperDraft.title.trim().length < 2) return;
+                      setPapers((current) => [...current, paperDraft]);
+                      setPaperDraft({
+                        title: "",
+                        journal: "",
+                        volume: "",
+                        issue: "",
+                        indexedIn: "",
+                      });
+                      setAddingPaper(false);
+                    }}
+                  >
+                    Save paper
+                  </Button>
+                </div>
+              ) : null}
+              <DeskTable
+                headers={[
+                  "Title of paper",
+                  "Title of journal",
+                  "Volume",
+                  "Issue",
+                  "Indexed in",
+                ]}
+                empty={papers.length === 0}
+              >
+                {papers.map((row, index) => (
+                  <tr key={`${row.title}-${index}`} className="border-t border-border">
+                    <td className="px-4 py-3">{row.title}</td>
+                    <td className="px-4 py-3">{row.journal || "—"}</td>
+                    <td className="px-4 py-3">{row.volume || "—"}</td>
+                    <td className="px-4 py-3">{row.issue || "—"}</td>
+                    <td className="px-4 py-3">{row.indexedIn || "—"}</td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
+            <DeskSection
+              title="Conference / workshop details"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setConferences((current) => [
+                      ...current,
+                      {
+                        nature: programmeNatures[0],
+                        name: "",
+                        level: conferenceLevels[0],
+                        institute: "",
+                        fromTo: "",
+                      },
+                    ])
+                  }
+                >
+                  Add new
+                </Button>
+              }
+            >
+              <DeskTable
+                headers={[
+                  "Program nature",
+                  "Name of the program",
+                  "Level",
+                  "Organizing institute",
+                  "From & to",
+                ]}
+                empty={conferences.length === 0}
+              >
+                {conferences.map((row, index) => (
+                  <tr key={`conf-${index}`} className="border-t border-border">
+                    <td className="px-4 py-3">{row.nature}</td>
+                    <td className="px-4 py-3">
+                      <Input
+                        value={row.name}
+                        onChange={(event) =>
+                          setConferences((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, name: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="px-4 py-3">{row.level}</td>
+                    <td className="px-4 py-3">{row.institute || "—"}</td>
+                    <td className="px-4 py-3">{row.fromTo || "—"}</td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
+            <DeskSection
+              title="Patent details"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPatents((current) => [
+                      ...current,
+                      {
+                        number: "",
+                        status: patentStatuses[0],
+                        inventor: "",
+                        title: "",
+                        filedOn: "",
+                      },
+                    ])
+                  }
+                >
+                  Add new
+                </Button>
+              }
+            >
+              <DeskTable
+                headers={[
+                  "Patent application number",
+                  "Status of patent",
+                  "Inventor’s name",
+                  "Title of the patent",
+                  "Patent filed date",
+                ]}
+                empty={patents.length === 0}
+              >
+                {patents.map((row, index) => (
+                  <tr key={`pat-${index}`} className="border-t border-border">
+                    <td className="px-4 py-3">
+                      <Input
+                        value={row.number}
+                        onChange={(event) =>
+                          setPatents((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, number: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="px-4 py-3">{row.status}</td>
+                    <td className="px-4 py-3">{row.inventor || "—"}</td>
+                    <td className="px-4 py-3">{row.title || "—"}</td>
+                    <td className="px-4 py-3">{row.filedOn || "—"}</td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
+            <DeskSection
+              title="Manuscript details"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setManuscripts((current) => [
+                      ...current,
+                      { title: "", authors: "", remarks: "" },
+                    ])
+                  }
+                >
+                  Add new
+                </Button>
+              }
+            >
+              <DeskTable
+                headers={["Title", "Name of the authors", "Remarks"]}
+                empty={manuscripts.length === 0}
+              >
+                {manuscripts.map((row, index) => (
+                  <tr key={`ms-${index}`} className="border-t border-border">
+                    <td className="px-4 py-3">
+                      <Input
+                        value={row.title}
+                        onChange={(event) =>
+                          setManuscripts((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, title: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="px-4 py-3">{row.authors || "—"}</td>
+                    <td className="px-4 py-3">{row.remarks || "—"}</td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
+            <DeskSection
+              title="Other activities details"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setActivities((current) => [
+                      ...current,
+                      { type: "", details: "", date: "", remarks: "" },
+                    ])
+                  }
+                >
+                  Add new
+                </Button>
+              }
+            >
+              <DeskTable
+                headers={["Type", "Details", "Date", "Remarks"]}
+                empty={activities.length === 0}
+              >
+                {activities.map((row, index) => (
+                  <tr key={`act-${index}`} className="border-t border-border">
+                    <td className="px-4 py-3">
+                      <Input
+                        value={row.type}
+                        onChange={(event) =>
+                          setActivities((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, type: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="px-4 py-3">{row.details || "—"}</td>
+                    <td className="px-4 py-3">{row.date || "—"}</td>
+                    <td className="px-4 py-3">{row.remarks || "—"}</td>
+                  </tr>
+                ))}
+              </DeskTable>
+            </DeskSection>
+            <div className="grid gap-4 rounded-xl border border-border bg-card p-4">
+              <FormField label="Period" htmlFor="report-period" required>
+                <NativeSelect
+                  id="report-period"
+                  value={period}
+                  onChange={(event) => setPeriod(event.target.value)}
+                >
+                  <option value="">Select</option>
+                  {periods
+                    .filter((item) => canUpload(item.label))
+                    .map((item) => (
+                      <option key={item.label} value={item.label}>
+                        {item.label}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </FormField>
+              <FormField
+                label="No. of courses completed"
+                htmlFor="report-courses"
+                error={form.formState.errors.coursesCompleted?.message}
+              >
+                <Input id="report-courses" {...form.register("coursesCompleted")} />
+              </FormField>
+              <FormField
+                label="Work done"
+                htmlFor="report-progress"
+                required
+                error={form.formState.errors.progress?.message}
+              >
+                <Textarea id="report-progress" {...form.register("progress")} />
+              </FormField>
+              <FormField
+                label="Aim and objectives of the work to be done"
+                htmlFor="report-targets"
+                required
+                error={form.formState.errors.nextTargets?.message}
+              >
+                <Textarea id="report-targets" {...form.register("nextTargets")} />
+              </FormField>
+              <FormField label="Report" htmlFor="report-file" required>
+                <FileUpload
+                  id="report-file"
+                  acceptRule="document"
+                  value={file}
+                  onChange={setFile}
+                />
+              </FormField>
+              <div>
+                <Button type="submit" variant="gold">
+                  Upload report
+                </Button>
+              </div>
+            </div>
           </form>
         )
       ) : (
@@ -362,17 +790,24 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                   ? ` · approved ${record.payload.approvedOn}`
                   : ""}
               </p>
-              <Badge
-                variant={
-                  record.status === "Approved"
-                    ? "gold"
-                    : record.status === "Returned"
-                      ? "maroon"
-                      : "purple"
-                }
-              >
-                {record.status}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <ViewFilesButton
+                  fileName={record.fileName}
+                  load={() => loadRecordFile(record)}
+                  onMissing={setNotice}
+                />
+                <Badge
+                  variant={
+                    record.status === "Approved"
+                      ? "gold"
+                      : record.status === "Returned"
+                        ? "maroon"
+                        : "purple"
+                  }
+                >
+                  {record.status}
+                </Badge>
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">{record.payload.progress}</p>
             {mode === "admin" &&
@@ -411,6 +846,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
           </li>
         ))}
       </ul>
-    </section>
+    </DeskPage>
   );
 }

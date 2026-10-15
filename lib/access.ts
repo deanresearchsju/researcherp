@@ -24,19 +24,43 @@ export function effectiveMenus(
   return user.menus;
 }
 
-export function visibleGroups(role: Role, menus: string[] | null): PortalNavGroup[] {
+export const scholarPreAdmissionHrefs = [
+  "/scholar/dashboard",
+  "/scholar/admission",
+] as const;
+
+function scholarMenuOpen(pathname: string, admitted: boolean) {
+  if (admitted) return true;
+  return scholarPreAdmissionHrefs.some(
+    (href) => pathname === href || pathname.startsWith(`${href}/`),
+  );
+}
+
+export function visibleGroups(
+  role: Role,
+  menus: string[] | null,
+  admitted = true,
+): PortalNavGroup[] {
   return portalGroups[role]
     .map((group) => ({
       ...group,
-      items: group.items.filter(
-        (item) =>
-          menus === null || menus.includes(item.href) || item.href.endsWith("/dashboard"),
-      ),
+      items: group.items.filter((item) => {
+        if (role === "scholar" && !scholarMenuOpen(item.href, admitted)) return false;
+        return (
+          menus === null || menus.includes(item.href) || item.href.endsWith("/dashboard")
+        );
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }
 
-export function canOpenMenu(pathname: string, role: Role, menus: string[] | null) {
+export function canOpenMenu(
+  pathname: string,
+  role: Role,
+  menus: string[] | null,
+  admitted = true,
+) {
+  if (role === "scholar" && !scholarMenuOpen(pathname, admitted)) return false;
   if (menus === null) return true;
   const match = menuHrefs(role)
     .slice()

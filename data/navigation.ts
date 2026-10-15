@@ -1,5 +1,7 @@
 import type { NavLink } from "@/types";
 
+export const portalBarLabel = "Portal access";
+
 export const primaryNav: NavLink[] = [
   { label: "Home", href: "/" },
   { label: "Announcements", href: "/announcements" },

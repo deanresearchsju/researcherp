@@ -1,14 +1,12 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Logo } from "@/components/brand/Logo";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { primaryNav } from "@/data/navigation";
+import { portalBarLabel, primaryNav } from "@/data/navigation";
 import { roleProfiles } from "@/data/roles";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/types";
@@ -22,64 +20,61 @@ function isActive(pathname: string, href: string) {
 
 export function Navbar() {
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header
-      className={cn("sticky top-0 z-40 border-b border-border bg-card", scrolled && "shadow-card")}
-    >
+    <header className="sticky top-0 z-50 border-b border-border bg-card/95 shadow-card backdrop-blur-xl">
       <div className="bg-primary text-primary-foreground">
         <nav
           aria-label="Portal sign-in"
-          className="mx-auto flex h-9 w-full max-w-7xl items-stretch justify-end px-4 text-xs sm:px-6 sm:text-sm lg:px-8"
+          className="mx-auto flex h-10 w-full max-w-7xl items-stretch justify-end px-4 text-xs sm:px-6 sm:text-sm lg:px-8"
         >
-          <span className="mr-auto hidden items-center font-semibold tracking-[0.16em] text-primary-foreground/80 uppercase sm:inline-flex">
-            Sign in
+          <span className="mr-auto hidden items-center gap-2 font-semibold tracking-[0.16em] text-primary-foreground/70 uppercase sm:inline-flex">
+            <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
+            {portalBarLabel}
           </span>
-          {loginRoles.map((role, index) => (
+          {loginRoles.map((role) => (
             <Link
               key={role}
               href={`/login/${role}`}
-              className={cn(
-                "inline-flex items-center px-3 sm:px-4",
-                index > 0 && "border-l border-primary-foreground/25",
-                "hover:bg-purple-deep hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-              )}
+              className="group flex items-center gap-2 border-l border-primary-foreground/15 px-3 font-semibold text-primary-foreground/85 hover:bg-purple-deep hover:text-primary-foreground sm:px-5"
             >
               {roleProfiles[role].label}
+              <ArrowRight
+                className="size-3 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100"
+                aria-hidden="true"
+              />
             </Link>
           ))}
         </nav>
       </div>
-      <div className="mx-auto flex h-[4.75rem] w-full max-w-7xl items-stretch gap-6 px-4 sm:h-[5.5rem] sm:px-6 lg:gap-10 lg:px-8">
-        <Link href="/" className="flex shrink-0 items-center self-center">
+
+      <div className="mx-auto flex h-20 w-full max-w-7xl items-center gap-6 px-4 sm:h-24 sm:px-6 lg:px-8">
+        <Link
+          href="/"
+          className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
           <Logo
             priority
             className="h-14 w-auto sm:h-16 lg:h-[4.25rem]"
             alt="St. Joseph University, home"
           />
         </Link>
-        <nav aria-label="Primary" className="ml-auto hidden h-full xl:block">
-          <ul className="flex h-full items-stretch">
+
+        <nav aria-label="Primary" className="ml-auto hidden xl:block">
+          <ul className="flex items-center gap-1 rounded-2xl border border-border bg-muted p-1.5">
             {primaryNav.map((item) => {
               const active = isActive(pathname, item.href);
               return (
-                <li key={item.href} className="flex">
+                <li key={item.href}>
                   <Link
                     href={item.href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "inline-flex items-center border-b-[3px] px-3.5 text-sm whitespace-nowrap xl:px-4",
+                      "flex min-h-10 items-center rounded-xl px-3 text-sm font-semibold transition xl:px-4",
                       active
-                        ? "border-gold-ink font-semibold text-gold-ink"
-                        : "border-transparent font-medium text-foreground hover:border-primary/25 hover:text-gold-ink",
+                        ? "bg-primary text-primary-foreground shadow-card"
+                        : "text-foreground hover:bg-card hover:text-primary hover:shadow-card",
                     )}
                   >
                     {item.label}
@@ -89,63 +84,60 @@ export function Navbar() {
             })}
           </ul>
         </nav>
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="ml-auto size-10 self-center rounded-lg border-border xl:hidden"
-              aria-label="Open menu"
-            >
-              <Menu className="size-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent title="Menu">
-            <nav aria-label="Mobile">
-              <ul className="overflow-hidden rounded-xl border border-border">
-                {primaryNav.map((item) => {
-                  const active = isActive(pathname, item.href);
-                  return (
-                    <li key={item.href} className="border-b border-border last:border-b-0">
-                      <SheetClose asChild>
-                        <Link
-                          href={item.href}
-                          aria-current={active ? "page" : undefined}
-                          className={cn(
-                            "flex items-center border-l-[3px] px-4 py-3 text-sm font-medium",
-                            active
-                              ? "border-gold-ink bg-muted font-semibold text-gold-ink"
-                              : "border-transparent text-foreground hover:bg-muted",
-                          )}
-                        >
-                          {item.label}
-                        </Link>
-                      </SheetClose>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="mt-6 text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-                Sign in
-              </p>
-              <ul className="mt-2 overflow-hidden rounded-xl border border-border">
-                {loginRoles.map((role) => (
-                  <li key={role} className="border-b border-border last:border-b-0">
-                    <SheetClose asChild>
-                      <Link
-                        href={`/login/${role}`}
-                        className="flex items-center px-4 py-3 text-sm font-medium text-primary hover:bg-muted"
-                      >
-                        {roleProfiles[role].label}
-                      </Link>
-                    </SheetClose>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          </SheetContent>
-        </Sheet>
+
+        <button
+          type="button"
+          className="ml-auto grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-card transition hover:bg-purple-deep focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none xl:hidden"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+        </button>
       </div>
+
+      {menuOpen ? (
+        <nav
+          className="border-t border-border bg-card px-4 py-4 shadow-lift xl:hidden"
+          aria-label="Mobile"
+        >
+          <div className="mx-auto grid max-w-7xl gap-1.5">
+            {primaryNav.map((item, index) => {
+              const active = isActive(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                  className={cn(
+                    "group flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-card"
+                      : "bg-muted text-foreground hover:bg-muted/80 hover:text-primary",
+                  )}
+                >
+                  <span className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "text-[0.65rem] font-bold tracking-wider",
+                        active ? "text-accent" : "text-muted-foreground",
+                      )}
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    {item.label}
+                  </span>
+                  <ArrowRight
+                    className="size-4 transition group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
     </header>
   );
 }

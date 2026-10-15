@@ -1,21 +1,28 @@
 import {
   courseSemesters,
   courseWorkFee,
+  isCommonSchool,
   isStrongIndex,
+  programmeSemesters,
   reportTargets,
   schoolNeedsIndexedPair,
   thesisWindowMonths,
 } from "@/data/doctoral";
+import { scholarSchoolName } from "@/lib/admission";
 import { pushNotice, recordAudit } from "@/lib/audit";
+import { examOutcomes, type ExamOutcome } from "@/data/exams";
+import { feeStatuses, type FeeStatus } from "@/data/payments";
 import {
   admissionSessions,
   isPartTimeMode,
+  months,
   referenceDate,
   storageKeys,
 } from "@/lib/constants";
 import { clientToday } from "@/lib/dates";
 import { saveJsonBlob } from "@/lib/json-lock";
 import { sameId } from "@/lib/office";
+import { scholarBySignIn, scholarSignInId } from "@/lib/register";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { toJson } from "@/lib/records";
 import { createSupabase } from "@/lib/supabase/client";
@@ -43,9 +50,13 @@ export type CourseSubject = {
   id: string;
   batchId: string;
   semester: number;
+  school: string;
   code: string;
   name: string;
   credits: string;
+  inChargeName: string;
+  inChargeDesignation: string;
+  inChargeEmail: string;
   syllabusName: string | null;
   syllabusData: string | null;
 };
@@ -57,6 +68,15 @@ export type CourseEnrollment = {
   scholarName: string;
   studyMode: string;
   school: string;
+};
+
+export type ScholarStanding = {
+  id: string;
+  scholarIdentifier: string;
+  scholarName: string;
+  batchId: string;
+  semester: number;
+  updatedAt: string;
 };
 
 export type CourseWindow = {
@@ -81,17 +101,55 @@ export type CourseRegistration = {
   paymentDate: string;
   receiptName: string | null;
   receiptData: string | null;
+  paymentStatus: FeeStatus;
 };
+
+export type { FeeStatus };
+
+export function parseFeeStatus(value: string): FeeStatus {
+  return (feeStatuses as readonly string[]).includes(value)
+    ? (value as FeeStatus)
+    : "Pending";
+}
 
 export type CourseResult = {
   id: string;
   registrationId: string;
-  outcome: "Pass" | "Fail";
-  attendance: "Present" | "Absent" | "";
+  outcome: ExamOutcome;
+  sessionMonth: string;
+  sessionYear: string;
   publishedOn: string;
 };
 
-export type CommitteeKind = "second" | "third" | "fourth";
+export function parseExamOutcome(value: string, attendance = ""): ExamOutcome {
+  if (value === "AAA" || attendance === "Absent") return "AAA";
+  if (value === "RA" || value === "Fail") return "RA";
+  if ((examOutcomes as readonly string[]).includes(value)) return value as ExamOutcome;
+  return "Pass";
+}
+
+export function examSessionLabel(
+  result: Pick<CourseResult, "sessionMonth" | "sessionYear" | "publishedOn">,
+) {
+  if (result.sessionMonth && result.sessionYear) {
+    return `${result.sessionMonth} ${result.sessionYear}`;
+  }
+  return result.publishedOn.slice(0, 7) || "";
+}
+
+export type CommitteeKind = "first" | "second" | "third" | "fourth";
+
+function parseCommitteeKind(value: string): CommitteeKind | null {
+  if (
+    value === "first" ||
+    value === "second" ||
+    value === "third" ||
+    value === "fourth"
+  ) {
+    return value;
+  }
+  return null;
+}
 
 export type CommitteeReport = {
   id: string;
@@ -232,6 +290,7 @@ export type DoctoralState = {
   windows: CourseWindow[];
   subjects: CourseSubject[];
   enrollments: CourseEnrollment[];
+  standings: ScholarStanding[];
   registrations: CourseRegistration[];
   results: CourseResult[];
   committees: CommitteeReport[];
@@ -251,6 +310,7 @@ const empty: Omit<DoctoralState, "detail"> = {
   windows: [],
   subjects: [],
   enrollments: [],
+  standings: [],
   registrations: [],
   results: [],
   committees: [],
@@ -333,9 +393,13 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           id: text(subject.id),
           batchId: text(subject.batchId),
           semester: Number(subject.semester) || 1,
+          school: text(subject.school),
           code: text(subject.code),
           name: text(subject.name),
           credits: text(subject.credits),
+          inChargeName: text(subject.inChargeName),
+          inChargeDesignation: text(subject.inChargeDesignation),
+          inChargeEmail: text(subject.inChargeEmail),
           syllabusName: text(subject.syllabusName) || null,
           syllabusData: text(subject.syllabusData) || null,
         },
@@ -352,6 +416,24 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           scholarName: text(enrollment.scholarName),
           studyMode: text(enrollment.studyMode) || "Full time",
           school: text(enrollment.school),
+        },
+      ];
+    }),
+    standings: list(row.standings).flatMap((item) => {
+      const standing = objectRow(item);
+      const semester = Number(standing?.semester);
+      if (!standing || !text(standing.scholarIdentifier)) return [];
+      if (!programmeSemesters.includes(semester as (typeof programmeSemesters)[number])) {
+        return [];
+      }
+      return [
+        {
+          id: text(standing.id) || text(standing.scholarIdentifier),
+          scholarIdentifier: text(standing.scholarIdentifier),
+          scholarName: text(standing.scholarName),
+          batchId: text(standing.batchId),
+          semester,
+          updatedAt: text(standing.updatedAt),
         },
       ];
     }),
@@ -374,32 +456,34 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           paymentDate: text(registration.paymentDate),
           receiptName: text(registration.receiptName) || null,
           receiptData: text(registration.receiptData) || null,
+          paymentStatus: parseFeeStatus(text(registration.paymentStatus)),
         },
       ];
     }),
     results: list(row.results).flatMap((item) => {
       const result = objectRow(item);
       if (!result || !text(result.registrationId)) return [];
+      const publishedOn = text(result.publishedOn);
+      const [yearPart, monthPart] = publishedOn.split("-");
+      const monthFromDate =
+        monthPart && Number(monthPart) >= 1 && Number(monthPart) <= 12
+          ? (months[Number(monthPart) - 1] ?? "")
+          : "";
       return [
         {
           id: text(result.id),
           registrationId: text(result.registrationId),
-          outcome: text(result.outcome) === "Fail" ? "Fail" : "Pass",
-          attendance:
-            text(result.attendance) === "Absent"
-              ? "Absent"
-              : text(result.attendance) === "Present"
-                ? "Present"
-                : "",
-          publishedOn: text(result.publishedOn),
+          outcome: parseExamOutcome(text(result.outcome), text(result.attendance)),
+          sessionMonth: text(result.sessionMonth) || monthFromDate || "",
+          sessionYear: text(result.sessionYear) || yearPart || "",
+          publishedOn,
         },
       ];
     }),
     committees: list(row.committees).flatMap((item) => {
       const report = objectRow(item);
-      const kind = text(report?.kind);
-      if (!report || !text(report.id)) return [];
-      if (kind !== "second" && kind !== "third" && kind !== "fourth") return [];
+      const kind = parseCommitteeKind(text(report?.kind));
+      if (!report || !text(report.id) || !kind) return [];
       const status = text(report.status);
       return [
         {
@@ -678,6 +762,10 @@ async function loadDoctoral(): Promise<DoctoralState> {
     windows: payload && "windows" in payload ? remote.windows : browser.windows,
     subjects: keep(browser.subjects, remote.subjects),
     enrollments: keep(browser.enrollments, remote.enrollments),
+    standings:
+      payload && "standings" in payload
+        ? keep(browser.standings, remote.standings)
+        : browser.standings,
     registrations: keep(browser.registrations, remote.registrations),
     results: keep(browser.results, remote.results),
     committees: keep(browser.committees, remote.committees),
@@ -731,6 +819,7 @@ function snapshot(): Omit<DoctoralState, "detail"> {
     windows: current.windows,
     subjects: current.subjects,
     enrollments: current.enrollments,
+    standings: current.standings ?? [],
     registrations: current.registrations,
     results: current.results,
     committees: current.committees,
@@ -786,6 +875,77 @@ export async function saveEnrollment(enrollment: Omit<CourseEnrollment, "id">) {
   return saveDoctoral(next);
 }
 
+export function standingFor(standings: ScholarStanding[], identifier: string) {
+  const scholar = scholarBySignIn(identifier);
+  const keys = scholar
+    ? [
+        identifier,
+        scholarSignInId(scholar),
+        scholar.email,
+        scholar.registrationNumber,
+        scholar.applicationNumber,
+        scholar.fileNumber,
+        scholar.id,
+      ]
+    : [identifier];
+  return (
+    standings.find((item) =>
+      keys.some((key) => key.trim() && sameId(item.scholarIdentifier, key)),
+    ) ?? null
+  );
+}
+
+export async function promoteScholars(input: {
+  batchId: string;
+  semester: number;
+  scholars: readonly { identifier: string; name: string }[];
+}) {
+  if (
+    !programmeSemesters.includes(input.semester as (typeof programmeSemesters)[number])
+  ) {
+    return { ok: false as const, message: "Select a semester." };
+  }
+  if (input.scholars.length === 0) {
+    return { ok: false as const, message: "Select at least one scholar." };
+  }
+  const next = snapshot();
+  const stamp = new Date().toISOString();
+  const remaining = next.standings.filter(
+    (item) => !input.scholars.some((scholar) => standingFor([item], scholar.identifier)),
+  );
+  next.standings = [
+    ...input.scholars.map((scholar) => {
+      const current = standingFor(next.standings, scholar.identifier);
+      return {
+        id: current?.id ?? localId(),
+        scholarIdentifier: scholar.identifier,
+        scholarName: scholar.name,
+        batchId: input.batchId,
+        semester: input.semester,
+        updatedAt: stamp,
+      };
+    }),
+    ...remaining,
+  ];
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: "semester:promote",
+      subject: input.batchId,
+      detail: `${input.scholars.length} scholar(s) · Semester ${input.semester}`,
+    });
+    for (const scholar of input.scholars) {
+      await pushNotice({
+        role: "scholar",
+        identifier: scholar.identifier,
+        title: "Semester updated",
+        detail: `The research office mapped you to semester ${input.semester}.`,
+      });
+    }
+  }
+  return saved;
+}
+
 export async function saveCourseWindow(window: CourseWindow) {
   const next = snapshot();
   next.windows = [
@@ -839,6 +999,7 @@ export async function registerSubject(
     paymentDate: "",
     receiptName: null,
     receiptData: null,
+    paymentStatus: "Pending",
   });
   return saveDoctoral(next);
 }
@@ -894,47 +1055,135 @@ export async function registerCoursePapers(input: {
   ) {
     return { ok: false as const, message: "That subject is already registered." };
   }
-  for (const subject of input.subjects) {
+  const catalog = courseCatalogFor(next, {
+    identifier: input.scholarIdentifier,
+    semester: input.semester,
+    batchId: input.batchId,
+  });
+  if (catalog.length === 0) {
+    return {
+      ok: false as const,
+      message: "Subjects for this semester are not listed yet.",
+    };
+  }
+  const matched = input.subjects.map((subject) => {
+    const hit = catalog.find(
+      (item) =>
+        item.code.trim().toLowerCase() === subject.code.trim().toLowerCase() &&
+        item.name.trim().toLowerCase() === subject.name.trim().toLowerCase(),
+    );
+    return hit ? { id: hit.id, code: hit.code, name: hit.name } : null;
+  });
+  if (matched.some((item) => item === null)) {
+    return { ok: false as const, message: "Select a listed subject." };
+  }
+  for (const subject of matched) {
+    if (!subject) continue;
     next.registrations.unshift({
       id: localId(),
       batchId: input.batchId,
-      subjectId: "",
+      subjectId: subject.id,
       scholarIdentifier: input.scholarIdentifier,
       scholarName: input.scholarName,
       semester: input.semester,
-      code: subject.code.trim(),
-      name: subject.name.trim(),
+      code: subject.code,
+      name: subject.name,
       amount: courseWorkFee,
       paymentMode: input.paymentMode,
       paymentReference: input.paymentReference.trim(),
       paymentDate: input.paymentDate,
       receiptName: input.receiptName,
       receiptData: input.receiptData,
+      paymentStatus: "Pending",
     });
   }
   return saveDoctoral(next);
 }
 
+export async function setCourseWorkPayment(
+  registrationIds: readonly string[],
+  paymentStatus: FeeStatus,
+) {
+  if (registrationIds.length === 0) {
+    return { ok: false as const, message: "Select a course-work payment." };
+  }
+  const next = snapshot();
+  const ids = new Set(registrationIds);
+  const rows = next.registrations.filter((item) => ids.has(item.id));
+  if (rows.length === 0) {
+    return { ok: false as const, message: "That course-work payment was not found." };
+  }
+  next.registrations = next.registrations.map((item) =>
+    ids.has(item.id) ? { ...item, paymentStatus } : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (!saved.ok) return saved;
+  const first = rows[0];
+  if (first) {
+    await recordAudit({
+      action: `payment:${paymentStatus}`,
+      subject: `course-work:${first.id}`,
+      detail: `${first.scholarName} · course-work fee`,
+    });
+    await pushNotice({
+      role: "scholar",
+      identifier: first.scholarIdentifier,
+      title: `Course-work fee ${paymentStatus}`,
+      detail: `The research office marked the course-work fee ${paymentStatus}.`,
+    });
+  }
+  return { ok: true as const };
+}
+
 export async function publishResult(
   registrationId: string,
-  outcome: "Pass" | "Fail",
+  outcome: ExamOutcome | "Pass" | "Fail",
   publishedOn: string,
   attendance: "Present" | "Absent" | "" = "Present",
+  sessionMonth = "",
+  sessionYear = "",
+) {
+  return publishResults(
+    [
+      {
+        registrationId,
+        outcome: parseExamOutcome(outcome, attendance),
+      },
+    ],
+    sessionMonth,
+    sessionYear,
+    publishedOn,
+  );
+}
+
+export async function publishResults(
+  entries: readonly { registrationId: string; outcome: ExamOutcome }[],
+  sessionMonth: string,
+  sessionYear: string,
+  publishedOn: string,
 ) {
   const next = snapshot();
-  const recorded: CourseResult = {
-    id: localId(),
-    registrationId,
-    outcome: attendance === "Absent" ? "Fail" : outcome,
-    attendance,
-    publishedOn,
-  };
-  const existing = next.results.find((item) => item.registrationId === registrationId);
-  next.results = existing
-    ? next.results.map((item) =>
-        item.registrationId === registrationId ? { ...item, ...recorded, id: item.id } : item,
-      )
-    : [recorded, ...next.results];
+  for (const entry of entries) {
+    const recorded: CourseResult = {
+      id: localId(),
+      registrationId: entry.registrationId,
+      outcome: entry.outcome,
+      sessionMonth,
+      sessionYear,
+      publishedOn,
+    };
+    const existing = next.results.find(
+      (item) =>
+        item.registrationId === entry.registrationId &&
+        item.sessionMonth === sessionMonth &&
+        item.sessionYear === sessionYear,
+    );
+    next.results = existing
+      ? next.results.map((item) =>
+          item.id === existing.id ? { ...recorded, id: item.id } : item,
+        )
+      : [recorded, ...next.results];
+  }
   return saveDoctoral(next);
 }
 
@@ -943,6 +1192,7 @@ export function committeeBlocked(
   kind: CommitteeKind,
   identifier: string,
 ) {
+  if (kind === "first") return null;
   if (kind === "second") {
     return confirmationReady(state, identifier)
       ? null
@@ -1027,7 +1277,10 @@ export async function decideCommittee(
   const next = snapshot();
   const current = next.committees.find((item) => item.id === id);
   if (current?.status === "Approved") {
-    return { ok: false as const, message: "This report is approved and cannot be changed." };
+    return {
+      ok: false as const,
+      message: "This report is approved and cannot be changed.",
+    };
   }
   if (decision.status === "Approved" && (decision.minutes ?? "").trim().length < 2) {
     return { ok: false as const, message: "Enter the minutes before approving." };
@@ -1046,7 +1299,8 @@ export async function decideCommittee(
       role: "scholar",
       identifier: current.scholarIdentifier,
       title: `Doctoral committee ${decision.status}`,
-      detail: decision.remarks || `The committee report was ${decision.status.toLowerCase()}.`,
+      detail:
+        decision.remarks || `The committee report was ${decision.status.toLowerCase()}.`,
     });
   }
   return saved;
@@ -1100,7 +1354,10 @@ export async function decideSynopsis(
   const next = snapshot();
   const current = next.synopses.find((item) => item.id === id);
   if (current?.status === "Approved") {
-    return { ok: false as const, message: "This synopsis is approved and cannot be changed." };
+    return {
+      ok: false as const,
+      message: "This synopsis is approved and cannot be changed.",
+    };
   }
   next.synopses = next.synopses.map((item) =>
     item.id === id ? { ...item, ...decision } : item,
@@ -1165,7 +1422,10 @@ export async function decideThesis(
   const next = snapshot();
   const current = next.theses.find((item) => item.id === id);
   if (current?.status === "Approved") {
-    return { ok: false as const, message: "This thesis is approved and cannot be changed." };
+    return {
+      ok: false as const,
+      message: "This thesis is approved and cannot be changed.",
+    };
   }
   if (decision.status === "Approved") {
     const certificate = latestPlagiarism(next, current?.scholarIdentifier ?? "");
@@ -1244,7 +1504,9 @@ export function reportsReady(
   const current = state.examinerReports.filter(
     (item) => item.thesisId === thesis.id && item.version === thesis.version,
   );
-  if (current.some((item) => item.outcome === "Rejected" || item.outcome === "Revision")) {
+  if (
+    current.some((item) => item.outcome === "Rejected" || item.outcome === "Revision")
+  ) {
     return false;
   }
   return (["local", "indian", "foreign"] as const).every((group) =>
@@ -1352,7 +1614,9 @@ export async function decidePlagiarism(
       role: "scholar",
       identifier: current.scholarIdentifier,
       title: `Plagiarism ${decision.status}`,
-      detail: decision.remarks || `The plagiarism certificate was ${decision.status.toLowerCase()}.`,
+      detail:
+        decision.remarks ||
+        `The plagiarism certificate was ${decision.status.toLowerCase()}.`,
     });
   }
   return saved;
@@ -1409,7 +1673,10 @@ export async function reviseThesis(
   const next = snapshot();
   const current = next.theses.find((item) => item.id === thesisId);
   if (!current || current.status !== "Approved") {
-    return { ok: false as const, message: "The thesis examiners have to be recorded first." };
+    return {
+      ok: false as const,
+      message: "The thesis examiners have to be recorded first.",
+    };
   }
   if (!revisionNeeded(next, current)) {
     return { ok: false as const, message: "No examiner has asked for a revision." };
@@ -1423,10 +1690,7 @@ export async function reviseThesis(
           fileName: file.fileName,
           fileData: file.fileData,
           version,
-          versions: [
-            ...item.versions,
-            { version, fileName: file.fileName, uploadedAt },
-          ],
+          versions: [...item.versions, { version, fileName: file.fileName, uploadedAt }],
         }
       : item,
   );
@@ -1529,7 +1793,8 @@ export async function saveCompletion(
       role: "scholar",
       identifier: completion.scholarIdentifier,
       title: `${completion.kind} issued`,
-      detail: completion.remarks || `The ${completion.kind.toLowerCase()} is on the portal.`,
+      detail:
+        completion.remarks || `The ${completion.kind.toLowerCase()} is on the portal.`,
     });
   }
   return saved;
@@ -1560,14 +1825,40 @@ export async function decideAccess(
   return saveDoctoral(next);
 }
 
-export function enrollmentFor(state: DoctoralState, identifier: string) {
+export function enrollmentFor(
+  state: Pick<DoctoralState, "enrollments">,
+  identifier: string,
+) {
   return (
     state.enrollments.find((item) => sameId(item.scholarIdentifier, identifier)) ?? null
   );
 }
 
-export function resultFor(state: DoctoralState, registrationId: string) {
-  return state.results.find((item) => item.registrationId === registrationId) ?? null;
+export function courseCatalogFor(
+  state: Pick<DoctoralState, "subjects" | "enrollments">,
+  input: { identifier: string; semester: number; batchId: string },
+) {
+  const school = scholarSchoolName(
+    input.identifier,
+    enrollmentFor(state, input.identifier)?.school,
+  );
+  return state.subjects.filter((subject) => {
+    if (subject.semester !== input.semester) return false;
+    if (subject.batchId && subject.batchId !== input.batchId) return false;
+    if (input.semester === 1) return isCommonSchool(subject.school);
+    return Boolean(school) && sameId(subject.school, school);
+  });
+}
+
+export function resultsFor(
+  state: Pick<DoctoralState, "results">,
+  registrationId: string,
+) {
+  return state.results.filter((item) => item.registrationId === registrationId);
+}
+
+export function resultFor(state: Pick<DoctoralState, "results">, registrationId: string) {
+  return resultsFor(state, registrationId)[0] ?? null;
 }
 
 export function paperOf(
@@ -1578,6 +1869,12 @@ export function paperOf(
   return {
     code: registration.code || subject?.code || "",
     name: registration.name || subject?.name || "",
+    credits: subject?.credits || "",
+    inChargeName: subject?.inChargeName || "",
+    inChargeDesignation: subject?.inChargeDesignation || "",
+    inChargeEmail: subject?.inChargeEmail || "",
+    syllabusName: subject?.syllabusName || null,
+    syllabusData: subject?.syllabusData || null,
   };
 }
 
@@ -1585,13 +1882,11 @@ export function hasArrear(
   state: Pick<DoctoralState, "registrations" | "results">,
   identifier: string,
 ) {
-  return state.registrations.some(
-    (item) =>
-      sameId(item.scholarIdentifier, identifier) &&
-      state.results.some(
-        (result) => result.registrationId === item.id && result.outcome === "Fail",
-      ),
-  );
+  return state.registrations.some((item) => {
+    if (!sameId(item.scholarIdentifier, identifier)) return false;
+    const latest = resultFor(state, item.id);
+    return latest?.outcome === "RA" || latest?.outcome === "AAA";
+  });
 }
 
 export function confirmationReady(
@@ -1605,9 +1900,7 @@ export function confirmationReady(
     const papers = own.filter((item) => item.semester === semester);
     return (
       papers.length >= 2 &&
-      papers.every((item) =>
-        state.results.some((result) => result.registrationId === item.id),
-      )
+      papers.every((item) => resultFor(state, item.id)?.outcome === "Pass")
     );
   });
 }
@@ -1624,7 +1917,10 @@ export function latestCommittee(
   );
 }
 
-export function latestSynopsis(state: Pick<DoctoralState, "synopses">, identifier: string) {
+export function latestSynopsis(
+  state: Pick<DoctoralState, "synopses">,
+  identifier: string,
+) {
   return (
     state.synopses
       .filter((item) => sameId(item.scholarIdentifier, identifier))
