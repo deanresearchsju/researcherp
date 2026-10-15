@@ -1,6 +1,41 @@
 import type { Announcement, NewsItem } from "@/types";
 
-export const newsKinds = ["News", "Event"] as const;
+export const newsKinds = ["Announcement", "Event"] as const;
+
+export const newsNewWindowDays = 7;
+
+export const newsBoardCopy = {
+  tabsLabel: "Announcement and events",
+  announcementTab: "Announcement",
+  eventsTab: "Events",
+  postedDate: "Posted date",
+  lastDate: "Last date",
+  newBadge: "New",
+  latestBadge: "Latest",
+  openLink: "Open link",
+  emptyAnnouncement: "No announcements have been published from the ERP.",
+  photosEntry: "We will be adding completed event photos",
+  photosTitle: "Completed event photos",
+  photosBack: "Back to events",
+  photosClose: "Close",
+  emptyPhotos: "Event photos will appear here once they are added.",
+  tickerLabel: "Announcements",
+} as const;
+
+export const newsFormCopy = {
+  title: "News and events",
+  addTitle: "Add an announcement or event",
+  editTitle: "Edit item",
+  kind: "Kind",
+  itemTitle: "Title",
+  postedDate: "Posted date",
+  lastDate: "Last date",
+  link: "Link",
+  linkHint: "Optional. Use an http or https URL.",
+  summary: "Summary",
+  poster: "Poster",
+  photos: "Event photos",
+};
 
 export const announcements: Announcement[] = [
   {
@@ -50,13 +85,4 @@ export const announcements: Announcement[] = [
   },
 ];
 
-const eventIds = new Set(["written-test", "colloquium-nov"]);
-
-export const newsSeed: NewsItem[] = announcements.map((item) => ({
-  id: item.id,
-  kind: eventIds.has(item.id) ? "Event" : "News",
-  title: item.title,
-  isoDate: item.isoDate,
-  summary: item.summary,
-  image: null,
-}));
+export const newsSeed: NewsItem[] = [];

@@ -9,7 +9,7 @@ export type VacancySeed = {
 
 export const vacancyListTitle = "List of Research Supervisors and Vacancy Position";
 
-export const vacancyListNote = "(Vacancy after Ph.D. July 2027 admission)";
+export const vacancyListNote = "(Vacancy after Ph.D. July 2026 admission)";
 
 export const vacancyListColumns = {
   name: "Name",

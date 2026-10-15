@@ -152,6 +152,21 @@ div[id] {
   animation: admission-blink 1.1s steps(1, end) infinite;
 }
 
+@keyframes notice-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.28;
+  }
+}
+
+.notice-blink {
+  animation: notice-blink 1.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

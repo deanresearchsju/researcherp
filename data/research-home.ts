@@ -16,6 +16,45 @@ export const researchPage = {
     "LAW",
   ],
   highlightsTitle: "Research Programme Highlights",
+  highlights: [
+    {
+      id: "duration",
+      label: "Duration",
+      points: [
+        "Full Time: 3 to 6 years",
+        "Part-Time Internal: 4 to 7 years",
+        "Part-Time External: 4 to 7 years",
+      ],
+    },
+    {
+      id: "course-work",
+      label: "Course work",
+      value: "12 credits · 55% / 5.5 CGPA",
+      detail:
+        "UGC-recognized online courses may be included for Course work, as per the Recommendation of the Research Advisory Committee.",
+    },
+    {
+      id: "re-registration",
+      label: "Re-registration",
+      value: "2 years extension",
+    },
+    {
+      id: "additional-extension",
+      label: "Female / PWD",
+      value: "2 years additional extension",
+    },
+    {
+      id: "maternity",
+      label: "Maternity / Child Care Leave",
+      value: "Up to 240 days",
+    },
+    {
+      id: "teaching",
+      label: "Teaching / Pedagogy Training",
+      detail:
+        "Mandatory for all Full-Time Ph.D. scholars, involving 4–6 hours/week of teaching/research assistantship.",
+    },
+  ],
   durationLabel: "Duration",
   duration: [
     "Full Time: 3 to 6 years",
@@ -62,9 +101,10 @@ export const researchPage = {
   marksLabel: "Course Work Marks / CGPA",
   marks: "55% / 5.5",
   onlineCourses:
-    "UGC-recognized online courses may be included for course as per the Recommendation of the Research Advisory Committee",
+    "UGC-recognized online courses may be included for Course work, as per the Recommendation of the Research Advisory Committee.",
   nationalTitle: "National Level Tests:",
   nationalTests: "UGC-NET/CSIR-NET/GATE/CEED etc. followed by an interview.",
+  admissionOr: "OR",
   entranceTitle: "Institution Level Entrance Test:",
   entrancePoints: [
     "Syllabus & Weightage: 50% Research Methodology,",
@@ -84,8 +124,8 @@ export const regulationTabs = [
 export type RegulationTabId = (typeof regulationTabs)[number]["id"];
 
 export const regulationEligibility = {
-  headers: ["Degree", "Marks", "5% Relaxation"],
-  row: ["MASTER'S", "55%", "SC/ST/OBC/PWD/EWS"],
+  headers: ["Degree", "Marks"],
+  row: ["MASTER'S", "55%"],
 };
 
 export const regulationEvaluation = {

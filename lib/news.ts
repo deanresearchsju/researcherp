@@ -1,9 +1,10 @@
-import { newsSeed } from "@/data/announcements";
+import { newsNewWindowDays, newsSeed } from "@/data/announcements";
 import { storageKeys } from "@/lib/constants";
+import { isValidIsoDate, isWithinLastDays } from "@/lib/dates";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
 import { toJson } from "@/lib/records";
-import type { NewsItem } from "@/types";
+import type { NewsItem, NewsKind } from "@/types";
 
 export const newsMigrationHint =
   "Open the Supabase SQL editor for this project and run supabase/migrations/20261013240000_news_board.sql. Until then, news and events stay in this browser.";
@@ -17,23 +18,87 @@ export type NewsLoad = {
   detail: string | null;
 };
 
+export function isNewsHref(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("://")) {
+    return true;
+  }
+  return /^https?:\/\/\S+$/i.test(trimmed);
+}
+
+function parseKind(value: unknown): NewsKind | null {
+  if (value === "Event") return "Event";
+  if (value === "Announcement" || value === "News") return "Announcement";
+  return null;
+}
+
+function asTrimmed(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isPhotoSrc(value: string) {
+  return (
+    value.startsWith("data:image/") ||
+    value.startsWith("/") ||
+    /^https?:\/\//i.test(value)
+  );
+}
+
+function parsePhotos(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const src = asTrimmed(entry);
+    return src && isPhotoSrc(src) ? [src] : [];
+  });
+}
+
+export type EventPhoto = {
+  id: string;
+  src: string;
+  title: string;
+};
+
+export function collectEventPhotos(items: readonly NewsItem[]): EventPhoto[] {
+  const seen = new Set<string>();
+  const photos: EventPhoto[] = [];
+  for (const item of newestNewsFirst(items.filter((row) => row.kind === "Event"))) {
+    const sources = [...(item.photos ?? []), ...(item.image ? [item.image] : [])];
+    for (const src of sources) {
+      if (!src || seen.has(src)) continue;
+      seen.add(src);
+      photos.push({ id: `${item.id}-${photos.length}`, src, title: item.title });
+    }
+  }
+  return photos;
+}
+
 function parseItems(value: unknown): NewsItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
-    const record = item as Partial<NewsItem>;
-    if (!record.id || !record.title?.trim() || !record.isoDate || !record.summary?.trim()) {
-      return [];
-    }
-    if (record.kind !== "News" && record.kind !== "Event") return [];
+    const record = item as Record<string, unknown>;
+    const id = asTrimmed(record.id);
+    const title = asTrimmed(record.title);
+    const isoDate = asTrimmed(record.isoDate);
+    const summary = asTrimmed(record.summary);
+    const kind = parseKind(record.kind);
+    if (!id || !title || !isoDate || !summary || !kind) return [];
+    const hrefValue = asTrimmed(record.href);
+    const lastDateValue = asTrimmed(record.lastDate);
+    const image = asTrimmed(record.image) || null;
     return [
       {
-        id: record.id,
-        kind: record.kind,
-        title: record.title.trim(),
-        isoDate: record.isoDate,
-        summary: record.summary.trim(),
-        image: typeof record.image === "string" && record.image ? record.image : null,
+        id,
+        kind,
+        title,
+        isoDate,
+        lastDate: isValidIsoDate(lastDateValue) ? lastDateValue : null,
+        href: isNewsHref(hrefValue) ? hrefValue : null,
+        summary,
+        image,
+        photos: parsePhotos(record.photos),
+        createdAt: asTrimmed(record.createdAt) || null,
       },
     ];
   });
@@ -125,6 +190,25 @@ export function currentNews() {
 
 export function currentNewsLoad() {
   return memory;
+}
+
+export function isNewNewsItem(item: NewsItem, today: string) {
+  const createdDay = item.createdAt?.slice(0, 10);
+  if (!createdDay) return false;
+  return isWithinLastDays(createdDay, today, newsNewWindowDays);
+}
+
+export function newestNewsFirst(items: readonly NewsItem[]) {
+  return [...items].sort((left, right) => {
+    if (left.createdAt && right.createdAt) {
+      return right.createdAt.localeCompare(left.createdAt);
+    }
+    if (left.createdAt && !right.createdAt) return -1;
+    if (!left.createdAt && right.createdAt) return 1;
+    return (
+      right.isoDate.localeCompare(left.isoDate) || left.title.localeCompare(right.title)
+    );
+  });
 }
 
 export async function saveNews(items: NewsItem[]) {

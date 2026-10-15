@@ -3,12 +3,7 @@ import type { SVGProps } from "react";
 
 import { Logo } from "@/components/brand/Logo";
 import { footerExplore, footerPortals } from "@/data/navigation";
-import {
-  admissionSessionsCopy,
-  copyrightYear,
-  footerCredit,
-  university,
-} from "@/lib/constants";
+import { copyrightYear, footerCredit, university } from "@/lib/constants";
 
 function SocialIcon({ path, ...props }: SVGProps<SVGSVGElement> & { path: string }) {
   return (
@@ -57,9 +52,6 @@ export function Footer() {
           <p className="mt-4 text-sm leading-6 text-white/80">{university.affiliation}</p>
           <p className="mt-1 text-sm leading-6 text-white/80">{university.unit}</p>
           <p className="mt-3 font-heading text-lg text-accent">{university.tagline}</p>
-          <p className="mt-3 text-sm leading-6 text-white/80">
-            {admissionSessionsCopy.sentence}
-          </p>
         </div>
         <div>
           <h2 className="text-sm font-semibold tracking-[0.16em] text-accent uppercase">

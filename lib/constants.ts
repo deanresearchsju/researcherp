@@ -155,6 +155,8 @@ export const fileLimits = {
 
 export type FileLimitKey = keyof typeof fileLimits;
 
+export const newsPhotosMaxCount = 12;
+
 export const titles = ["Mr", "Ms", "Mrs", "Dr"] as const;
 export const genders = ["Male", "Female", "Other"] as const;
 export const sexes = ["Male", "Female", "Other"] as const;

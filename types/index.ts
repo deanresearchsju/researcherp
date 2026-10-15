@@ -44,15 +44,19 @@ export type Announcement = {
   summary: string;
 };
 
-export type NewsKind = "News" | "Event";
+export type NewsKind = "Announcement" | "Event";
 
 export type NewsItem = {
   id: string;
   kind: NewsKind;
   title: string;
   isoDate: string;
+  lastDate: string | null;
+  href: string | null;
   summary: string;
   image: string | null;
+  photos: string[];
+  createdAt: string | null;
 };
 
 export type FaqItem = {

@@ -19,6 +19,23 @@ export function isOnOrBefore(value: string, on = referenceDate) {
   return isValidIsoDate(value) && value <= on;
 }
 
+export function isoDaysBefore(iso: string, days: number) {
+  if (!isValidIsoDate(iso)) return null;
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() - days);
+  const nextMonth = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${nextMonth}-${nextDay}`;
+}
+
+export function isWithinLastDays(isoDay: string, today: string, days: number) {
+  const start = isoDaysBefore(today, days);
+  if (!start || !isValidIsoDate(isoDay) || !isValidIsoDate(today)) return false;
+  return isoDay >= start && isoDay <= today;
+}
+
 export function ageParts(dob: string, on = referenceDate) {
   if (!isValidIsoDate(dob) || !isValidIsoDate(on) || dob > on) return null;
   const [startYear, startMonth, startDay] = dob.split("-").map(Number);
@@ -116,6 +133,11 @@ export function clientToday() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
+}
+
+export function clientNowIso() {
+  if (typeof window === "undefined") return `${referenceDate}T00:00:00.000Z`;
+  return new Date().toISOString();
 }
 
 export function formatIsoDate(iso: string) {

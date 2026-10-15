@@ -17,17 +17,10 @@ export function VacancyList({
   schools?: readonly School[];
 }) {
   const groups = groupVacancies(rows, schools);
-  const [open, setOpen] = useState<ReadonlySet<string>>(
-    () => new Set(groups.map((group) => group.school)),
-  );
+  const [openSchool, setOpenSchool] = useState<string | null>(null);
 
   function toggle(school: string) {
-    setOpen((current) => {
-      const next = new Set(current);
-      if (next.has(school)) next.delete(school);
-      else next.add(school);
-      return next;
-    });
+    setOpenSchool((current) => (current === school ? null : school));
   }
 
   return (
@@ -38,7 +31,7 @@ export function VacancyList({
       <p className="mt-2 text-sm text-muted-foreground">{vacancyListNote}</p>
       <div className="mt-6 overflow-hidden rounded-xl border border-border bg-card shadow-card">
         {groups.map((group) => {
-          const expanded = open.has(group.school);
+          const expanded = openSchool === group.school;
           return (
             <section key={group.school} className="border-t border-border first:border-t-0">
               <h2>

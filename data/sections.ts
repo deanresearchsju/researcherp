@@ -21,7 +21,7 @@ export const sectionCopy = {
   announcements: {
     eyebrow: "Notices",
     title: "News & Announcements",
-    description: "News and events published by the Center for Research.",
+    description: "",
     viewAll: "View all",
     viewLess: "Show fewer",
   },
@@ -69,6 +69,14 @@ export const sectionCopy = {
     eyebrow: "Highlights",
     title: "Featured research",
     description: "",
+  },
+  researchHighlights: {
+    eyebrow: "Programme",
+    title: "Research Programme Highlights",
+  },
+  phdRegulations: {
+    eyebrow: "Regulations",
+    title: "Ph.D. Regulations",
   },
   faq: {
     eyebrow: "Questions",

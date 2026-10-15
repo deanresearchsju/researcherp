@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { AnnouncementTicker } from "@/components/home/AnnouncementTicker";
 import { Hero } from "@/components/home/Hero";
 import { ResearchAreas } from "@/components/home/ResearchAreas";
 import { ResearchHighlights } from "@/components/home/ResearchHighlights";
@@ -29,6 +30,7 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
       <Hero />
+      <AnnouncementTicker />
       <ResearchHighlights />
       <ResearchAreas />
     </>
