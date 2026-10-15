@@ -5,20 +5,23 @@ export type StoredFile = {
   previewUrl: string | null;
 };
 
-function sizeRule(file: File, rule: (typeof fileLimits)[FileLimitKey]) {
-  if (file.type.startsWith("image/")) {
-    return {
-      minBytes: 1,
-      maxBytes: fileLimits.photo.maxBytes,
-      label: fileLimits.photo.label,
-    };
-  }
-  if (file.type === "application/pdf") {
-    return {
-      minBytes: 1,
-      maxBytes: fileLimits.resume.maxBytes,
-      label: fileLimits.resume.label,
-    };
+function sizeRule(file: File, ruleKey: FileLimitKey) {
+  const rule = fileLimits[ruleKey];
+  if (ruleKey === "document") {
+    if (file.type.startsWith("image/")) {
+      return {
+        minBytes: fileLimits.photo.minBytes,
+        maxBytes: fileLimits.photo.maxBytes,
+        label: fileLimits.photo.label,
+      };
+    }
+    if (file.type === "application/pdf") {
+      return {
+        minBytes: fileLimits.resume.minBytes,
+        maxBytes: fileLimits.resume.maxBytes,
+        label: fileLimits.resume.label,
+      };
+    }
   }
   return { minBytes: rule.minBytes, maxBytes: rule.maxBytes, label: rule.label };
 }
@@ -29,7 +32,7 @@ export function fileError(file: File | null, ruleKey: FileLimitKey, required: bo
   if (!(rule.types as readonly string[]).includes(file.type)) {
     return `This file type is not accepted. Use ${rule.label}.`;
   }
-  const size = sizeRule(file, rule);
+  const size = sizeRule(file, ruleKey);
   if (file.size < size.minBytes || file.size > size.maxBytes) {
     return `This file is outside the allowed size. Use ${size.label}.`;
   }

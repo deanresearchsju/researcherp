@@ -8,6 +8,7 @@ import {
   schoolNeedsIndexedPair,
   thesisWindowMonths,
 } from "@/data/doctoral";
+import { officeActionCopy } from "@/data/office-actions";
 import { scholarSchoolName } from "@/lib/admission";
 import { pushNotice, recordAudit } from "@/lib/audit";
 import { examOutcomes, type ExamOutcome } from "@/data/exams";
@@ -23,6 +24,7 @@ import { clientToday } from "@/lib/dates";
 import { saveJsonBlob } from "@/lib/json-lock";
 import { sameId } from "@/lib/office";
 import { scholarBySignIn, scholarSignInId } from "@/lib/register";
+import { adminActionBlock } from "@/lib/access";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { toJson } from "@/lib/records";
 import { createSupabase } from "@/lib/supabase/client";
@@ -875,7 +877,10 @@ export async function saveEnrollment(enrollment: Omit<CourseEnrollment, "id">) {
   return saveDoctoral(next);
 }
 
-export function standingFor(standings: ScholarStanding[], identifier: string) {
+export function standingFor(
+  standings: readonly ScholarStanding[],
+  identifier: string,
+) {
   const scholar = scholarBySignIn(identifier);
   const keys = scholar
     ? [
@@ -895,11 +900,27 @@ export function standingFor(standings: ScholarStanding[], identifier: string) {
   );
 }
 
+function semesterHeld(
+  standings: readonly ScholarStanding[],
+  registrations: readonly CourseRegistration[],
+  identifier: string,
+) {
+  const standing = standingFor(standings, identifier);
+  if (standing) return standing.semester;
+  const semesters = registrations
+    .filter((item) => sameId(item.scholarIdentifier, identifier))
+    .map((item) => item.semester);
+  return semesters.length > 0 ? Math.max(...semesters) : 0;
+}
+
 export async function promoteScholars(input: {
   batchId: string;
   semester: number;
   scholars: readonly { identifier: string; name: string }[];
+  direction: "promote" | "demote";
 }) {
+  const blocked = adminActionBlock();
+  if (blocked) return blocked;
   if (
     !programmeSemesters.includes(input.semester as (typeof programmeSemesters)[number])
   ) {
@@ -909,12 +930,27 @@ export async function promoteScholars(input: {
     return { ok: false as const, message: "Select at least one scholar." };
   }
   const next = snapshot();
+  const eligible = input.scholars.filter((scholar) => {
+    const current = semesterHeld(next.standings, next.registrations, scholar.identifier);
+    return input.direction === "promote"
+      ? input.semester > current
+      : current > 0 && input.semester < current;
+  });
+  if (eligible.length === 0) {
+    return {
+      ok: false as const,
+      message:
+        input.direction === "promote"
+          ? officeActionCopy.promotion.noneEligiblePromote
+          : officeActionCopy.promotion.noneEligibleDemote,
+    };
+  }
   const stamp = new Date().toISOString();
   const remaining = next.standings.filter(
-    (item) => !input.scholars.some((scholar) => standingFor([item], scholar.identifier)),
+    (item) => !eligible.some((scholar) => standingFor([item], scholar.identifier)),
   );
   next.standings = [
-    ...input.scholars.map((scholar) => {
+    ...eligible.map((scholar) => {
       const current = standingFor(next.standings, scholar.identifier);
       return {
         id: current?.id ?? localId(),
@@ -930,20 +966,32 @@ export async function promoteScholars(input: {
   const saved = await saveDoctoral(next);
   if (saved.ok) {
     await recordAudit({
-      action: "semester:promote",
+      action: `semester:${input.direction}`,
       subject: input.batchId,
-      detail: `${input.scholars.length} scholar(s) · Semester ${input.semester}`,
+      detail: `${eligible.length} scholar(s) · Semester ${input.semester}`,
     });
-    for (const scholar of input.scholars) {
+    for (const scholar of eligible) {
       await pushNotice({
         role: "scholar",
         identifier: scholar.identifier,
-        title: "Semester updated",
-        detail: `The research office mapped you to semester ${input.semester}.`,
+        title: input.direction === "promote" ? "Promoted" : "Demoted",
+        detail:
+          input.direction === "promote"
+            ? `The research office promoted you to semester ${input.semester}.`
+            : `The research office mapped you back to semester ${input.semester}.`,
       });
     }
   }
-  return saved;
+  if (!saved.ok) return saved;
+  const skipped = input.scholars.length - eligible.length;
+  if (skipped > 0) {
+    return {
+      ok: true as const,
+      moved: eligible.length,
+      skipped,
+    };
+  }
+  return { ok: true as const, moved: eligible.length, skipped: 0 };
 }
 
 export async function saveCourseWindow(window: CourseWindow) {

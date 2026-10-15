@@ -101,6 +101,13 @@ export const supervisorEnclosures: DocumentSpec[] = [
     remarks: office,
   },
   {
+    id: "ug",
+    label: "Copy of U.G. Certificate",
+    rule: "document",
+    required: "always",
+    remarks: office,
+  },
+  {
     id: "pg",
     label: "Copy of P.G. Certificate",
     rule: "document",

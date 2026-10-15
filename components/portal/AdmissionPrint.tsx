@@ -5,9 +5,11 @@ import {
   displayName,
   modeLabel,
   type AdmissionCase,
+  type EntranceSchedule,
   type LetterConfig,
 } from "@/lib/admission";
 import { university } from "@/lib/constants";
+import { formatIsoDate, formatYearMonth } from "@/lib/dates";
 
 function Sheet({ children }: { children: ReactNode }) {
   return (
@@ -30,8 +32,10 @@ function pagesOf<T>(rows: readonly T[], size: number) {
 
 export function AttendanceSheet({
   rows,
+  schedule,
 }: {
   rows: readonly { row: AdmissionCase; serial: number }[];
+  schedule: EntranceSchedule;
 }) {
   const pages = pagesOf(rows, 16);
   return (
@@ -49,7 +53,12 @@ export function AttendanceSheet({
               Entrance and interview attendance
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Department-wise, in continuous serial order. Signature at the venue.
+              Session: {schedule.session || "—"} · Month and year:{" "}
+              {formatYearMonth(schedule.monthYear) || "—"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Date: {schedule.date ? formatIsoDate(schedule.date) : "—"} · Venue:{" "}
+              {schedule.venue || "—"}
             </p>
             <table className="mt-4 w-full border-collapse text-sm">
               <thead>

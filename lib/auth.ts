@@ -28,10 +28,17 @@ const dashboards: Record<Role, string> = {
   scholar: "/scholar/dashboard",
   supervisor: "/supervisor/dashboard",
   admin: "/admin/dashboard",
+  staff: "/admin/dashboard",
+  dean: "/admin/dashboard",
 };
 
 export function portalHome(role: Role) {
   return dashboards[role];
+}
+
+export function loginHref(role: Role) {
+  if (role === "admin" || role === "staff" || role === "dean") return "/login/admin";
+  return `/login/${role}`;
 }
 
 export async function mockLogin(input: LoginInput): Promise<LoginResult> {

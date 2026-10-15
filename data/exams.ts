@@ -27,13 +27,13 @@ export const examCopy = {
   entranceTitle: "Entrance marks",
   entranceKicker: "Admissions",
   entranceDetail:
-    "Enter written and interview marks for scholars in this window. The list is saved 25 at a time. Save and continue keeps this page and opens the next.",
+    "Enter written and interview marks for shortlisted candidates on the live admission file. Scholars already on the register stay off this list. Written marks cannot exceed 70. Interview marks cannot exceed 30. The list is saved 25 at a time. Save and continue keeps this page and opens the next.",
   savePage: "Save this page",
   saveContinue: "Save and continue",
   emptyMarks: "Leave both boxes blank to skip a scholar on this page.",
   registrationTitle: "Registration numbers",
   registrationDetail:
-    "Download the template, fill registration_number, then upload the CSV. Existing numbers stay unless you replace them.",
+    "Download the template, fill registration_number, then upload the CSV. A saved number stays locked unless an administrator replaces it.",
   registrationTemplate: "Download template",
   registrationUpload: "Upload filled CSV",
   resultsTitle: "Course-work results",

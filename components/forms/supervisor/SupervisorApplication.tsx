@@ -28,7 +28,11 @@ import { supervisorEnclosures } from "@/data/documents";
 import { supervisorDeclaration } from "@/data/declarations";
 import { supervisorFormCopy } from "@/data/forms";
 import { currentOffice, subscribeOffice, supervisorApplicationsOpen } from "@/lib/office";
-import { attachmentNames, saveSupervisorApplication } from "@/lib/records";
+import {
+  attachmentFiles,
+  attachmentNames,
+  saveSupervisorApplication,
+} from "@/lib/records";
 import {
   indexingOptions,
   months,
@@ -195,6 +199,7 @@ export function SupervisorApplication() {
     signature: null,
     sslc: null,
     appointment: null,
+    ug: null,
     pg: null,
     phd: null,
     resume: null,
@@ -335,6 +340,7 @@ export function SupervisorApplication() {
         ...submitted,
         attachments: attachmentNames(files),
         papers: attachmentNames(papers),
+        files: await attachmentFiles({ ...files, ...papers }),
         images: { photo: photo || null, signature: signature || null },
       },
     });

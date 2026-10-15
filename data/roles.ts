@@ -17,8 +17,7 @@ export const roleProfiles: Record<Role, RoleProfile> = {
     label: "Scholar",
     title: "Scholar sign in",
     welcome: "Welcome back, scholar",
-    description:
-      "Ph.D. admissions open in January and July. Follow your application, course work, and doctoral committee meetings from one place.",
+    description: "",
     benefits: [
       "Track milestones from the first DC meeting to the thesis",
       "Keep documents and the fee receipt with your record",
@@ -37,8 +36,7 @@ export const roleProfiles: Record<Role, RoleProfile> = {
     label: "Supervisor",
     title: "Supervisor sign in",
     welcome: "Welcome, supervisor",
-    description:
-      "A recognised supervisor reviews scholar progress and the meetings that mark the doctorate.",
+    description: "",
     benefits: [
       "See the scholars allotted to you",
       "Follow course work, colloquium, and DC meetings",
@@ -54,16 +52,31 @@ export const roleProfiles: Record<Role, RoleProfile> = {
     },
   },
   admin: {
-    label: "Admin",
-    title: "Admin sign in",
+    label: "Administrative",
+    title: "Administrative Sign in",
     welcome: "Research office",
-    description:
-      "Administrators review applications, recognise supervisors, and publish notices.",
-    benefits: [
-      "Review scholar applications and fee receipts",
-      "Approve or return supervisor recognition requests",
-      "Publish announcements to scholars and supervisors",
-    ],
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+  staff: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+  dean: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
     identifierLabel: "Username",
     identifierPlaceholder: "Username",
     identifierError: "Enter your username.",

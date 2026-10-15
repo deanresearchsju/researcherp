@@ -68,6 +68,100 @@ export const admissionGlance: AdmissionStep[] = [
 export const writtenMax = 70;
 export const interviewMax = 30;
 
+export const selectionSteps = [
+  { id: "applications", label: "1. Applications" },
+  { id: "shortlist", label: "2. Shortlist" },
+  { id: "entrance", label: "3. Entrance" },
+  { id: "marks", label: "4. Marks" },
+  { id: "selection", label: "5. Selection" },
+  { id: "provisional", label: "6. Provisional list" },
+  { id: "letter", label: "7. Letter" },
+  { id: "fees", label: "8. Fee receipt" },
+  { id: "certificates", label: "9. Certificates" },
+] as const;
+
+export type SelectionStepId = (typeof selectionSteps)[number]["id"];
+
+export const emptyEntranceSchedule = {
+  session: "",
+  monthYear: "",
+  date: "",
+  venue: "",
+} as const;
+
+export const selectionFlowCopy = {
+  complete: "Complete this step",
+  clearOne: "Clear last step",
+  clearTwo: "Clear two steps",
+  blocked: "Completed · blocked",
+  open: "Open",
+  closed: "Not open yet",
+  skipBlocked: "Steps open one at a time. Complete this step before the next.",
+  completeFirst: "Complete this step to open the next.",
+  monitor:
+    "Staff complete the open step. The Dean monitors. Only an administrator can clear a blocked step.",
+  scheduleHint:
+    "Fix the entrance date and venue before printing attendance. Session and month-year print on the list.",
+  saveSchedule: "Save date and venue",
+  clearSchedule: "Clear date and venue",
+  scheduleSaved: "Date and venue are saved. Print attendance is open.",
+  needSchedule: "Save the date and venue before printing attendance.",
+  printAttendance: "Print attendance list",
+  session: "Session",
+  monthYear: "Month and year",
+  date: "Date",
+  venue: "Venue",
+  shortlistText:
+    "View the full application and receipt before shortlisting. A candidate is eligible when the subject still has a vacancy.",
+  entranceText: "Mark who was present after the date and venue are saved.",
+  liveHidden:
+    "Scholars already on the register stay off this live admission file. Unselected applications move to the archive when the session is closed.",
+  archive: "Move unselected to archive",
+  archived: "Unselected applications were moved to the admission archive.",
+  noneToArchive: "There is no unselected application to archive.",
+  needArchiveSession:
+    "Choose the session and year before moving unselected applications.",
+  archiveConfirm:
+    "Move every unselected application for this session to the archive? They leave the live admission file.",
+  marksEmpty: "No shortlisted candidate is on the live admission file.",
+} as const;
+
+export const archiveSessionOptions = ["January", "June", "July"] as const;
+export const archiveYearOptions = ["2025", "2026"] as const;
+
+export const admissionArchiveCopy = {
+  menu: "Admission archive",
+  title: "Admission archive",
+  kicker: "Admissions",
+  detail:
+    "Unselected applications from closed sessions, listed by session. Only an administrator or the Dean can open this list.",
+  empty: "No unselected application is in the archive yet.",
+  emptySession: "No unselected application is stored for this session.",
+  session: "Session",
+  year: "Year",
+  archivedOn: "Archived on",
+  count: "Unselected applications",
+  view: "View",
+  forbidden: "Only an administrator or the Dean can open this list.",
+} as const;
+
+export const admissionLockCopy = {
+  banner:
+    "Admission is complete for scholars already on the register and for candidates whose certificates are approved. Earlier steps stay frozen. Unlock a file only to correct an error. Later doctoral steps stay open.",
+  frozen: "Admission complete · frozen",
+  unlock: "Allow correction",
+  lock: "Freeze again",
+  blocked:
+    "This admission file is frozen. Allow correction before changing an earlier step.",
+  scholarFrozen:
+    "Your admission steps are complete. Later doctoral steps stay open. Write to the research office if a correction is needed.",
+  scholarComplete: "Admission is already complete for this sign-in.",
+  promote: "Promote",
+  demote: "Demote",
+  promoteHint:
+    "Promote places the candidate on the selection list. Demote removes the candidate. Only an administrator can do this.",
+} as const;
+
 export const admissionChecklist = [
   { id: "photos", title: "Passport size photographs (5 Nos.)", required: true },
   { id: "application", title: "Application form (SJU portal)", required: true },

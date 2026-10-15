@@ -25,7 +25,7 @@ import { scholarDeclaration } from "@/data/declarations";
 import { scholarFormCopy } from "@/data/forms";
 import { schools } from "@/data/schools";
 import { saveSubmission } from "@/lib/applications";
-import { attachmentNames, savePhdApplication } from "@/lib/records";
+import { attachmentFiles, attachmentNames, savePhdApplication } from "@/lib/records";
 import {
   blankScholar,
   clearLocalDraft,
@@ -269,9 +269,12 @@ export function ScholarApplication() {
       applicantName: submitted.fullName,
       email: submitted.email,
       studyMode: submitted.studyMode,
+      session: submitted.session,
+      year: submitted.year,
       payload: {
         ...submitted,
         attachments: attachmentNames(files),
+        files: await attachmentFiles(files),
         images: { photo: photo || null, signature: signature || null },
       },
     });

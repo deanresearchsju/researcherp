@@ -64,6 +64,9 @@ export type Database = {
         Update: {
           status?: string;
           payload?: Json;
+          applicant_name?: string;
+          email?: string;
+          study_mode?: string;
         };
         Relationships: [];
       };
@@ -434,6 +437,8 @@ export type Database = {
         Update: {
           status?: string;
           payload?: Json;
+          applicant_name?: string;
+          email?: string;
         };
         Relationships: [];
       };
@@ -442,6 +447,10 @@ export type Database = {
     Functions: {
       issue_application_no: {
         Args: { p_kind: string; p_year: string };
+        Returns: string;
+      };
+      issue_application_number: {
+        Args: { p_kind: string; p_year: string; p_code: string };
         Returns: string;
       };
       upsert_phd_draft: {

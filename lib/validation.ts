@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isPhdApplicationNo } from "@/lib/applications";
 import {
   admissionSessions,
   admissionYear,
@@ -431,9 +432,9 @@ export const statusSchema = z.object({
   applicationNo: z
     .string()
     .trim()
-    .regex(
-      /^SJU\/PHD\/\d{4}\/\d{4}$/,
-      "Enter an application number such as SJU/PHD/2026/0001.",
+    .refine(
+      isPhdApplicationNo,
+      `Enter an application number such as SJU/PHD/${admissionYear}/Jan/0001.`,
     ),
   dateOfBirth: z
     .string()

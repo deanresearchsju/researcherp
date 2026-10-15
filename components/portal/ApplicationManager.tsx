@@ -1,14 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
+import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { applicationReviewCopy } from "@/data/application-review";
 import { field } from "@/lib/csv";
 import { formatIsoDate } from "@/lib/dates";
+import {
+  currentAdmission,
+  isArchivedApplication,
+  subscribeAdmission,
+} from "@/lib/admission";
 import {
   applicationStatuses,
   canChangeApplicationStatus,
@@ -51,12 +58,14 @@ function ApplicationTable({
   busy,
   onStatus,
   onRemove,
+  onView,
 }: {
   title: string;
   rows: StoredApplication[];
   busy: boolean;
   onStatus: (row: StoredApplication, status: string) => void;
   onRemove: (row: StoredApplication) => void;
+  onView: (row: StoredApplication) => void;
 }) {
   return (
     <section className="mt-8">
@@ -109,37 +118,51 @@ function ApplicationTable({
                   </td>
                   <td className="px-3 py-3">{dateLabel(row.createdAt)}</td>
                   <td className="px-3 py-3">
-                    <NativeSelect
-                      aria-label={`Status for ${row.applicationNo}`}
-                      value={row.status}
-                      onChange={(event) => onStatus(row, event.target.value)}
-                    >
-                      {applicationStatuses
-                        .filter((status) =>
-                          canChangeApplicationStatus(row.status, status),
-                        )
-                        .map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      {applicationStatuses.includes(
-                        row.status as (typeof applicationStatuses)[number],
-                      ) ? null : (
-                        <option value={row.status}>{row.status}</option>
-                      )}
-                    </NativeSelect>
+                    {row.kind === "supervisor" ? (
+                      <p>{row.status}</p>
+                    ) : (
+                      <NativeSelect
+                        aria-label={`Status for ${row.applicationNo}`}
+                        value={row.status}
+                        onChange={(event) => onStatus(row, event.target.value)}
+                      >
+                        {applicationStatuses
+                          .filter((status) =>
+                            canChangeApplicationStatus(row.status, status),
+                          )
+                          .map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        {applicationStatuses.includes(
+                          row.status as (typeof applicationStatuses)[number],
+                        ) ? null : (
+                          <option value={row.status}>{row.status}</option>
+                        )}
+                      </NativeSelect>
+                    )}
                   </td>
                   <td className="px-3 py-3">
-                    <Button
-                      type="button"
-                      variant="maroon"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => onRemove(row)}
-                    >
-                      Remove
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onView(row)}
+                      >
+                        {applicationReviewCopy.view}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="maroon"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => onRemove(row)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,9 +185,18 @@ export function ApplicationManager({
   const [notice, setNotice] = useState<string | null>(detail);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [viewing, setViewing] = useState<StoredApplication | null>(null);
   const [kindFilter, setKindFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const admission = useSyncExternalStore(
+    subscribeAdmission,
+    currentAdmission,
+    () => null,
+  );
   const canUpload = detail === null;
+  const liveRows = rows.filter(
+    (row) => row.kind !== "phd" || !isArchivedApplication(row, admission?.archived ?? []),
+  );
 
   async function onStatus(row: StoredApplication, status: string) {
     if (!canChangeApplicationStatus(row.status, status)) {
@@ -244,7 +276,7 @@ export function ApplicationManager({
     setNotice(problems.length ? `${summary} ${problems.slice(0, 3).join(" ")}` : summary);
   }
 
-  const visible = rows.filter(
+  const visible = liveRows.filter(
     (row) =>
       (kindFilter === "" || row.kind === kindFilter) &&
       (statusFilter === "" || row.status === statusFilter) &&
@@ -291,7 +323,7 @@ export function ApplicationManager({
           },
         ]}
         shown={visible.length}
-        total={rows.length}
+        total={liveRows.length}
         filename="applications-filtered.csv"
         headers={applicationColumns}
         rows={visible.map((row) => [
@@ -334,6 +366,7 @@ export function ApplicationManager({
         busy={busy}
         onStatus={onStatus}
         onRemove={(row) => void onRemove(row)}
+        onView={setViewing}
       />
       <ApplicationTable
         title="Supervisor recognition"
@@ -341,7 +374,11 @@ export function ApplicationManager({
         busy={busy}
         onStatus={onStatus}
         onRemove={(row) => void onRemove(row)}
+        onView={setViewing}
       />
+      {viewing ? (
+        <ApplicationViewer application={viewing} onClose={() => setViewing(null)} />
+      ) : null}
     </div>
   );
 }

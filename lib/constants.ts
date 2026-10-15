@@ -55,8 +55,9 @@ export const admissionSessionsCopy = {
 } as const;
 
 export const applicationNumbers = {
-  scholarPattern: "SJU/PHD/YEAR/0001",
-  supervisorPattern: "SJU/SUP/PHD/YEAR/001",
+  scholarPattern: "SJU/PHD/YEAR/Jan/0001",
+  scholarPatternJuly: "SJU/PHD/YEAR/Jul/0001",
+  supervisorPattern: "SJU/PHD/SUP.App/MM/YY/001",
 } as const;
 
 export const storageKeys = {
@@ -111,10 +112,10 @@ export const fileLimits = {
   },
   newsPoster: {
     minBytes: 1,
-    maxBytes: kb(100) - 1,
+    maxBytes: kb(250),
     types: ["image/jpeg", "image/png"],
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, below 100 KB",
+    label: "JPG or PNG, up to 250 KB",
   },
   scholarSignature: {
     minBytes: 1,

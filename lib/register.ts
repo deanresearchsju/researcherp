@@ -3,9 +3,15 @@ import {
   type ResearchScholar,
   type ResearchSupervisor,
 } from "@/data/research-register";
+import { adminActionBlock, officeWriteBlock, registrationWriteBlock } from "@/lib/access";
 import { storageKeys, studyModes } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
+import {
+  parseSupervisorStandings,
+  supervisorIsActive,
+  type SupervisorStanding,
+} from "@/lib/portal-access";
 import { toJson } from "@/lib/records";
 
 export const registerMigrationHint =
@@ -33,10 +39,13 @@ export type GuideAllotment = {
 export type RegisterLoad = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
+  standings: SupervisorStanding[];
   source: "database" | "browser";
   updatedAt: string | null;
   detail: string | null;
 };
+
+export type { SupervisorStanding };
 
 const rowId = "register";
 
@@ -73,34 +82,50 @@ function parseQuotas(value: unknown): ApprovedQuota[] {
   });
 }
 
-function readStored(): { allotments: RegistrationAllotment[]; quotas: ApprovedQuota[] } {
-  if (typeof window === "undefined") return { allotments: [], quotas: [] };
+function readStored(): {
+  allotments: RegistrationAllotment[];
+  quotas: ApprovedQuota[];
+  standings: SupervisorStanding[];
+} {
+  if (typeof window === "undefined") {
+    return { allotments: [], quotas: [], standings: [] };
+  }
   try {
     const parsed: unknown = JSON.parse(
       window.localStorage.getItem(storageKeys.register) ?? "[]",
     );
-    if (Array.isArray(parsed)) return { allotments: parseAllotments(parsed), quotas: [] };
-    if (!parsed || typeof parsed !== "object") return { allotments: [], quotas: [] };
-    const record = parsed as { allotments?: unknown; quotas?: unknown };
+    if (Array.isArray(parsed)) {
+      return { allotments: parseAllotments(parsed), quotas: [], standings: [] };
+    }
+    if (!parsed || typeof parsed !== "object") {
+      return { allotments: [], quotas: [], standings: [] };
+    }
+    const record = parsed as {
+      allotments?: unknown;
+      quotas?: unknown;
+      standings?: unknown;
+    };
     return {
       allotments: parseAllotments(record.allotments),
       quotas: parseQuotas(record.quotas),
+      standings: parseSupervisorStandings(record.standings),
     };
   } catch {
-    return { allotments: [], quotas: [] };
+    return { allotments: [], quotas: [], standings: [] };
   }
 }
 
 function writeBrowser(stored: {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
+  standings: SupervisorStanding[];
 }) {
   window.localStorage.setItem(storageKeys.register, JSON.stringify(stored));
 }
 
 function payloadOf(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as { allotments?: unknown; quotas?: unknown })
+    ? (value as { allotments?: unknown; quotas?: unknown; standings?: unknown })
     : null;
 }
 
@@ -125,6 +150,7 @@ export async function loadRegister(): Promise<RegisterLoad> {
   return {
     allotments: parseAllotments(payload?.allotments),
     quotas: parseQuotas(payload?.quotas),
+    standings: parseSupervisorStandings(payload?.standings),
     source: "database",
     updatedAt: data?.updated_at ?? null,
     detail: null,
@@ -133,6 +159,7 @@ export async function loadRegister(): Promise<RegisterLoad> {
 
 const emptyAllotments: RegistrationAllotment[] = [];
 const emptyQuotas: ApprovedQuota[] = [];
+const emptyStandings: SupervisorStanding[] = [];
 
 let memory: RegisterLoad | null = null;
 let loading = false;
@@ -164,6 +191,10 @@ export function currentQuotas() {
   return memory?.quotas ?? emptyQuotas;
 }
 
+export function currentStandings() {
+  return memory?.standings ?? emptyStandings;
+}
+
 export function currentRegister() {
   return memory;
 }
@@ -176,6 +207,13 @@ export function registrationOf(
     allotments.find((item) => item.scholarId === scholar.id)?.registrationNumber ??
     scholar.registrationNumber
   );
+}
+
+export function registrationIsSaved(
+  scholar: ResearchScholar,
+  allotments: readonly RegistrationAllotment[],
+) {
+  return Boolean(registrationOf(scholar, allotments).trim());
 }
 
 export function batchOf(batchId: string) {
@@ -503,7 +541,11 @@ export function scholarsGuidedBy(name: string, identifier: string) {
 }
 
 async function persistRegister(next: RegisterLoad) {
-  const stored = { allotments: next.allotments, quotas: next.quotas };
+  const stored = {
+    allotments: next.allotments,
+    quotas: next.quotas,
+    standings: next.standings ?? [],
+  };
   const supabase = createSupabase();
   if (supabase && next.source === "database") {
     const saved = await saveJsonBlob(
@@ -519,6 +561,40 @@ async function persistRegister(next: RegisterLoad) {
   writeBrowser(stored);
   publish({ ...next, source: "browser" });
   return { ok: true as const };
+}
+
+export function supervisorKeys(supervisor: ResearchSupervisor) {
+  return [supervisor.email, supervisor.supervisorId, supervisor.name].filter((item) =>
+    item.trim(),
+  );
+}
+
+export function supervisorListingActive(
+  supervisor: ResearchSupervisor,
+  standings: readonly SupervisorStanding[],
+) {
+  return supervisorIsActive(supervisorKeys(supervisor), supervisor.active, standings);
+}
+
+export async function saveSupervisorStanding(
+  supervisor: ResearchSupervisor,
+  active: boolean,
+  inactiveKind: "Inactive" | "Resigned" | null,
+) {
+  const current = memory ?? (await loadRegister());
+  const keys = supervisorKeys(supervisor);
+  const nextStanding: SupervisorStanding = {
+    key: supervisor.email.trim() || supervisor.supervisorId.trim() || supervisor.name,
+    active,
+    inactiveKind: active ? null : (inactiveKind ?? "Inactive"),
+  };
+  const standings = [
+    nextStanding,
+    ...current.standings.filter(
+      (item) => !keys.some((key) => key.toLowerCase() === item.key.trim().toLowerCase()),
+    ),
+  ];
+  return persistRegister({ ...current, standings });
 }
 
 export async function saveApprovedQuota(entry: ApprovedQuota) {
@@ -553,7 +629,15 @@ export async function allotRegistration(scholarId: string, registrationNumber: s
   if (!number) {
     return { ok: false as const, message: "Enter a registration number." };
   }
+  const scholar = researchRegister.scholars.find((item) => item.id === scholarId);
+  if (!scholar) {
+    return { ok: false as const, message: "That scholar is not on the register." };
+  }
   const current = memory ?? (await loadRegister());
+  const existing = registrationOf(scholar, current.allotments).trim();
+  const blocked = registrationWriteBlock(Boolean(existing) && existing !== number);
+  if (blocked) return blocked;
+  if (existing === number) return { ok: true as const };
   if (numberTaken(current, scholarId, number, [])) {
     return {
       ok: false as const,
@@ -600,6 +684,11 @@ export async function allotRegistrations(
     registrationNumber: string;
   }[],
 ) {
+  const writeBlocked = officeWriteBlock();
+  if (writeBlocked) {
+    return { ...writeBlocked, saved: 0, skipped: rows.length };
+  }
+  const canReplace = !adminActionBlock();
   const current = memory ?? (await loadRegister());
   const extra: RegistrationAllotment[] = [];
   let saved = 0;
@@ -621,6 +710,18 @@ export async function allotRegistrations(
       skipped += 1;
       messages.push(
         `${scholar.applicationNumber || scholar.id}: registration number is not valid.`,
+      );
+      continue;
+    }
+    const existing = registrationOf(scholar, current.allotments).trim();
+    if (existing && existing.toLowerCase() === number.toLowerCase()) {
+      skipped += 1;
+      continue;
+    }
+    if (existing && !canReplace) {
+      skipped += 1;
+      messages.push(
+        `${scholar.applicationNumber || scholar.id}: a saved registration number can be changed only by an administrator.`,
       );
       continue;
     }

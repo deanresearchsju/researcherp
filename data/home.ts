@@ -44,13 +44,3 @@ export const supervisorWindowCopy = {
   opened: "Supervisor recognition is now open.",
   closed: "Supervisor recognition is now closed.",
 } as const;
-
-export const siteHeroCopy = {
-  title: "Home page copy",
-  description: "These lines sit behind the research office controls. The public hero uses the application window above.",
-  eyebrow: "Eyebrow",
-  heading: "Heading",
-  summary: "Summary",
-  save: "Save home copy",
-  saved: "Home page copy saved.",
-} as const;

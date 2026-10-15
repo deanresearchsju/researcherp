@@ -12,7 +12,6 @@ export const newsBoardCopy = {
   lastDate: "Last date",
   newBadge: "New",
   latestBadge: "Latest",
-  openLink: "Open link",
   emptyAnnouncement: "No announcements have been published from the ERP.",
   photosEntry: "We will be adding completed event photos",
   photosTitle: "Completed event photos",

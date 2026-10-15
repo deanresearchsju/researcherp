@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -39,6 +39,7 @@ export default function LoginPage({ params }: LoginPageProps) {
 async function LoginContent({ params }: LoginPageProps) {
   const { role } = await params;
   if (!isRole(role)) notFound();
+  if (role === "staff" || role === "dean") redirect("/login/admin");
 
   return (
     <AuthLayout>

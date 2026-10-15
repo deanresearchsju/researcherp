@@ -1,4 +1,6 @@
 import { issueApplicationNo } from "@/lib/applications";
+import { adminActionBlock } from "@/lib/access";
+import { fileToDataUrl } from "@/lib/files";
 import { createSupabase } from "@/lib/supabase/client";
 import type { Json } from "@/types/database";
 
@@ -9,6 +11,16 @@ export const applicationStatuses = [
   "Selected",
   "Not selected",
 ] as const;
+
+export const supervisorReviewStatuses = [
+  "Acknowledgement sent",
+  "Under review",
+  "Accepted",
+  "Approved",
+  "Rejected",
+] as const;
+
+export type SupervisorReviewStatus = (typeof supervisorReviewStatuses)[number];
 
 const applicationTransitions: Record<string, readonly string[]> = {
   "Acknowledgement sent": ["Under review"],
@@ -42,6 +54,10 @@ export type StoredApplication = {
 export type SaveResult =
   { ok: true; applicationNo: string } | { ok: false; message: string };
 
+export function isStoredApplication(id: string) {
+  return !id.startsWith("register:");
+}
+
 const saveError =
   "The application could not be saved. Please try again, or email the Center for Research.";
 
@@ -51,6 +67,19 @@ export function attachmentNames(
   return Object.fromEntries(
     Object.entries(files).map(([key, value]) => [key, value?.file.name ?? null]),
   );
+}
+
+export async function attachmentFiles(
+  files: Record<string, { file: File } | null | undefined>,
+) {
+  const stored: Record<string, { fileName: string; fileData: string }> = {};
+  for (const [key, slot] of Object.entries(files)) {
+    if (!slot?.file) continue;
+    const fileData = await fileToDataUrl(slot.file).catch(() => "");
+    if (!fileData) continue;
+    stored[key] = { fileName: slot.file.name, fileData };
+  }
+  return stored;
 }
 
 export function toJson(value: unknown): Json {
@@ -81,13 +110,18 @@ async function insertApplication(
     email: string;
     studyMode?: string;
     payload: Json;
+    session?: string;
+    year?: string;
   },
 ): Promise<SaveResult> {
   const supabase = createSupabase();
   if (!supabase) return { ok: false, message: saveError };
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const applicationNo = await issueApplicationNo(kind);
+    const applicationNo = await issueApplicationNo(kind, {
+      session: values.session,
+      year: values.year,
+    });
     const shared = {
       application_no: applicationNo,
       date_of_birth: values.dateOfBirth,
@@ -114,6 +148,8 @@ export function savePhdApplication(values: {
   applicantName: string;
   email: string;
   studyMode: string;
+  session: string;
+  year: string;
   payload: unknown;
 }) {
   return insertApplication("phd", { ...values, payload: toJson(values.payload) });
@@ -134,7 +170,7 @@ export async function lookupPhdApplication(applicationNo: string, dateOfBirth: s
   const { data, error } = await supabase
     .from("phd_applications")
     .select("application_no, applicant_name, email, date_of_birth, status")
-    .eq("application_no", applicationNo.trim().toUpperCase())
+    .ilike("application_no", applicationNo.trim())
     .eq("date_of_birth", dateOfBirth)
     .maybeSingle();
   if (error || !data) return null;
@@ -260,10 +296,31 @@ export async function updateApplicationStatus(
   return !error;
 }
 
-export async function decideSupervisorApplication(
+function rememberApplication(id: string, patch: Partial<StoredApplication>) {
+  if (!applicationMemory) return;
+  applicationMemory = applicationMemory.map((item) =>
+    item.id === id ? { ...item, ...patch } : item,
+  );
+  notifyApplications();
+}
+
+const supervisorTransitions: Record<string, readonly SupervisorReviewStatus[]> = {
+  "Acknowledgement sent": ["Under review", "Accepted", "Rejected"],
+  "Under review": ["Accepted", "Rejected"],
+  Accepted: ["Approved", "Rejected"],
+  Approved: [],
+  Rejected: [],
+};
+
+export function canChangeSupervisorStatus(from: string, to: string) {
+  if (from === to) return true;
+  return Boolean(supervisorTransitions[from]?.includes(to as SupervisorReviewStatus));
+}
+
+export async function reviewSupervisorApplication(
   id: string,
   payload: Json,
-  status: "Approved" | "Rejected",
+  status: "Accepted" | "Approved" | "Rejected",
   remarks: string,
   approvedQuota?: number,
 ) {
@@ -271,21 +328,75 @@ export async function decideSupervisorApplication(
   if (!supabase) return false;
   const current =
     payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const nextPayload = toJson({
+    ...current,
+    officeDecision: status,
+    officeRemarks: remarks.trim(),
+    ...(status === "Accepted" ? { acceptedRemarks: remarks.trim() } : {}),
+    ...(status === "Approved" && approvedQuota !== undefined ? { approvedQuota } : {}),
+  });
   const { error } = await supabase
     .from("supervisor_applications")
     .update({
       status,
-      payload: toJson({
-        ...current,
-        officeDecision: status,
-        officeRemarks: remarks.trim(),
-        ...(status === "Approved" && approvedQuota !== undefined
-          ? { approvedQuota }
-          : {}),
-      }),
+      payload: nextPayload,
     })
     .eq("id", id);
-  return !error;
+  if (error) return false;
+  rememberApplication(id, { status, payload: nextPayload });
+  return true;
+}
+
+export async function decideSupervisorApplication(
+  id: string,
+  payload: Json,
+  status: "Approved" | "Rejected",
+  remarks: string,
+  approvedQuota?: number,
+) {
+  return reviewSupervisorApplication(id, payload, status, remarks, approvedQuota);
+}
+
+export async function updateApplicationDetails(
+  kind: ApplicationKind,
+  id: string,
+  next: { applicantName: string; email: string; payload: Json },
+) {
+  const blocked = adminActionBlock();
+  if (blocked) return { ok: false as const, message: blocked.message };
+  if (!isStoredApplication(id)) {
+    return { ok: false as const, message: saveError };
+  }
+  const supabase = createSupabase();
+  if (!supabase) return { ok: false as const, message: saveError };
+  const shared = {
+    applicant_name: next.applicantName,
+    email: next.email,
+    payload: next.payload,
+  };
+  const studyMode =
+    kind === "phd" &&
+    next.payload &&
+    typeof next.payload === "object" &&
+    !Array.isArray(next.payload) &&
+    typeof next.payload.studyMode === "string"
+      ? next.payload.studyMode
+      : undefined;
+  const { error } =
+    kind === "phd"
+      ? await supabase
+          .from("phd_applications")
+          .update(studyMode !== undefined ? { ...shared, study_mode: studyMode } : shared)
+          .eq("id", id)
+      : await supabase.from("supervisor_applications").update(shared).eq("id", id);
+  if (error) return { ok: false as const, message: saveError };
+  rememberApplication(id, {
+    applicantName: next.applicantName,
+    email: next.email,
+    payload: next.payload,
+    ...(studyMode !== undefined ? { studyMode } : {}),
+  });
+  return { ok: true as const };
 }
 
 export async function deleteApplication(kind: ApplicationKind, id: string) {

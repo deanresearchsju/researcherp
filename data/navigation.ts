@@ -23,6 +23,6 @@ export const footerExplore: NavLink[] = [
 export const footerPortals: NavLink[] = [
   { label: "Scholar login", href: "/login/scholar" },
   { label: "Supervisor login", href: "/login/supervisor" },
-  { label: "Admin login", href: "/login/admin" },
+  { label: "Administrative login", href: "/login/admin" },
   { label: "Apply for Ph.D.", href: "/apply" },
 ];

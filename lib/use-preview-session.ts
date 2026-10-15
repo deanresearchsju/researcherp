@@ -51,6 +51,8 @@ export function usePortalSession(): PreviewSession | null {
   if (!view || !session) return session;
   const canView =
     session.role === "admin" ||
+    session.role === "staff" ||
+    session.role === "dean" ||
     (session.role === "supervisor" && view.role === "scholar");
   if (!canView) return session;
   if (view.role === "scholar" && pathname.startsWith("/scholar")) {
@@ -63,7 +65,7 @@ export function usePortalSession(): PreviewSession | null {
     };
   }
   if (
-    session.role === "admin" &&
+    (session.role === "admin" || session.role === "staff" || session.role === "dean") &&
     view.role === "supervisor" &&
     pathname.startsWith("/supervisor")
   ) {

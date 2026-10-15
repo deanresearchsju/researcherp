@@ -96,11 +96,20 @@ export function LoginForm({ role }: LoginFormProps) {
   return (
     <div className="w-full max-w-md">
       <div className="rounded-xl border border-border bg-card p-6 shadow-lift sm:p-8">
-        <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-          {profile.label}
-        </p>
-        <h2 className="mt-2 font-heading text-3xl text-primary">{profile.title}</h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{profile.description}</p>
+        {profile.label && role !== "admin" ? (
+          <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
+            {profile.label}
+          </p>
+        ) : null}
+        <h2
+          className={
+            profile.label && role !== "admin"
+              ? "mt-2 font-heading text-3xl text-primary"
+              : "font-heading text-3xl text-primary"
+          }
+        >
+          {profile.title}
+        </h2>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
           {formError ? (
             <p
@@ -180,16 +189,22 @@ export function LoginForm({ role }: LoginFormProps) {
               Forgot password?
             </Link>
           </div>
-          <Button type="submit" className="w-full" disabled={signingIn} aria-busy={signingIn}>
-            {signingIn ? (
-              <Loader2 className="animate-spin" aria-hidden="true" />
-            ) : null}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={signingIn}
+            aria-busy={signingIn}
+          >
+            {signingIn ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
             {signingIn ? "Signing in…" : "Sign in"}
           </Button>
           {profile.footnote ? (
             <p className="text-center text-sm text-muted-foreground">
               {profile.footnote.prompt}{" "}
-              <Link href={profile.footnote.href} className="font-medium text-primary hover:underline">
+              <Link
+                href={profile.footnote.href}
+                className="font-medium text-primary hover:underline"
+              >
                 {profile.footnote.label}
               </Link>
             </p>

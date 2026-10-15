@@ -22,6 +22,7 @@ export function PersonNameLink({
           role,
           name,
           identifier,
+          returnTo: window.location.pathname,
         })
       }
     >

@@ -6,14 +6,21 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { ProfilePhotoChange } from "@/components/portal/ProfileCard";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { portalGroups } from "@/data/portal";
+import { menuRightsCopy, portalGroups } from "@/data/portal";
 import { roleProfiles } from "@/data/roles";
-import { isPrincipalAdmin, menuHrefs, storedMenus } from "@/lib/access";
+import {
+  defaultMenuHrefs,
+  isPrincipalAdmin,
+  menuHrefs,
+  menuLabels,
+  storedMenus,
+} from "@/lib/access";
 import { activateRegisterAccounts, type ActivationReport } from "@/lib/register-access";
 import {
   createPortalUser,
@@ -36,7 +43,7 @@ const userFormSchema = z.object({
 
 type UserFormValues = z.infer<typeof userFormSchema>;
 
-const accessRoles = ["scholar", "supervisor", "admin"] as const;
+const accessRoles = ["scholar", "supervisor", "admin", "staff", "dean"] as const;
 
 const createFormSchema = z.object({
   role: z.enum(accessRoles),
@@ -86,17 +93,25 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   });
   const createRole = useWatch({ control: createForm.control, name: "role" });
   const [menuRole, setMenuRole] = useState<(typeof accessRoles)[number]>("scholar");
-  const [selectedMenus, setSelectedMenus] = useState<string[]>(menuHrefs("scholar"));
+  const [selectedMenus, setSelectedMenus] = useState<string[]>(
+    defaultMenuHrefs("scholar"),
+  );
   const [editMenus, setEditMenus] = useState<string[]>([]);
   const [issued, setIssued] = useState<ActivationReport["issued"]>([]);
   if (createRole !== menuRole) {
     setMenuRole(createRole);
-    setSelectedMenus(menuHrefs(createRole));
+    setSelectedMenus(defaultMenuHrefs(createRole));
   }
 
   function toggleMenu(current: string[], href: string, checked: boolean) {
     if (href.endsWith("/dashboard")) return current;
     return checked ? [...current, href] : current.filter((item) => item !== href);
+  }
+
+  function toggleGroup(current: string[], hrefs: readonly string[], checked: boolean) {
+    const extra = hrefs.filter((href) => !href.endsWith("/dashboard"));
+    const without = current.filter((href) => !extra.includes(href));
+    return checked ? [...without, ...extra] : without;
   }
 
   function beginEdit(user: PortalUser) {
@@ -245,7 +260,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
             id: "role",
             label: "Access",
             value: roleFilter,
-            options: (["scholar", "supervisor", "admin"] as const).map((role) => ({
+            options: accessRoles.map((role) => ({
               value: role,
               label: roleProfiles[role].label,
             })),
@@ -326,6 +341,15 @@ export function UserManager({ initial }: { initial: UserLoad }) {
           onToggle={(href, checked) =>
             setSelectedMenus((current) => toggleMenu(current, href, checked))
           }
+          onToggleGroup={(hrefs, checked) =>
+            setSelectedMenus((current) => toggleGroup(current, hrefs, checked))
+          }
+          onSelectAll={() => setSelectedMenus(menuHrefs(createRole))}
+          onClear={() =>
+            setSelectedMenus(
+              menuHrefs(createRole).filter((href) => href.endsWith("/dashboard")),
+            )
+          }
         />
         <div className="sm:col-span-2">
           <Button type="submit" variant="gold" disabled={busy}>
@@ -375,6 +399,23 @@ export function UserManager({ initial }: { initial: UserLoad }) {
               onToggle={(href, checked) =>
                 setEditMenus((current) => toggleMenu(current, href, checked))
               }
+              onToggleGroup={(hrefs, checked) =>
+                setEditMenus((current) => toggleGroup(current, hrefs, checked))
+              }
+              onSelectAll={() =>
+                setEditMenus(
+                  menuHrefs(
+                    users.find((user) => user.id === editingId)?.role ?? "scholar",
+                  ),
+                )
+              }
+              onClear={() =>
+                setEditMenus(
+                  menuHrefs(
+                    users.find((user) => user.id === editingId)?.role ?? "scholar",
+                  ).filter((href) => href.endsWith("/dashboard")),
+                )
+              }
             />
           ) : (
             <p className="text-sm text-muted-foreground sm:col-span-2">
@@ -415,12 +456,28 @@ export function UserManager({ initial }: { initial: UserLoad }) {
               .map((user) => (
                 <tr key={user.id} className="border-t border-border">
                   <td className="px-4 py-3">{roleProfiles[user.role].label}</td>
-                  <td className="px-4 py-3 font-medium text-primary">{user.name}</td>
+                  <td className="px-4 py-3 font-medium text-primary">
+                    {user.role === "scholar" || user.role === "supervisor" ? (
+                      <PersonNameLink
+                        role={user.role}
+                        name={user.name}
+                        identifier={user.identifier}
+                      />
+                    ) : (
+                      user.name
+                    )}
+                  </td>
                   <td className="px-4 py-3">{user.identifier}</td>
                   <td className="px-4 py-3">
-                    {user.menus === null || isPrincipalAdmin(user)
-                      ? "All menus"
-                      : `${user.menus.length} menus`}
+                    {(() => {
+                      if (user.menus === null || isPrincipalAdmin(user)) {
+                        return menuRightsCopy.allMenus;
+                      }
+                      const labels = menuLabels(user.role, user.menus);
+                      return labels && labels.length > 0
+                        ? labels.join(", ")
+                        : menuRightsCopy.dashboardOnly;
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
@@ -462,42 +519,79 @@ function MenuPicker({
   role,
   selected,
   onToggle,
+  onToggleGroup,
+  onSelectAll,
+  onClear,
 }: {
   role: (typeof accessRoles)[number];
   selected: readonly string[];
   onToggle: (href: string, checked: boolean) => void;
+  onToggleGroup: (hrefs: readonly string[], checked: boolean) => void;
+  onSelectAll: () => void;
+  onClear: () => void;
 }) {
   return (
     <fieldset className="sm:col-span-2">
-      <legend className="text-sm font-semibold text-primary">Menus</legend>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">
-        {portalGroups[role].map((group) => (
-          <div key={group.heading || group.items[0]?.href}>
-            {group.heading ? (
-              <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                {group.heading}
-              </p>
-            ) : null}
-            <ul className={group.heading ? "mt-2 space-y-1" : "space-y-1"}>
-              {group.items.map((item) => {
-                const dashboard = item.href.endsWith("/dashboard");
-                return (
-                  <li key={item.href}>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={dashboard || selected.includes(item.href)}
-                        disabled={dashboard}
-                        onChange={(event) => onToggle(item.href, event.target.checked)}
-                      />
-                      {item.label}
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+      <legend className="text-sm font-semibold text-primary">
+        {menuRightsCopy.title} · {roleProfiles[role].label}
+      </legend>
+      <p className="mt-2 text-sm text-muted-foreground">{menuRightsCopy.hint}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={onSelectAll}>
+          {menuRightsCopy.selectAll}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={onClear}>
+          {menuRightsCopy.clear}
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {portalGroups[role].map((group) => {
+          const extra = group.items.filter((item) => !item.href.endsWith("/dashboard"));
+          const groupOn =
+            extra.length > 0 && extra.every((item) => selected.includes(item.href));
+          return (
+            <div
+              key={group.heading || group.items[0]?.href}
+              className="rounded-xl border border-border p-3"
+            >
+              {group.heading ? (
+                <label className="flex items-center gap-2 text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                  {extra.length > 0 ? (
+                    <input
+                      type="checkbox"
+                      checked={groupOn}
+                      onChange={(event) =>
+                        onToggleGroup(
+                          extra.map((item) => item.href),
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  ) : null}
+                  {group.heading}
+                </label>
+              ) : null}
+              <ul className={group.heading ? "mt-2 space-y-1" : "space-y-1"}>
+                {group.items.map((item) => {
+                  const dashboard = item.href.endsWith("/dashboard");
+                  return (
+                    <li key={item.href}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={dashboard || selected.includes(item.href)}
+                          disabled={dashboard}
+                          onChange={(event) => onToggle(item.href, event.target.checked)}
+                        />
+                        {item.label}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </fieldset>
   );

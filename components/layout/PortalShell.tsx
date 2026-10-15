@@ -3,7 +3,9 @@
 import {
   Bell,
   ChevronDown,
+  ClipboardList,
   GraduationCap,
+  Landmark,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -29,12 +31,13 @@ import { roleProfiles } from "@/data/roles";
 import {
   canOpenMenu,
   effectiveMenus,
+  isOfficeRole,
   isPrincipalAdmin,
   visibleGroups,
 } from "@/lib/access";
 import { currentAdmission, scholarIsAdmitted, subscribeAdmission } from "@/lib/admission";
 import { currentInbox, noticesFor, subscribeInbox } from "@/lib/audit";
-import { clearPreviewSession, type PreviewSession } from "@/lib/auth";
+import { clearPreviewSession, loginHref, type PreviewSession } from "@/lib/auth";
 import { university } from "@/lib/constants";
 import { closeOfficeView } from "@/lib/office-view";
 import { useOfficeView, usePreviewSession } from "@/lib/use-preview-session";
@@ -42,9 +45,11 @@ import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/types";
 
-function roleFromPath(pathname: string): Role {
+function roleFromPath(pathname: string, sessionRole?: Role | null): Role {
   if (pathname.startsWith("/supervisor")) return "supervisor";
-  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/admin")) {
+    return sessionRole && isOfficeRole(sessionRole) ? sessionRole : "admin";
+  }
   return "scholar";
 }
 
@@ -59,7 +64,15 @@ function groupCount(count: number) {
 
 function WorkspaceIcon({ role }: { role: Role }) {
   const Icon =
-    role === "admin" ? Users : role === "supervisor" ? UserRound : GraduationCap;
+    role === "admin"
+      ? Users
+      : role === "staff"
+        ? ClipboardList
+        : role === "dean"
+          ? Landmark
+          : role === "supervisor"
+            ? UserRound
+            : GraduationCap;
   return <Icon className="size-5" aria-hidden="true" />;
 }
 
@@ -230,9 +243,9 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const ready = useClientReady();
-  const pathRole = roleFromPath(pathname);
   const stored = usePreviewSession();
   const session = stored ?? signedIn;
+  const pathRole = roleFromPath(pathname, session?.role);
   const view = useOfficeView();
   const [viewNotice, setViewNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -254,6 +267,8 @@ export function PortalShell({
     ((view.role === "scholar" && pathname.startsWith("/scholar")) ||
       (view.role === "supervisor" && pathname.startsWith("/supervisor"))) &&
     (session?.role === "admin" ||
+      session?.role === "staff" ||
+      session?.role === "dean" ||
       (session?.role === "supervisor" && view.role === "scholar"));
   const role = viewing && view ? view.role : pathRole;
   const account =
@@ -287,16 +302,16 @@ export function PortalShell({
   function signOut() {
     closeOfficeView();
     clearPreviewSession();
-    router.push(`/login/${pathRole}`);
+    router.push(loginHref(session?.role ?? pathRole));
   }
 
   function leaveView() {
     const back =
-      session?.role === "supervisor"
-        ? "/supervisor/scholars"
-        : view?.role === "supervisor"
-          ? "/admin/supervisors"
-          : "/admin/register";
+      view?.returnTo && view.returnTo.startsWith("/")
+        ? view.returnTo
+        : session?.role === "supervisor"
+          ? "/supervisor/scholars"
+          : "/admin/users";
     closeOfficeView();
     router.push(back);
   }
@@ -338,7 +353,7 @@ export function PortalShell({
           Open the portal with your sign-in.
         </p>
         <Link
-          href={`/login/${pathRole}`}
+          href={loginHref(pathRole)}
           className="mt-6 inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
         >
           Sign in

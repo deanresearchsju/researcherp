@@ -1,18 +1,71 @@
 import { NextResponse } from "next/server";
 
-import { isPrincipalAdmin, parseMenuRights } from "@/lib/access";
+import { isOfficeRole, isPrincipalAdmin, parseMenuRights } from "@/lib/access";
 import { portalHome } from "@/lib/auth";
 import type { CookieSession } from "@/lib/session";
 import { hashSecret, isHashedSecret, verifySecret } from "@/lib/passwords";
+import {
+  parseLetterCases,
+  parseSupervisorStandings,
+  scholarLoginMessage,
+  scholarMayUsePortal,
+  supervisorMayUsePortal,
+} from "@/lib/portal-access";
+import { scholarBySignIn, supervisorBySignIn } from "@/lib/register";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { portalAuthClient } from "@/lib/supabase/admin";
 import { isRetiredSignIn } from "@/lib/users";
-import type { Role } from "@/types";
+import type { Json } from "@/types/database";
+import { ROLES, type Role } from "@/types";
 
-const roles: readonly Role[] = ["scholar", "supervisor", "admin"];
+const roles: readonly Role[] = ROLES;
 
 function isRole(value: unknown): value is Role {
   return typeof value === "string" && (roles as readonly string[]).includes(value);
+}
+
+async function portalGate(
+  supabase: NonNullable<ReturnType<typeof portalAuthClient>>,
+  role: "scholar" | "supervisor",
+  identifier: string,
+) {
+  if (role === "scholar") {
+    const { data } = await supabase
+      .from("admission_office")
+      .select("payload")
+      .eq("id", "office")
+      .maybeSingle();
+    const cases = parseLetterCases((data?.payload ?? null) as Json);
+    if (scholarMayUsePortal(identifier, Boolean(scholarBySignIn(identifier)), cases)) {
+      return null;
+    }
+    return scholarLoginMessage();
+  }
+  const [{ data: register }, { data: approved }] = await Promise.all([
+    supabase
+      .from("research_register")
+      .select("payload")
+      .eq("id", "register")
+      .maybeSingle(),
+    supabase.from("supervisor_applications").select("email").eq("status", "Approved"),
+  ]);
+  const payload = register?.payload;
+  const standings = parseSupervisorStandings(
+    payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      "standings" in payload
+      ? payload.standings
+      : [],
+  );
+  const emails = (approved ?? []).map((row) => row.email);
+  const allowed = supervisorMayUsePortal(
+    identifier,
+    supervisorBySignIn(identifier),
+    standings,
+    emails,
+  );
+  return allowed.ok ? null : allowed.message;
 }
 
 export async function POST(request: Request) {
@@ -70,20 +123,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const full = await supabase
+  const officeSignIn = isOfficeRole(input.role);
+  const lookup = supabase
     .from("portal_users")
-    .select("id, role, name, identifier, password, must_reset, menu_rights")
-    .eq("role", input.role)
-    .ilike("identifier", identifier)
-    .maybeSingle();
+    .select("id, role, name, identifier, password, must_reset, menu_rights");
+  const scoped = officeSignIn
+    ? lookup.in("role", ["admin", "staff", "dean"]).ilike("identifier", identifier)
+    : lookup.eq("role", input.role).ilike("identifier", identifier);
+  const full = await scoped.maybeSingle();
   const fallback =
     full.error && /menu_rights/i.test(full.error.message)
-      ? await supabase
-          .from("portal_users")
-          .select("id, role, name, identifier, password, must_reset")
-          .eq("role", input.role)
-          .ilike("identifier", identifier)
-          .maybeSingle()
+      ? await (officeSignIn
+          ? supabase
+              .from("portal_users")
+              .select("id, role, name, identifier, password, must_reset")
+              .in("role", ["admin", "staff", "dean"])
+              .ilike("identifier", identifier)
+              .maybeSingle()
+          : supabase
+              .from("portal_users")
+              .select("id, role, name, identifier, password, must_reset")
+              .eq("role", input.role)
+              .ilike("identifier", identifier)
+              .maybeSingle())
       : null;
   const { data, error } = fallback ?? full;
 
@@ -129,6 +191,13 @@ export async function POST(request: Request) {
       },
       { status: 401 },
     );
+  }
+
+  if (data.role === "scholar" || data.role === "supervisor") {
+    const gate = await portalGate(supabase, data.role, data.identifier);
+    if (gate) {
+      return NextResponse.json({ ok: false, message: gate }, { status: 403 });
+    }
   }
 
   if (!isHashedSecret(data.password)) {

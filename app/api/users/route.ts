@@ -3,9 +3,9 @@ import type { NextRequest } from "next/server";
 
 import { isAdminSession, requestSession } from "@/lib/api-session";
 import { createPortalUserRow, listPortalUsers } from "@/lib/users-admin";
-import type { Role } from "@/types";
+import { ROLES, type Role } from "@/types";
 
-const roles: readonly Role[] = ["scholar", "supervisor", "admin"];
+const roles: readonly Role[] = ROLES;
 
 function isRole(value: unknown): value is Role {
   return typeof value === "string" && (roles as readonly string[]).includes(value);
@@ -14,7 +14,10 @@ function isRole(value: unknown): value is Role {
 export async function GET(request: NextRequest) {
   const session = await requestSession(request);
   if (!session) {
-    return NextResponse.json({ ok: false, message: "Sign in to continue." }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, message: "Sign in to continue." },
+      { status: 401 },
+    );
   }
   const listed = await listPortalUsers();
   if (!listed.ok) {
@@ -26,16 +29,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await requestSession(request);
   if (!isAdminSession(session)) {
-    return NextResponse.json({ ok: false, message: "Only the office can add users." }, { status: 403 });
+    return NextResponse.json(
+      { ok: false, message: "Only the office can add users." },
+      { status: 403 },
+    );
   }
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, message: "That user could not be created." }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, message: "That user could not be created." },
+      { status: 400 },
+    );
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ ok: false, message: "That user could not be created." }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, message: "That user could not be created." },
+      { status: 400 },
+    );
   }
   const input = body as {
     role?: unknown;
@@ -50,7 +62,10 @@ export async function POST(request: NextRequest) {
     typeof input.identifier !== "string" ||
     typeof input.password !== "string"
   ) {
-    return NextResponse.json({ ok: false, message: "That user could not be created." }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, message: "That user could not be created." },
+      { status: 400 },
+    );
   }
   const menus = Array.isArray(input.menus)
     ? input.menus.filter((item): item is string => typeof item === "string")

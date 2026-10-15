@@ -1,33 +1,44 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { useSyncExternalStore } from "react";
-import { z } from "zod";
 
+import {
+  ApplicationViewer,
+  type ReviewAction,
+} from "@/components/portal/ApplicationViewer";
+import { DeskTabs } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
-import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
-import { Input } from "@/components/ui/input";
+import { applicationReviewCopy, supervisorOfficeCopy } from "@/data/application-review";
 import { personFileCopy } from "@/data/person-file";
 import { researchRegister, type ResearchSupervisor } from "@/data/research-register";
 import { currentOffice, subscribeOffice } from "@/lib/office";
 import {
   downloadAllSupervisorDetails,
+  matchSupervisorApplication,
   supervisorApplicationCells,
   supervisorWideHeaders,
 } from "@/lib/person-file";
 import {
   currentQuotas,
+  currentStandings,
   guideFigures,
   sameGuide,
   saveApprovedQuota,
+  saveSupervisorStanding,
   subscribeRegister,
   supervisorDownloadRow,
+  supervisorKeys,
+  supervisorListingActive,
 } from "@/lib/register";
-import { decideSupervisorApplication, type StoredApplication } from "@/lib/records";
+import { standingKind } from "@/lib/portal-access";
+import {
+  isStoredApplication,
+  reviewSupervisorApplication,
+  updateApplicationDetails,
+  type StoredApplication,
+} from "@/lib/records";
 import type { Json } from "@/types/database";
 
 function payloadText(payload: Json, key: string) {
@@ -42,25 +53,38 @@ function payloadNumber(payload: Json, key: string) {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
-function decisionSchema(status: "Approved" | "Rejected") {
-  return z.object({
-    remarks: z
-      .string()
-      .trim()
-      .max(500, "Use 500 characters or fewer.")
-      .refine((value) => status === "Approved" || value.length >= 2, "Enter the reason."),
-    quota: z
-      .string()
-      .trim()
-      .refine((value) => {
-        if (status !== "Approved") return true;
-        const quota = Number(value);
-        return Number.isInteger(quota) && quota >= 0 && quota <= 30;
-      }, "Enter the approved quota."),
-  });
+function supervisorSignInId(supervisor: ResearchSupervisor) {
+  return supervisor.email.trim() || supervisor.supervisorId.trim() || supervisor.name;
 }
 
-type DecisionValues = { remarks: string; quota: string };
+function supervisorApplicationFile(
+  supervisor: ResearchSupervisor,
+  applications: readonly StoredApplication[],
+): StoredApplication {
+  const identifier = supervisorSignInId(supervisor);
+  const found = matchSupervisorApplication(identifier, supervisor.name, applications);
+  if (found) return found;
+  return {
+    id: `register:${supervisor.serialNo}-${supervisor.name}`,
+    kind: "supervisor",
+    applicationNo: supervisor.supervisorId.trim() || supervisor.name,
+    applicantName: supervisor.name,
+    email: supervisor.email,
+    dateOfBirth: "",
+    studyMode: null,
+    status: "Approved",
+    createdAt: "",
+    payload: {
+      name: supervisor.name,
+      email: supervisor.email,
+      phone: supervisor.phone,
+      designation: supervisor.designation,
+      department: supervisor.department,
+      proposedDepartment: supervisor.department,
+      expertise: supervisor.researchArea,
+    },
+  };
+}
 
 function recognisedGuide(
   name: string,
@@ -96,13 +120,21 @@ export function SupervisorRegister({
   const [rows, setRows] = useState(applications);
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("");
-  const [decision, setDecision] = useState<{
-    id: string;
-    status: "Approved" | "Rejected";
+  const [listTab, setListTab] = useState("active");
+  const [viewing, setViewing] = useState<{
+    application: StoredApplication;
+    personId: string;
+    review: boolean;
   } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
+  const standings = useSyncExternalStore(
+    subscribeRegister,
+    currentStandings,
+    currentStandings,
+  );
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const allocations = office?.allocations ?? [];
   const recognised = quotas
@@ -129,27 +161,39 @@ export function SupervisorRegister({
         supervisor.email,
       ]),
   );
+  const activeList = supervisors.filter((item) =>
+    supervisorListingActive(item, standings),
+  );
+  const inactiveList = supervisors.filter(
+    (item) => !supervisorListingActive(item, standings),
+  );
+  const shownList = listTab === "inactive" ? inactiveList : activeList;
   const waiting = rows.filter(
     (row) => row.status !== "Approved" && row.status !== "Rejected",
   );
+  const pendingApproval = waiting.filter((row) => row.status === "Accepted");
   const decided = rows.filter(
     (row) => row.status === "Approved" || row.status === "Rejected",
   );
 
-  async function saveDecision(remarks: string, quotaText: string) {
-    if (!decision) return;
-    const row = rows.find((item) => item.id === decision.id);
-    if (!row) return;
-    const approvedQuota = decision.status === "Approved" ? Number(quotaText) : undefined;
+  async function reviewAction(
+    application: StoredApplication,
+    action: ReviewAction,
+    remarks: string,
+    quotaText: string,
+  ) {
+    const approvedQuota = action === "Approved" ? Number(quotaText) : undefined;
     setBusy(true);
     setNotice(null);
-    const saved = await decideSupervisorApplication(
-      row.id,
-      row.payload,
-      decision.status,
+    const saved = await reviewSupervisorApplication(
+      application.id,
+      application.payload,
+      action,
       remarks,
       approvedQuota,
     );
+    const row = application;
+    const decision = { status: action };
     if (saved && approvedQuota !== undefined) {
       const stored = await saveApprovedQuota({
         name: row.applicantName,
@@ -192,11 +236,54 @@ export function SupervisorRegister({
       ),
     );
     setNotice(
-      decision.status === "Approved"
-        ? `${row.applicantName} is approved with a quota of ${approvedQuota}.`
-        : `${row.applicantName} is not approved.`,
+      action === "Approved"
+        ? applicationReviewCopy.approved
+        : action === "Accepted"
+          ? applicationReviewCopy.sentForApproval
+          : applicationReviewCopy.rejected,
     );
-    setDecision(null);
+    setViewing(null);
+  }
+
+  async function saveViewedApplication(next: {
+    applicantName: string;
+    email: string;
+    payload: StoredApplication["payload"];
+  }) {
+    if (!viewing || !isStoredApplication(viewing.application.id)) return;
+    setSaving(true);
+    const saved = await updateApplicationDetails(
+      viewing.application.kind,
+      viewing.application.id,
+      next,
+    );
+    setSaving(false);
+    if (!saved.ok) {
+      setNotice(saved.message);
+      return;
+    }
+    setRows((current) =>
+      current.map((item) =>
+        item.id === viewing.application.id
+          ? {
+              ...item,
+              applicantName: next.applicantName,
+              email: next.email,
+              payload: next.payload,
+            }
+          : item,
+      ),
+    );
+    setViewing({
+      ...viewing,
+      application: {
+        ...viewing.application,
+        applicantName: next.applicantName,
+        email: next.email,
+        payload: next.payload,
+      },
+    });
+    setNotice(applicationReviewCopy.saved);
   }
 
   return (
@@ -211,11 +298,23 @@ export function SupervisorRegister({
         </p>
       ) : null}
 
+      <div className="mt-6">
+        <DeskTabs
+          tabs={[
+            { id: "active", label: supervisorOfficeCopy.activeTab },
+            { id: "inactive", label: supervisorOfficeCopy.inactiveTab },
+          ]}
+          value={listTab}
+          onChange={setListTab}
+        />
+      </div>
+
       <h2 className="mt-8 font-heading text-2xl text-primary">
-        Recognition applications
+        {supervisorOfficeCopy.recognition}
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        {waiting.length} waiting for a decision. {decided.length} already decided.
+        {waiting.length} {supervisorOfficeCopy.waiting}. {pendingApproval.length}{" "}
+        {supervisorOfficeCopy.pendingApproval}. {decided.length} already decided.
       </p>
       {waiting.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
@@ -230,13 +329,7 @@ export function SupervisorRegister({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-primary">
-                    <PersonNameLink
-                      role="supervisor"
-                      name={row.applicantName}
-                      identifier={row.email.trim() || row.applicationNo}
-                    />
-                  </h3>
+                  <h3 className="font-semibold text-primary">{row.applicantName}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {row.applicationNo}
                     {payloadText(row.payload, "designation")
@@ -249,34 +342,21 @@ export function SupervisorRegister({
                   <p className="mt-1 text-sm text-muted-foreground">{row.email}</p>
                   <p className="mt-1 text-sm">Status: {row.status}</p>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="gold"
-                    onClick={() => setDecision({ id: row.id, status: "Approved" })}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="maroon"
-                    onClick={() => setDecision({ id: row.id, status: "Rejected" })}
-                  >
-                    Reject
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setViewing({
+                      application: row,
+                      personId: row.email.trim() || row.applicationNo,
+                      review: true,
+                    })
+                  }
+                >
+                  {applicationReviewCopy.view}
+                </Button>
               </div>
-              {decision?.id === row.id ? (
-                <DecisionForm
-                  key={`${row.id}-${decision.status}`}
-                  status={decision.status}
-                  busy={busy}
-                  onCancel={() => setDecision(null)}
-                  onSave={(remarks, quota) => void saveDecision(remarks, quota)}
-                />
-              ) : null}
             </li>
           ))}
         </ul>
@@ -292,19 +372,16 @@ export function SupervisorRegister({
                 <th className="px-3 py-3 font-semibold">Decision</th>
                 <th className="px-3 py-3 font-semibold">Approved quota</th>
                 <th className="px-3 py-3 font-semibold">Remarks</th>
+                <th className="px-3 py-3 font-semibold">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {decided.map((row) => (
                 <tr key={row.id} className="border-t border-border">
                   <td className="px-3 py-3">
-                    <p className="font-medium text-primary">
-                      <PersonNameLink
-                        role="supervisor"
-                        name={row.applicantName}
-                        identifier={row.email.trim() || row.applicationNo}
-                      />
-                    </p>
+                    <p className="font-medium text-primary">{row.applicantName}</p>
                     <p className="text-muted-foreground">{row.applicationNo}</p>
                   </td>
                   <td className="px-3 py-3">
@@ -318,6 +395,22 @@ export function SupervisorRegister({
                   </td>
                   <td className="px-3 py-3">
                     {payloadText(row.payload, "officeRemarks") || "—"}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setViewing({
+                          application: row,
+                          personId: row.email.trim() || row.applicationNo,
+                          review: row.status !== "Approved" && row.status !== "Rejected",
+                        })
+                      }
+                    >
+                      {applicationReviewCopy.view}
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -337,7 +430,11 @@ export function SupervisorRegister({
         </Button>
       </div>
 
-      <h2 className="mt-10 font-heading text-2xl text-primary">Supervisors</h2>
+      <h2 className="mt-10 font-heading text-2xl text-primary">
+        {listTab === "inactive"
+          ? supervisorOfficeCopy.inactiveTab
+          : supervisorOfficeCopy.activeTab}
+      </h2>
       <ListToolbar
         query={query}
         onQuery={setQuery}
@@ -355,12 +452,12 @@ export function SupervisorRegister({
             onChange: setDepartment,
           },
         ]}
-        shown={supervisors.length}
-        total={directory.length}
+        shown={shownList.length}
+        total={listTab === "inactive" ? inactiveList.length : activeList.length}
         filename="supervisor-register.csv"
         downloadLabel="Download filtered supervisors"
         headers={supervisorWideHeaders()}
-        rows={supervisors.map((supervisor) => [
+        rows={shownList.map((supervisor) => [
           ...supervisorDownloadRow(supervisor, quotas, allocations),
           ...supervisorApplicationCells(
             supervisor.email.trim() || supervisor.supervisorId.trim() || supervisor.name,
@@ -381,7 +478,8 @@ export function SupervisorRegister({
                 "Department",
                 "Designation",
                 "Area of research",
-                "Active",
+                listTab === "inactive" ? "Status" : "Active",
+                "Actions",
                 "Quota",
                 "Vacancy",
                 "June 2026 allotment",
@@ -397,30 +495,133 @@ export function SupervisorRegister({
             </tr>
           </thead>
           <tbody>
-            {supervisors.map((supervisor) => {
+            {shownList.length === 0 ? (
+              <tr>
+                <td className="px-3 py-4 text-muted-foreground" colSpan={15}>
+                  {listTab === "inactive"
+                    ? supervisorOfficeCopy.emptyInactive
+                    : supervisorOfficeCopy.emptyActive}
+                </td>
+              </tr>
+            ) : null}
+            {shownList.map((supervisor) => {
               const figures = guideFigures(supervisor, quotas, allocations);
+              const keys = supervisorKeys(supervisor);
               return (
                 <tr
                   key={`${supervisor.serialNo}-${supervisor.name}`}
                   className="border-t border-border"
                 >
                   <td className="px-3 py-3">{supervisor.serialNo || "—"}</td>
-                  <td className="px-3 py-3">
-                    <PersonNameLink
-                      role="supervisor"
-                      name={supervisor.name}
-                      identifier={
-                        supervisor.email.trim() ||
-                        supervisor.supervisorId.trim() ||
-                        supervisor.name
-                      }
-                    />
-                  </td>
+                  <td className="px-3 py-3">{supervisor.name}</td>
                   <td className="px-3 py-3">{supervisor.supervisorId.trim() || "—"}</td>
                   <td className="px-3 py-3">{supervisor.department.trim() || "—"}</td>
                   <td className="px-3 py-3">{supervisor.designation.trim() || "—"}</td>
                   <td className="px-3 py-3">{supervisor.researchArea.trim() || "—"}</td>
-                  <td className="px-3 py-3">{supervisor.active ? "Yes" : "No"}</td>
+                  <td className="px-3 py-3">
+                    {listTab === "inactive"
+                      ? standingKind(keys, standings)
+                      : supervisorListingActive(supervisor, standings)
+                        ? "Yes"
+                        : "No"}
+                  </td>
+                  <td className="px-3 py-3">
+                    {listTab === "inactive" ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setViewing({
+                              application: supervisorApplicationFile(supervisor, rows),
+                              personId: supervisorSignInId(supervisor),
+                              review: false,
+                            })
+                          }
+                        >
+                          {applicationReviewCopy.view}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void saveSupervisorStanding(supervisor, true, null).then(
+                              (saved) =>
+                                setNotice(
+                                  saved.ok
+                                    ? `${supervisor.name} is on the active list.`
+                                    : saved.message,
+                                ),
+                            )
+                          }
+                        >
+                          {supervisorOfficeCopy.restore}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setViewing({
+                              application: supervisorApplicationFile(supervisor, rows),
+                              personId: supervisorSignInId(supervisor),
+                              review: false,
+                            })
+                          }
+                        >
+                          {applicationReviewCopy.view}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void saveSupervisorStanding(
+                              supervisor,
+                              false,
+                              "Inactive",
+                            ).then((saved) =>
+                              setNotice(
+                                saved.ok
+                                  ? `${supervisor.name} is inactive.`
+                                  : saved.message,
+                              ),
+                            )
+                          }
+                        >
+                          {supervisorOfficeCopy.markInactive}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="maroon"
+                          disabled={busy}
+                          onClick={() =>
+                            void saveSupervisorStanding(
+                              supervisor,
+                              false,
+                              "Resigned",
+                            ).then((saved) =>
+                              setNotice(
+                                saved.ok
+                                  ? `${supervisor.name} is marked resigned.`
+                                  : saved.message,
+                              ),
+                            )
+                          }
+                        >
+                          {supervisorOfficeCopy.markResigned}
+                        </Button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-3 tabular-nums">{figures.quota}</td>
                   <td className="px-3 py-3 tabular-nums">{figures.vacancy}</td>
                   <td className="px-3 py-3 tabular-nums">
@@ -440,70 +641,29 @@ export function SupervisorRegister({
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function DecisionForm({
-  status,
-  busy,
-  onCancel,
-  onSave,
-}: {
-  status: "Approved" | "Rejected";
-  busy: boolean;
-  onCancel: () => void;
-  onSave: (remarks: string, quota: string) => void;
-}) {
-  const schema = useMemo(() => decisionSchema(status), [status]);
-  const form = useForm<DecisionValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { remarks: "", quota: "" },
-  });
-
-  return (
-    <form
-      className="mt-4 grid gap-3 border-t border-border pt-4"
-      onSubmit={form.handleSubmit((values) => onSave(values.remarks, values.quota))}
-      noValidate
-    >
-      {status === "Approved" ? (
-        <FormField
-          label="Approved quota"
-          htmlFor="approved-quota"
-          required
-          error={form.formState.errors.quota?.message}
-        >
-          <Input
-            id="approved-quota"
-            type="number"
-            min={0}
-            max={30}
-            inputMode="numeric"
-            {...form.register("quota")}
-          />
-        </FormField>
-      ) : null}
-      <FormField
-        label={status === "Rejected" ? "Reason" : "Remarks"}
-        htmlFor={`remarks-${status}`}
-        required={status === "Rejected"}
-        error={form.formState.errors.remarks?.message}
-      >
-        <textarea
-          id={`remarks-${status}`}
-          className="min-h-24 w-full rounded-xl border border-input bg-white px-3 py-2 text-sm"
-          {...form.register("remarks")}
+      {viewing ? (
+        <ApplicationViewer
+          application={viewing.application}
+          personId={viewing.personId}
+          editable={viewing.application.status === "Approved"}
+          saving={saving}
+          onClose={() => setViewing(null)}
+          onSave={
+            viewing.application.status === "Approved"
+              ? (next) => void saveViewedApplication(next)
+              : undefined
+          }
+          review={
+            viewing.review
+              ? {
+                  busy,
+                  onAction: (action, remarks, quota) =>
+                    void reviewAction(viewing.application, action, remarks, quota),
+                }
+              : undefined
+          }
         />
-      </FormField>
-      <div className="flex gap-2">
-        <Button type="submit" variant="gold" disabled={busy}>
-          {status === "Approved" ? "Confirm approval" : "Confirm rejection"}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+      ) : null}
+    </div>
   );
 }

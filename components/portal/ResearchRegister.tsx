@@ -7,31 +7,42 @@ import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
+import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
-import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { examCopy, registrationCsvHeaders } from "@/data/exams";
+import { applicationReviewCopy } from "@/data/application-review";
+import { registrationCopy } from "@/data/registration";
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
-import { PersonNameLink } from "@/components/portal/PersonNameLink";
-import { downloadCsv, field, toCsv } from "@/lib/csv";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { currentOffice, subscribeOffice } from "@/lib/office";
-import { scholarWideDownloadRow, scholarWideHeaders } from "@/lib/person-file";
+import {
+  matchPhdApplication,
+  scholarWideDownloadRow,
+  scholarWideHeaders,
+} from "@/lib/person-file";
+import {
+  currentApplications,
+  isStoredApplication,
+  subscribeApplications,
+  updateApplicationDetails,
+  type StoredApplication,
+} from "@/lib/records";
 import {
   allotRegistration,
-  allotRegistrations,
   batchOf,
   currentAllotments,
   currentQuotas,
   currentRegister,
   registerMigrationHint,
+  registrationIsSaved,
   registrationOf,
   scholarSignInId,
   subscribeRegister,
   supervisorForGuide,
 } from "@/lib/register";
-import { currentApplications, subscribeApplications } from "@/lib/records";
+import { usePreviewSession } from "@/lib/use-preview-session";
 
 const allotSchema = z.object({
   registrationNumber: z
@@ -61,8 +72,35 @@ function options(values: readonly string[]) {
     .map((value) => ({ value, label: value }));
 }
 
+function scholarApplicationFile(
+  scholar: ResearchScholar,
+  applications: readonly StoredApplication[],
+): StoredApplication {
+  const found = matchPhdApplication(scholarSignInId(scholar), scholar.name, applications);
+  if (found) return found;
+  return {
+    id: `register:${scholar.id}`,
+    kind: "phd",
+    applicationNo: scholar.applicationNumber || scholar.fileNumber || scholar.id,
+    applicantName: scholar.name,
+    email: scholar.email,
+    dateOfBirth: "",
+    studyMode: scholar.category || null,
+    status: "Selected",
+    createdAt: "",
+    payload: {
+      fullName: scholar.name,
+      email: scholar.email,
+      mobile: scholar.phone,
+      programme: scholar.department,
+      researchArea: scholar.title,
+    },
+  };
+}
+
 export function ResearchRegister() {
   const ready = useClientReady();
+  const session = usePreviewSession();
   const allotments = useSyncExternalStore(
     subscribeRegister,
     currentAllotments,
@@ -86,6 +124,11 @@ export function ResearchRegister() {
   const [guide, setGuide] = useState("");
   const [researchArea, setResearchArea] = useState("");
   const [allotId, setAllotId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{
+    application: StoredApplication;
+    personId: string;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const shownAllotments = ready ? allotments : [];
   const shownQuotas = ready ? quotas : [];
@@ -120,6 +163,35 @@ export function ResearchRegister() {
     .map((scholar) => scholarWideDownloadRow(scholar, storedApplications));
   const allotScholar =
     researchRegister.scholars.find((scholar) => scholar.id === allotId) ?? null;
+
+  async function saveViewedApplication(next: {
+    applicantName: string;
+    email: string;
+    payload: StoredApplication["payload"];
+  }) {
+    if (!viewing || !isStoredApplication(viewing.application.id)) return;
+    setSaving(true);
+    const saved = await updateApplicationDetails(
+      viewing.application.kind,
+      viewing.application.id,
+      next,
+    );
+    setSaving(false);
+    if (!saved.ok) {
+      setNotice(saved.message);
+      return;
+    }
+    setViewing({
+      ...viewing,
+      application: {
+        ...viewing.application,
+        applicantName: next.applicantName,
+        email: next.email,
+        payload: next.payload,
+      },
+    });
+    setNotice(applicationReviewCopy.saved);
+  }
 
   return (
     <div>
@@ -193,44 +265,6 @@ export function ResearchRegister() {
           Supervisor-wise scholars
         </Button>
       </div>
-
-      <h2 className="mt-10 font-heading text-2xl text-primary">
-        {examCopy.registrationTitle}
-      </h2>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-        {examCopy.registrationDetail}
-      </p>
-      <SpreadsheetBar
-        filename="registration-numbers-template.csv"
-        headers={registrationCsvHeaders}
-        rows={researchRegister.scholars.map((scholar) => [
-          scholar.id,
-          scholar.name,
-          scholar.applicationNumber,
-          scholar.fileNumber,
-          scholar.email,
-          registrationOf(scholar, shownAllotments),
-          "",
-        ])}
-        canUpload
-        busy={false}
-        onUpload={(records) => {
-          void allotRegistrations(
-            records.map((record) => ({
-              scholarId: field(record, ["scholar_id", "id"]),
-              applicationNumber: field(record, ["application_number", "application no."]),
-              fileNumber: field(record, ["file_number", "file no."]),
-              email: field(record, ["email", "mail"]),
-              registrationNumber: field(record, [
-                "registration_number",
-                "registration number",
-                "register no.",
-              ]),
-            })),
-          ).then((saved) => setNotice(saved.message));
-        }}
-        onError={setNotice}
-      />
 
       <h2 className="mt-10 font-heading text-2xl text-primary">Scholars</h2>
       <ListToolbar
@@ -335,6 +369,8 @@ export function ResearchRegister() {
             {scholarRows.map((scholar) => {
               const batch = batchOf(scholar.batchId);
               const registration = registrationOf(scholar, shownAllotments);
+              const savedNumber = registrationIsSaved(scholar, shownAllotments);
+              const canAllot = session?.role === "admin" || session?.role === "staff";
               return (
                 <tr key={scholar.id} className="border-t border-border align-top">
                   <td className="px-3 py-3">{scholar.serialNo}</td>
@@ -343,13 +379,7 @@ export function ResearchRegister() {
                   </td>
                   <td className="px-3 py-3">{blank(scholar.fileNumber)}</td>
                   <td className="px-3 py-3">{blank(scholar.applicationNumber)}</td>
-                  <td className="px-3 py-3">
-                    <PersonNameLink
-                      role="scholar"
-                      name={scholar.name}
-                      identifier={scholarSignInId(scholar)}
-                    />
-                  </td>
+                  <td className="px-3 py-3 font-medium text-primary">{scholar.name}</td>
                   <td className="px-3 py-3">{blank(scholar.department)}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{batch?.name ?? "—"}</td>
                   <td className="px-3 py-3">{blank(scholar.phone)}</td>
@@ -378,6 +408,22 @@ export function ResearchRegister() {
                         size="sm"
                         variant="outline"
                         onClick={() =>
+                          setViewing({
+                            application: scholarApplicationFile(
+                              scholar,
+                              storedApplications,
+                            ),
+                            personId: scholarSignInId(scholar),
+                          })
+                        }
+                      >
+                        {applicationReviewCopy.view}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
                           downloadCsv(
                             `scholar-${fileSlug(scholar.name)}.csv`,
                             toCsv(scholarWideHeaders(), [
@@ -388,14 +434,23 @@ export function ResearchRegister() {
                       >
                         Download
                       </Button>
-                      {batch?.needsRegistrationNumber ? (
+                      {savedNumber && session?.role === "admin" ? (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
                           onClick={() => setAllotId(scholar.id)}
                         >
-                          Allot
+                          {registrationCopy.edit}
+                        </Button>
+                      ) : !savedNumber && canAllot ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setAllotId(scholar.id)}
+                        >
+                          {registrationCopy.allot}
                         </Button>
                       ) : null}
                     </div>
@@ -406,6 +461,16 @@ export function ResearchRegister() {
           </tbody>
         </table>
       </div>
+      {viewing ? (
+        <ApplicationViewer
+          application={viewing.application}
+          personId={viewing.personId}
+          editable
+          saving={saving}
+          onClose={() => setViewing(null)}
+          onSave={(next) => void saveViewedApplication(next)}
+        />
+      ) : null}
     </div>
   );
 }

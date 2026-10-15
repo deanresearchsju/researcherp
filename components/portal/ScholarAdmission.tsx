@@ -12,18 +12,21 @@ import { Button } from "@/components/ui/button";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
 import { Input } from "@/components/ui/input";
-import { admissionChecklist } from "@/data/admission";
+import { admissionChecklist, admissionLockCopy } from "@/data/admission";
 import {
+  admissionCompleted,
   currentAdmission,
   displayName,
   missingItems,
   provisionalOrder,
   saveAdmission,
+  scholarAdmissionWriteBlock,
   subscribeAdmission,
   type AdmissionCase,
 } from "@/lib/admission";
 import { fileToDataUrl, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
+import { scholarBySignIn } from "@/lib/register";
 import { usePortalSession } from "@/lib/use-preview-session";
 
 const feeSchema = z.object({
@@ -71,24 +74,40 @@ export function ScholarAdmission() {
       sameId(item.applicationNo, session.identifier),
   );
   if (!row) {
+    const onRegister = scholarBySignIn(session.identifier);
     return (
       <div>
         <h1 className="font-serif text-3xl text-primary">Admission file</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          The Center for Research has not opened an admission file for this sign-in yet.
+          {onRegister
+            ? admissionLockCopy.scholarComplete
+            : "The Center for Research has not opened an admission file for this sign-in yet."}
         </p>
+        {onRegister ? (
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {admissionLockCopy.scholarFrozen}
+          </p>
+        ) : null}
       </div>
     );
   }
 
-  const missing = missingItems(row);
+  const currentRow: AdmissionCase = row;
+  const frozen = admissionCompleted(currentRow);
+
+  const missing = missingItems(currentRow);
   const serial =
     provisionalOrder(store.cases).findIndex(
-      (item) => item.applicationId === row.applicationId,
+      (item) => item.applicationId === currentRow.applicationId,
     ) + 1;
 
   async function saveRow(next: AdmissionCase) {
     if (!store) return;
+    const blocked = scholarAdmissionWriteBlock(currentRow);
+    if (blocked) {
+      setNotice(blocked);
+      return;
+    }
     const cases = store.cases.map((item) =>
       item.applicationId === next.applicationId ? next : item,
     );
@@ -107,6 +126,11 @@ export function ScholarAdmission() {
           {row.applicationNo} · {row.department}
         </p>
         {notice ? <p className="mt-2 text-sm text-secondary">{notice}</p> : null}
+        {frozen ? (
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {admissionLockCopy.scholarFrozen}
+          </p>
+        ) : null}
       </div>
 
       <section className="rounded-xl border border-border p-4">
@@ -138,7 +162,16 @@ export function ScholarAdmission() {
       {row.selected ? (
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Provisional admission letter</h2>
-          <Button type="button" className="mt-3" onClick={() => setLetterOpen(true)}>
+          <Button
+            type="button"
+            className="mt-3"
+            onClick={() => {
+              setLetterOpen(true);
+              if (!currentRow.letterIssued) {
+                void saveRow({ ...currentRow, letterIssued: true });
+              }
+            }}
+          >
             Open letter
           </Button>
           {letterOpen ? (
@@ -151,7 +184,15 @@ export function ScholarAdmission() {
                 >
                   Close
                 </Button>
-                <Button type="button" onClick={() => window.print()}>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!currentRow.letterIssued) {
+                      void saveRow({ ...currentRow, letterIssued: true });
+                    }
+                    window.print();
+                  }}
+                >
                   Print
                 </Button>
               </div>
@@ -173,6 +214,10 @@ export function ScholarAdmission() {
               </p>
               <ViewFilesButton fileName={row.feeReceiptName} data={row.feeReceiptData} />
             </div>
+          ) : frozen ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {admissionLockCopy.scholarFrozen}
+            </p>
           ) : (
             <form
               className="mt-3 grid max-w-lg gap-3"
@@ -253,7 +298,7 @@ export function ScholarAdmission() {
         </section>
       ) : null}
 
-      {missing.length > 0 ? (
+      {missing.length > 0 && !frozen ? (
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Still to be submitted</h2>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -1,7 +1,7 @@
 import { parseMenuRights } from "@/lib/access";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
-import type { Role } from "@/types";
+import { ROLES, type Role } from "@/types";
 
 export type PortalUser = {
   id: string;
@@ -24,7 +24,7 @@ export type UserLoad = {
 export const userMigrationHint =
   "Open the Supabase SQL editor for this project and run supabase/migrations/20261013161000_portal_users.sql. Until then, name and password changes stay in this browser.";
 
-const roles: readonly Role[] = ["scholar", "supervisor", "admin"];
+const roles: readonly Role[] = ROLES;
 
 function isRole(value: string): value is Role {
   return (roles as readonly string[]).includes(value);
@@ -430,13 +430,14 @@ export async function updatePortalUser(
         }),
       });
       const payload = (await response.json()) as
-        | { ok: true; user: PortalUser }
-        | { ok: false; message?: string };
+        { ok: true; user: PortalUser } | { ok: false; message?: string };
       if (payload.ok) {
         if (memory) {
           publish({
             ...memory,
-            users: memory.users.map((item) => (item.id === user.id ? payload.user : item)),
+            users: memory.users.map((item) =>
+              item.id === user.id ? payload.user : item,
+            ),
           });
         }
         return { ok: true as const, user: payload.user };
@@ -466,23 +467,36 @@ export async function updatePortalUser(
         must_reset: updated.mustReset,
       };
       if (updated.password.trim()) retryFields.password = updated.password;
-      const retry = await supabase.from("portal_users").update(retryFields).eq("id", user.id);
+      const retry = await supabase
+        .from("portal_users")
+        .update(retryFields)
+        .eq("id", user.id);
       if (retry.error && missingResetColumn(retry.error.message)) {
         const plainFields: { name: string; password?: string } = { name: updated.name };
         if (updated.password.trim()) plainFields.password = updated.password;
-        const plain = await supabase.from("portal_users").update(plainFields).eq("id", user.id);
+        const plain = await supabase
+          .from("portal_users")
+          .update(plainFields)
+          .eq("id", user.id);
         if (plain.error) return { ok: false as const, user };
         rememberMustReset(user.id, updated.mustReset);
       } else if (retry.error) {
         return { ok: false as const, user };
       }
     } else if (saved.error && missingResetColumn(saved.error.message)) {
-      const retryFields: { name: string; menu_rights: string[] | null; password?: string } = {
+      const retryFields: {
+        name: string;
+        menu_rights: string[] | null;
+        password?: string;
+      } = {
         name: updated.name,
         menu_rights: updated.menus,
       };
       if (updated.password.trim()) retryFields.password = updated.password;
-      const retry = await supabase.from("portal_users").update(retryFields).eq("id", user.id);
+      const retry = await supabase
+        .from("portal_users")
+        .update(retryFields)
+        .eq("id", user.id);
       if (retry.error) return { ok: false as const, user };
       rememberMustReset(user.id, updated.mustReset);
     } else if (saved.error) {
@@ -548,8 +562,7 @@ export async function createPortalUser(
         }),
       });
       const payload = (await response.json()) as
-        | { ok: true; user: PortalUser }
-        | { ok: false; message: string };
+        { ok: true; user: PortalUser } | { ok: false; message: string };
       if (payload.ok) {
         if (memory) {
           publish({ ...memory, users: [...memory.users, payload.user] });

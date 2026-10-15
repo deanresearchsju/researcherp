@@ -1,7 +1,9 @@
+import { ROLES, type Role } from "@/types";
+
 export const sessionCookieName = "sju-portal-session";
 
 export type CookieSession = {
-  role: "scholar" | "supervisor" | "admin";
+  role: Role;
   identifier: string;
   name: string;
   mustReset: boolean;
@@ -10,11 +12,13 @@ export type CookieSession = {
 
 type CookiePayload = CookieSession & { exp: number };
 
+function isRole(value: unknown): value is Role {
+  return typeof value === "string" && (ROLES as readonly string[]).includes(value);
+}
+
 function secret() {
   return (
-    process.env.SESSION_SECRET ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    ""
+    process.env.SESSION_SECRET || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ""
   );
 }
 
@@ -77,13 +81,7 @@ export async function decodeSessionCookie(token: string | undefined) {
   if (diff !== 0) return null;
   try {
     const parsed = JSON.parse(fromBase64Url(body)) as CookiePayload;
-    if (
-      !parsed.identifier ||
-      (parsed.role !== "scholar" &&
-        parsed.role !== "supervisor" &&
-        parsed.role !== "admin") ||
-      parsed.exp < Date.now()
-    ) {
+    if (!parsed.identifier || !isRole(parsed.role) || parsed.exp < Date.now()) {
       return null;
     }
     const menus = Array.isArray(parsed.menus)

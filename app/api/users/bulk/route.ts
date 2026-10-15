@@ -3,9 +3,9 @@ import type { NextRequest } from "next/server";
 
 import { isAdminSession, requestSession } from "@/lib/api-session";
 import { insertPortalUserRows } from "@/lib/users-admin";
-import type { Role } from "@/types";
+import { ROLES, type Role } from "@/types";
 
-const roles: readonly Role[] = ["scholar", "supervisor", "admin"];
+const roles: readonly Role[] = ROLES;
 
 function isRole(value: unknown): value is Role {
   return typeof value === "string" && (roles as readonly string[]).includes(value);

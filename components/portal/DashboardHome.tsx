@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
+import { admissionArchiveCopy } from "@/data/admission";
+import { registrationCopy } from "@/data/registration";
 import { scholarRecordMenus } from "@/data/scholar-records";
 import { personFileCopy } from "@/data/person-file";
 import { portalIntro } from "@/data/portal";
 import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
 import { ScholarFeeStatus } from "@/components/portal/ScholarFeeStatus";
+import { isOfficeRole } from "@/lib/access";
 import { currentAdmission, scholarIsAdmitted, subscribeAdmission } from "@/lib/admission";
 import { batchOf, scholarBySignIn } from "@/lib/register";
 import {
@@ -83,9 +86,13 @@ function ScholarRecordLine({
   );
 }
 
-export function DashboardHome({ role }: { role: Role }) {
-  const intro = portalIntro[role];
+export function DashboardHome({ role: pageRole }: { role: Role }) {
   const session = usePortalSession();
+  const role =
+    session && isOfficeRole(pageRole) && isOfficeRole(session.role)
+      ? session.role
+      : pageRole;
+  const intro = portalIntro[role];
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const users = useSyncExternalStore(
     subscribePortalUsers,
@@ -268,20 +275,39 @@ export function DashboardHome({ role }: { role: Role }) {
             ["/supervisor/rac", "RAC proposal"],
             ["/supervisor/reviews", "Scholar requests"],
           ]
-        : [
-            ["/admin/site", "Application window"],
-            ["/admin/news", "News and events"],
-            ["/admin/entrance-marks", "Entrance marks"],
-            ["/admin/allocations", "Allot a scholar"],
-            ["/admin/results", "Course results"],
-            ["/admin/transfers", "Transfer a supervisor"],
-            ["/admin/promotions", "Promote a semester"],
-            ["/admin/rac", "RAC decisions"],
-            ["/admin/register", "Scholar register"],
-            ["/admin/supervisors", "Supervisor register"],
-            ["/admin/payments", "Payment approvals"],
-            ["/admin/records/payment-history", "All payments"],
-          ];
+        : role === "staff"
+          ? [
+              ["/admin/admission", "Selection"],
+              ["/admin/applications", "Applications"],
+              ["/admin/entrance-marks", "Entrance marks"],
+              ["/admin/registration-numbers", registrationCopy.menu],
+              ["/admin/vacancies", "Vacancies"],
+            ]
+          : role === "dean"
+            ? [
+                ["/admin/admission", "Selection"],
+                ["/admin/admission-archive", admissionArchiveCopy.menu],
+                ["/admin/applications", "Applications"],
+                ["/admin/entrance-marks", "Entrance marks"],
+                ["/admin/registration-numbers", registrationCopy.menu],
+                ["/admin/vacancies", "Vacancies"],
+              ]
+            : [
+                ["/admin/site", "Application window"],
+                ["/admin/news", "News and events"],
+                ["/admin/admission-archive", admissionArchiveCopy.menu],
+                ["/admin/entrance-marks", "Entrance marks"],
+                ["/admin/allocations", "Allot a scholar"],
+                ["/admin/registration-numbers", registrationCopy.menu],
+                ["/admin/results", "Course results"],
+                ["/admin/transfers", "Transfer a supervisor"],
+                ["/admin/promotions", "Promote a semester"],
+                ["/admin/rac", "RAC decisions"],
+                ["/admin/register", "Scholar register"],
+                ["/admin/supervisors", "Supervisor register"],
+                ["/admin/payments", "Payment approvals"],
+                ["/admin/records/payment-history", "All payments"],
+              ];
 
   return (
     <div>

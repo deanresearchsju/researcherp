@@ -1,10 +1,18 @@
 import {
   admissionChecklist,
+  admissionLockCopy,
   defaultLetter,
+  emptyEntranceSchedule,
   interviewMax,
+  selectionFlowCopy,
+  selectionSteps,
   writtenMax,
+  type SelectionStepId,
 } from "@/data/admission";
 import { schools } from "@/data/schools";
+import { adminActionBlock, officeWriteBlock } from "@/lib/access";
+import { clientNowIso, isValidIsoDate } from "@/lib/dates";
+import { admissionYear } from "@/lib/constants";
 import { pushNotice, recordAudit } from "@/lib/audit";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
@@ -50,6 +58,8 @@ export type AdmissionCase = {
   feeAmount: string;
   feeReceiptName: string | null;
   feeReceiptData: string | null;
+  correctionOpen: boolean;
+  letterIssued: boolean;
 };
 
 export type EntranceScore = {
@@ -58,18 +68,180 @@ export type EntranceScore = {
   interview: number | null;
 };
 
+export type EntranceSchedule = {
+  session: string;
+  monthYear: string;
+  date: string;
+  venue: string;
+};
+
+export type SelectionProgress = {
+  current: SelectionStepId;
+  completed: SelectionStepId[];
+  entrance: EntranceSchedule;
+  entranceReady: boolean;
+};
+
+export type ArchivedSession = {
+  id: string;
+  session: string;
+  year: string;
+  label: string;
+  archivedAt: string;
+  cases: AdmissionCase[];
+  applications: StoredApplication[];
+};
+
 export type AdmissionState = {
   cases: AdmissionCase[];
   letter: LetterConfig;
   entranceScores: EntranceScore[];
+  progress: SelectionProgress;
+  archived: ArchivedSession[];
   updatedAt: string | null;
   detail: string | null;
 };
+
+export const defaultSelectionProgress: SelectionProgress = {
+  current: "applications",
+  completed: [],
+  entrance: { ...emptyEntranceSchedule },
+  entranceReady: false,
+};
+
+export function selectionStepIds() {
+  return selectionSteps.map((item) => item.id);
+}
+
+export function scheduleIsReady(schedule: EntranceSchedule) {
+  return Boolean(
+    schedule.session.trim() &&
+    schedule.monthYear.trim() &&
+    isValidIsoDate(schedule.date) &&
+    schedule.venue.trim(),
+  );
+}
+
+export function stepIsOpen(progress: SelectionProgress, id: SelectionStepId) {
+  return progress.current === id && !progress.completed.includes(id);
+}
+
+export function stepIsBlocked(progress: SelectionProgress, id: SelectionStepId) {
+  return progress.completed.includes(id);
+}
+
+export function completeSelectionProgress(progress: SelectionProgress) {
+  if (progress.completed.includes(progress.current)) return progress;
+  if (progress.current === "entrance" && !progress.entranceReady) return progress;
+  const ids = selectionStepIds();
+  const index = ids.indexOf(progress.current);
+  const next = ids[index + 1];
+  return {
+    ...progress,
+    completed: [...progress.completed, progress.current],
+    current: next ?? progress.current,
+  };
+}
+
+export function clearSelectionProgress(progress: SelectionProgress, count: 1 | 2) {
+  if (progress.completed.length === 0) {
+    return {
+      ...progress,
+      current: "applications" as SelectionStepId,
+      entranceReady: false,
+    };
+  }
+  const take = Math.min(count, progress.completed.length);
+  const cleared = progress.completed.slice(-take);
+  const completed = progress.completed.slice(0, -take);
+  const current = cleared[0] ?? ("applications" as SelectionStepId);
+  const ids = selectionStepIds();
+  const entranceIndex = ids.indexOf("entrance");
+  const unlockEntrance = cleared.some((id) => ids.indexOf(id) <= entranceIndex);
+  return {
+    ...progress,
+    completed,
+    current,
+    entranceReady: unlockEntrance ? false : progress.entranceReady,
+  };
+}
+
+export function archiveSessionId(session: string, year: string) {
+  return `${year.trim()}-${session.trim().toLowerCase()}`;
+}
+
+export function archiveSessionLabel(session: string, year: string) {
+  return `${session.trim()} ${year.trim()}`.trim();
+}
+
+export function archivedKeys(sessions: readonly ArchivedSession[]) {
+  const keys = new Set<string>();
+  for (const item of sessions) {
+    for (const row of item.cases) {
+      if (row.applicationId) keys.add(row.applicationId);
+      if (row.applicationNo) keys.add(row.applicationNo);
+    }
+    for (const application of item.applications) {
+      keys.add(application.id);
+      keys.add(application.applicationNo);
+    }
+  }
+  return keys;
+}
+
+export function isLiveAdmissionCase(
+  row: AdmissionCase,
+  keys: ReadonlySet<string> = archivedKeys(currentAdmission()?.archived ?? []),
+) {
+  if (keys.has(row.applicationId) || keys.has(row.applicationNo)) return false;
+  if (registerScholarForCase(row) && !row.correctionOpen) return false;
+  return true;
+}
+
+export function shouldArchiveCase(row: AdmissionCase) {
+  if (row.selected || row.letterIssued || row.verification === "Approved") return false;
+  if (registerScholarForCase(row)) return false;
+  return true;
+}
+
+export function isArchivedApplication(
+  application: Pick<StoredApplication, "id" | "applicationNo">,
+  sessions: readonly ArchivedSession[] = currentAdmission()?.archived ?? [],
+) {
+  const keys = archivedKeys(sessions);
+  return keys.has(application.id) || keys.has(application.applicationNo);
+}
+
+export function archiveYearOf(schedule: EntranceSchedule) {
+  const match = /^(\d{4})/.exec(schedule.monthYear.trim());
+  return match?.[1] ?? admissionYear;
+}
+
+export function keepHiddenCases(
+  live: AdmissionCase[],
+  stored: AdmissionCase[],
+  keys: ReadonlySet<string>,
+) {
+  const liveIds = new Set(live.map((row) => row.applicationId));
+  return [
+    ...live,
+    ...stored.filter(
+      (row) => !liveIds.has(row.applicationId) && !isLiveAdmissionCase(row, keys),
+    ),
+  ];
+}
+
+export function archivedApplications(session: ArchivedSession) {
+  if (session.applications.length > 0) return session.applications;
+  return session.cases.map((row) => snapshotApplication(row, []));
+}
 
 const empty: AdmissionState = {
   cases: [],
   letter: defaultLetter,
   entranceScores: [],
+  progress: defaultSelectionProgress,
+  archived: [],
   updatedAt: null,
   detail: null,
 };
@@ -114,6 +286,8 @@ export function blankCase(application: StoredApplication): AdmissionCase {
     feeAmount: "",
     feeReceiptName: null,
     feeReceiptData: null,
+    correctionOpen: false,
+    letterIssued: false,
   };
 }
 
@@ -188,6 +362,25 @@ export function scholarIsAdmitted(
   return admissionCaseForIdentifier(identifier, list)?.verification === "Approved";
 }
 
+export function registerScholarForCase(
+  row: Pick<AdmissionCase, "email" | "applicationNo">,
+) {
+  return scholarBySignIn(row.email) ?? scholarBySignIn(row.applicationNo);
+}
+
+export function admissionCompleted(row: AdmissionCase) {
+  return row.verification === "Approved" || Boolean(registerScholarForCase(row));
+}
+
+export function admissionFileFrozen(row: AdmissionCase) {
+  return admissionCompleted(row) && !row.correctionOpen;
+}
+
+export function scholarAdmissionWriteBlock(row: AdmissionCase) {
+  if (!admissionCompleted(row)) return null;
+  return admissionLockCopy.scholarFrozen;
+}
+
 export function scholarSchoolName(identifier: string, extra?: string) {
   const candidates = [
     extra,
@@ -242,13 +435,16 @@ export function applyVacancySelection(
       );
     ranked.slice(0, seats).forEach((item) => chosen.add(item.applicationId));
   }
-  return cases.map((item) => ({
-    ...item,
-    selected: chosen.has(item.applicationId),
-    guideName: chosen.has(item.applicationId) ? item.guideName : "",
-    guideIdentifier: chosen.has(item.applicationId) ? item.guideIdentifier : "",
-    verification: chosen.has(item.applicationId) ? item.verification : "Pending",
-  }));
+  return cases.map((item) => {
+    if (admissionFileFrozen(item)) return item;
+    return {
+      ...item,
+      selected: chosen.has(item.applicationId),
+      guideName: chosen.has(item.applicationId) ? item.guideName : "",
+      guideIdentifier: chosen.has(item.applicationId) ? item.guideIdentifier : "",
+      verification: chosen.has(item.applicationId) ? item.verification : "Pending",
+    };
+  });
 }
 
 export function attendanceOrder(cases: readonly AdmissionCase[]) {
@@ -317,8 +513,7 @@ function parseCase(value: unknown): AdmissionCase | null {
   if (!applicationNo || !name) return null;
   const payment = paymentMarks.find((item) => item === row.payment) ?? "Pending";
   const attendance = attendanceMarks.find((item) => item === row.attendance) ?? "";
-  const gatedAttendance =
-    row.shortlisted === true && payment === "Approved" ? attendance : "";
+  const gatedAttendance = row.shortlisted === true ? attendance : "";
   const written =
     gatedAttendance === "Present" ? numberOrNull(row.written, writtenMax) : null;
   const interview =
@@ -350,7 +545,7 @@ function parseCase(value: unknown): AdmissionCase | null {
     department: text(row.department) || "—",
     studyMode: text(row.studyMode) || "—",
     payment,
-    shortlisted: row.shortlisted === true && payment === "Approved",
+    shortlisted: row.shortlisted === true,
     attendance: gatedAttendance,
     written,
     interview,
@@ -364,6 +559,8 @@ function parseCase(value: unknown): AdmissionCase | null {
     feeAmount: text(row.feeAmount),
     feeReceiptName: text(row.feeReceiptName) || null,
     feeReceiptData: text(row.feeReceiptData) || null,
+    correctionOpen: row.correctionOpen === true,
+    letterIssued: row.letterIssued === true || row.verification === "Approved",
   };
 }
 
@@ -390,13 +587,107 @@ function parseScore(value: unknown): EntranceScore | null {
   };
 }
 
+function parseSchedule(value: unknown): EntranceSchedule {
+  const row =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    session: text(row.session),
+    monthYear: text(row.monthYear),
+    date: text(row.date),
+    venue: text(row.venue),
+  };
+}
+
+function parseProgress(value: unknown): SelectionProgress {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaultSelectionProgress;
+  }
+  const row = value as Record<string, unknown>;
+  const ids = selectionStepIds();
+  const current = ids.find((item) => item === row.current) ?? "applications";
+  const completed = Array.isArray(row.completed)
+    ? row.completed.flatMap((item) => {
+        const match = ids.find((id) => id === item);
+        return match ? [match] : [];
+      })
+    : [];
+  const entrance = parseSchedule(row.entrance);
+  return {
+    current,
+    completed,
+    entrance,
+    entranceReady: row.entranceReady === true && scheduleIsReady(entrance),
+  };
+}
+
+function parseArchivedApplication(value: unknown): StoredApplication | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const id = text(row.id);
+  const applicationNo = text(row.applicationNo);
+  const applicantName = text(row.applicantName);
+  if (!id || !applicationNo || !applicantName) return null;
+  return {
+    id,
+    kind: "phd",
+    applicationNo,
+    applicantName,
+    email: text(row.email),
+    dateOfBirth: text(row.dateOfBirth),
+    studyMode: text(row.studyMode) || null,
+    status: text(row.status) || "Not selected",
+    createdAt: text(row.createdAt),
+    payload: (row.payload as Json) ?? {},
+  };
+}
+
+function parseArchivedSession(value: unknown): ArchivedSession | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const session = text(row.session);
+  const year = text(row.year);
+  if (!session || !year) return null;
+  const cases = Array.isArray(row.cases)
+    ? row.cases.flatMap((item) => {
+        const parsed = parseCase(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  const applications = Array.isArray(row.applications)
+    ? row.applications.flatMap((item) => {
+        const parsed = parseArchivedApplication(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  if (cases.length === 0 && applications.length === 0) return null;
+  return {
+    id: text(row.id) || archiveSessionId(session, year),
+    session,
+    year,
+    label: text(row.label) || archiveSessionLabel(session, year),
+    archivedAt: text(row.archivedAt),
+    cases,
+    applications,
+  };
+}
+
 function parseStored(value: unknown): {
   cases: AdmissionCase[];
   letter: LetterConfig;
   entranceScores: EntranceScore[];
+  progress: SelectionProgress;
+  archived: ArchivedSession[];
 } {
   if (!value || typeof value !== "object") {
-    return { cases: [], letter: defaultLetter, entranceScores: [] };
+    return {
+      cases: [],
+      letter: defaultLetter,
+      entranceScores: [],
+      progress: defaultSelectionProgress,
+      archived: [],
+    };
   }
   const row = value as Record<string, unknown>;
   const cases = Array.isArray(row.cases)
@@ -411,7 +702,19 @@ function parseStored(value: unknown): {
         return parsed ? [parsed] : [];
       })
     : [];
-  return { cases, letter: parseLetter(row.letter), entranceScores };
+  const archived = Array.isArray(row.archived)
+    ? row.archived.flatMap((item) => {
+        const parsed = parseArchivedSession(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  return {
+    cases,
+    letter: parseLetter(row.letter),
+    entranceScores,
+    progress: parseProgress(row.progress),
+    archived,
+  };
 }
 
 let memory: AdmissionState | null = null;
@@ -450,17 +753,37 @@ function readBrowser(): {
   cases: AdmissionCase[];
   letter: LetterConfig;
   entranceScores: EntranceScore[];
+  progress: SelectionProgress;
+  archived: ArchivedSession[];
 } {
   if (typeof window === "undefined") {
-    return { cases: [], letter: defaultLetter, entranceScores: [] };
+    return {
+      cases: [],
+      letter: defaultLetter,
+      entranceScores: [],
+      progress: defaultSelectionProgress,
+      archived: [],
+    };
   }
   try {
     const raw = window.localStorage.getItem(storageKeys.admission);
     return raw
       ? parseStored(JSON.parse(raw) as unknown)
-      : { cases: [], letter: defaultLetter, entranceScores: [] };
+      : {
+          cases: [],
+          letter: defaultLetter,
+          entranceScores: [],
+          progress: defaultSelectionProgress,
+          archived: [],
+        };
   } catch {
-    return { cases: [], letter: defaultLetter, entranceScores: [] };
+    return {
+      cases: [],
+      letter: defaultLetter,
+      entranceScores: [],
+      progress: defaultSelectionProgress,
+      archived: [],
+    };
   }
 }
 
@@ -489,14 +812,23 @@ async function loadAdmission(): Promise<AdmissionState> {
     ],
     letter: remote.letter,
     entranceScores: mergeScores(browser.entranceScores, remote.entranceScores),
+    progress: remote.progress,
+    archived: mergeArchived(browser.archived, remote.archived),
     updatedAt: data.updated_at ?? null,
     detail: null,
   };
 }
 
+function mergeArchived(local: ArchivedSession[], remote: ArchivedSession[]) {
+  const seen = new Set(remote.map((item) => item.id));
+  return [...local.filter((item) => !seen.has(item.id)), ...remote];
+}
+
 export async function saveAdmission(
   next: Pick<AdmissionState, "cases" | "letter"> & {
     entranceScores?: EntranceScore[];
+    progress?: SelectionProgress;
+    archived?: ArchivedSession[];
     updatedAt?: string | null;
   },
 ) {
@@ -504,6 +836,8 @@ export async function saveAdmission(
     cases: next.cases,
     letter: next.letter,
     entranceScores: next.entranceScores ?? memory?.entranceScores ?? [],
+    progress: next.progress ?? memory?.progress ?? defaultSelectionProgress,
+    archived: next.archived ?? memory?.archived ?? [],
   };
   const stamp = next.updatedAt ?? memory?.updatedAt ?? null;
   const supabase = createSupabase();
@@ -530,6 +864,113 @@ export async function saveAdmission(
     detail: memory?.detail ?? admissionMigrationHint,
   });
   return { ok: true as const };
+}
+
+function snapshotApplication(
+  row: AdmissionCase,
+  applications: readonly StoredApplication[],
+): StoredApplication {
+  const found =
+    applications.find((item) => item.id === row.applicationId) ??
+    applications.find((item) => item.applicationNo === row.applicationNo);
+  if (found) return { ...found, status: "Not selected" };
+  return {
+    id: row.applicationId,
+    kind: "phd",
+    applicationNo: row.applicationNo,
+    applicantName: row.name,
+    email: row.email,
+    dateOfBirth: "",
+    studyMode: row.studyMode,
+    status: "Not selected",
+    createdAt: "",
+    payload: {
+      fullName: row.name,
+      email: row.email,
+      title: row.title,
+      programme: row.department,
+    },
+  };
+}
+
+export async function archiveUnselected(input: {
+  session: string;
+  year: string;
+  applications: readonly StoredApplication[];
+}) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const session = input.session.trim();
+  const year = input.year.trim() || admissionYear;
+  if (!session) {
+    return { ok: false as const, message: selectionFlowCopy.needArchiveSession };
+  }
+  const current = memory ?? (await ensureAdmission());
+  const keys = archivedKeys(current.archived);
+  const phd = input.applications.filter((item) => item.kind === "phd");
+  const moving = mergeApplications(current.cases, phd).filter(
+    (row) =>
+      shouldArchiveCase(row) &&
+      !keys.has(row.applicationId) &&
+      !keys.has(row.applicationNo),
+  );
+  if (moving.length === 0) {
+    return { ok: false as const, message: selectionFlowCopy.noneToArchive };
+  }
+  const snapshots = moving.map((row) => snapshotApplication(row, phd));
+  const movingIds = new Set(moving.map((row) => row.applicationId));
+  const movingNos = new Set(moving.map((row) => row.applicationNo));
+  const id = archiveSessionId(session, year);
+  const existing = current.archived.find((item) => item.id === id);
+  const nextSession: ArchivedSession = existing
+    ? {
+        ...existing,
+        archivedAt: clientNowIso(),
+        cases: [...existing.cases, ...moving],
+        applications: [...existing.applications, ...snapshots],
+      }
+    : {
+        id,
+        session,
+        year,
+        label: archiveSessionLabel(session, year),
+        archivedAt: clientNowIso(),
+        cases: moving,
+        applications: snapshots,
+      };
+  const archived = existing
+    ? current.archived.map((item) => (item.id === id ? nextSession : item))
+    : [...current.archived, nextSession];
+  const saved = await saveAdmission({
+    cases: current.cases.filter(
+      (row) => !movingIds.has(row.applicationId) && !movingNos.has(row.applicationNo),
+    ),
+    letter: current.letter,
+    entranceScores: current.entranceScores,
+    progress: current.progress,
+    archived,
+  });
+  if (!saved.ok) return saved;
+  return { ok: true as const, count: moving.length };
+}
+
+export function sanitizeMark(value: string, max: number) {
+  const trimmed = value.trim();
+  if (trimmed === "") return { value: "", error: null };
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      value: null,
+      error: `Enter a whole number from 0 to ${max}.`,
+    };
+  }
+  const parsed = Number(trimmed);
+  if (parsed > max) {
+    return {
+      value: null,
+      error: `Marks cannot exceed ${max}.`,
+    };
+  }
+  return { value: trimmed, error: null };
 }
 
 export function marksError(written: string, interview: string) {
@@ -584,7 +1025,12 @@ export async function saveEntrancePage(
     interview: string;
   }[],
 ) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
   const current = memory ?? (await ensureAdmission());
+  if (!stepIsOpen(current.progress, "marks")) {
+    return { ok: false as const, message: selectionFlowCopy.skipBlocked };
+  }
   const scores = [...current.entranceScores];
   let cases = current.cases;
   for (const patch of patches) {

@@ -1,4 +1,6 @@
-export const ROLES = ["scholar", "supervisor", "admin"] as const;
+export const ROLES = ["scholar", "supervisor", "admin", "staff", "dean"] as const;
+
+export const officeRoles = ["admin", "staff", "dean"] as const;
 
 export type Role = (typeof ROLES)[number];
 
@@ -8,13 +10,7 @@ export type NavLink = {
 };
 
 export type SchoolIcon =
-  | "cpu"
-  | "flask"
-  | "briefcase"
-  | "building"
-  | "sprout"
-  | "scale"
-  | "heart-pulse";
+  "cpu" | "flask" | "briefcase" | "building" | "sprout" | "scale" | "heart-pulse";
 
 export type School = {
   id: string;

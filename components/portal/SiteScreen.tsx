@@ -12,12 +12,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  phdWindowCopy,
-  siteHeroCopy,
-  supervisorWindowCopy,
-} from "@/data/home";
+import { phdWindowCopy, supervisorWindowCopy } from "@/data/home";
 import { admissionSessions } from "@/lib/constants";
 import {
   currentOffice,
@@ -31,9 +26,6 @@ import {
 } from "@/lib/office";
 
 const siteFormSchema = z.object({
-  heroEyebrow: z.string().trim().min(1, "Enter the eyebrow.").max(80),
-  heroTitle: z.string().trim().min(1, "Enter the heading.").max(160),
-  heroSummary: z.string().trim().min(1, "Enter the summary.").max(800),
   admissionLabel: z.string().trim().min(1, "Enter the status label.").max(80),
   sessionMonth: z.enum(admissionSessions),
   sessionYear: z.string().trim().regex(/^(19|20)\d{2}$/, "Enter a four-digit year."),
@@ -48,9 +40,6 @@ type SiteFormValues = z.infer<typeof siteFormSchema>;
 function toForm(settings: SiteSettings): SiteFormValues {
   const parsed = parsePhdSession(settings.admissionSession);
   return {
-    heroEyebrow: settings.heroEyebrow,
-    heroTitle: settings.heroTitle,
-    heroSummary: settings.heroSummary,
     admissionLabel: settings.admissionLabel,
     sessionMonth: parsed.month,
     sessionYear: parsed.year,
@@ -61,11 +50,11 @@ function toForm(settings: SiteSettings): SiteFormValues {
   };
 }
 
-function toSettings(values: SiteFormValues): SiteSettings {
+function toSettings(values: SiteFormValues, current: SiteSettings): SiteSettings {
   return {
-    heroEyebrow: values.heroEyebrow,
-    heroTitle: values.heroTitle,
-    heroSummary: values.heroSummary,
+    heroEyebrow: current.heroEyebrow,
+    heroTitle: current.heroTitle,
+    heroSummary: current.heroSummary,
     admissionLabel: values.admissionLabel,
     admissionSession: formatPhdSession(values.sessionMonth, values.sessionYear),
     deadlineLabel: values.deadlineLabel,
@@ -104,14 +93,16 @@ export function SiteScreen() {
   }
 
   async function saveWindow(values: SiteFormValues) {
-    await persist(toSettings(values), phdWindowCopy.saved);
+    await persist(
+      toSettings(values, office?.settings ?? defaultSiteSettings),
+      phdWindowCopy.saved,
+    );
   }
 
   async function setPhdOpen(open: boolean) {
     const parsed = siteFormSchema.safeParse(form.getValues());
-    const base = parsed.success
-      ? toSettings(parsed.data)
-      : (office?.settings ?? defaultSiteSettings);
+    const current = office?.settings ?? defaultSiteSettings;
+    const base = parsed.success ? toSettings(parsed.data, current) : current;
     await persist(
       { ...base, phdOpen: open },
       open ? phdWindowCopy.opened : phdWindowCopy.closed,
@@ -120,9 +111,8 @@ export function SiteScreen() {
 
   async function setSupervisorOpen(open: boolean) {
     const parsed = siteFormSchema.safeParse(form.getValues());
-    const base = parsed.success
-      ? toSettings(parsed.data)
-      : (office?.settings ?? defaultSiteSettings);
+    const current = office?.settings ?? defaultSiteSettings;
+    const base = parsed.success ? toSettings(parsed.data, current) : current;
     await persist(
       { ...base, supervisorOpen: open },
       open ? supervisorWindowCopy.opened : supervisorWindowCopy.closed,
@@ -291,36 +281,6 @@ export function SiteScreen() {
             >
               {supervisorWindowCopy.close}
             </Button>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-border bg-card p-4 shadow-card sm:p-6">
-          <h2 className="font-heading text-2xl text-primary">{siteHeroCopy.title}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            {siteHeroCopy.description}
-          </p>
-          <div className="mt-6 grid gap-4">
-            <FormField
-              label={siteHeroCopy.eyebrow}
-              htmlFor="heroEyebrow"
-              error={form.formState.errors.heroEyebrow?.message}
-            >
-              <Input id="heroEyebrow" {...form.register("heroEyebrow")} />
-            </FormField>
-            <FormField
-              label={siteHeroCopy.heading}
-              htmlFor="heroTitle"
-              error={form.formState.errors.heroTitle?.message}
-            >
-              <Input id="heroTitle" {...form.register("heroTitle")} />
-            </FormField>
-            <FormField
-              label={siteHeroCopy.summary}
-              htmlFor="heroSummary"
-              error={form.formState.errors.heroSummary?.message}
-            >
-              <Textarea id="heroSummary" {...form.register("heroSummary")} />
-            </FormField>
           </div>
         </section>
 

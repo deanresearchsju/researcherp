@@ -185,18 +185,6 @@ function NewsList({
                       </div>
                     ) : null}
                   </dl>
-                  {item.href ? (
-                    <p className="mt-2 text-sm">
-                      <a
-                        href={item.href}
-                        className="font-semibold text-primary underline-offset-4 hover:underline"
-                        target={isExternalHref(item.href) ? "_blank" : undefined}
-                        rel={isExternalHref(item.href) ? "noreferrer" : undefined}
-                      >
-                        {newsBoardCopy.openLink}
-                      </a>
-                    </p>
-                  ) : null}
                   {item.image ? (
                     <img
                       src={item.image}

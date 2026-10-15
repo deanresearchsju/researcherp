@@ -95,7 +95,7 @@ export function SemesterPromotionScreen() {
     form.setValue("scholarIds", allOn ? [] : ids, { shouldValidate: true });
   }
 
-  async function onSubmit(values: PromotionValues) {
+  async function onSubmit(values: PromotionValues, direction: "promote" | "demote") {
     const chosen = rows.filter((row) => values.scholarIds.includes(row.identifier));
     const target = Number(values.semester);
     setBusy(true);
@@ -104,6 +104,7 @@ export function SemesterPromotionScreen() {
       batchId: values.batchId,
       semester: target,
       scholars: chosen.map((row) => ({ identifier: row.identifier, name: row.name })),
+      direction,
     });
     setBusy(false);
     if (!saved.ok) {
@@ -112,10 +113,14 @@ export function SemesterPromotionScreen() {
     }
     form.setValue("scholarIds", []);
     const batch = batchOf(values.batchId);
-    setNotice(
-      chosen.length === 1
+    const mapped =
+      saved.moved === 1 && chosen.length === 1
         ? `${chosen[0].name} is mapped to ${formatSemester(target)}${batch ? ` · ${batch.name}` : ""}.`
-        : `${chosen.length} scholars are mapped to ${formatSemester(target)}${batch ? ` · ${batch.name}` : ""}.`,
+        : `${saved.moved} scholars are mapped to ${formatSemester(target)}${batch ? ` · ${batch.name}` : ""}.`;
+    setNotice(
+      saved.skipped > 0
+        ? `${mapped} ${saved.skipped} could not move in that direction.`
+        : mapped,
     );
   }
 
@@ -138,7 +143,7 @@ export function SemesterPromotionScreen() {
       ) : null}
       <form
         className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
-        onSubmit={form.handleSubmit((values) => void onSubmit(values))}
+        onSubmit={(event) => event.preventDefault()}
       >
         <FormField
           label={copy.batchLabel}
@@ -183,12 +188,29 @@ export function SemesterPromotionScreen() {
             ))}
           </NativeSelect>
         </FormField>
-        <div className="sm:col-span-2">
-          <Button type="submit" variant="gold" disabled={busy || !batchId}>
-            {copy.submit}
+        <div className="sm:col-span-2 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="gold"
+            disabled={busy || !batchId}
+            onClick={() =>
+              void form.handleSubmit((values) => onSubmit(values, "promote"))()
+            }
+          >
+            {copy.promote}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || !batchId}
+            onClick={() =>
+              void form.handleSubmit((values) => onSubmit(values, "demote"))()
+            }
+          >
+            {copy.demote}
           </Button>
           {form.formState.errors.scholarIds?.message ? (
-            <p className="mt-2 text-sm text-secondary">
+            <p className="mt-2 w-full text-sm text-secondary">
               {form.formState.errors.scholarIds.message}
             </p>
           ) : null}

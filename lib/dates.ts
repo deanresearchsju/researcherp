@@ -147,6 +147,16 @@ export function formatIsoDate(iso: string) {
   return `${day} ${monthNames[month - 1]} ${year}`;
 }
 
+export function formatYearMonth(value: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!match) return value.trim();
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const name = monthNames[month - 1];
+  if (!year || !name) return value.trim();
+  return `${name} ${year}`;
+}
+
 export function wordCount(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return 0;

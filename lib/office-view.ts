@@ -4,6 +4,7 @@ export type OfficeView = {
   role: "scholar" | "supervisor";
   name: string;
   identifier: string;
+  returnTo?: string;
 };
 
 let cache: OfficeView | null = null;
@@ -20,10 +21,15 @@ function readOfficeView(): OfficeView | null {
     ) {
       return null;
     }
+    const returnTo =
+      typeof parsed.returnTo === "string" && parsed.returnTo.startsWith("/")
+        ? parsed.returnTo
+        : undefined;
     return {
       role: parsed.role,
       name: parsed.name.trim(),
       identifier: parsed.identifier.trim(),
+      ...(returnTo ? { returnTo } : {}),
     };
   } catch {
     return null;
