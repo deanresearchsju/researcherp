@@ -1,3 +1,10 @@
+import {
+  menuActionKey,
+  menuActionKinds,
+  menuHrefs,
+  parseMenuActionKey,
+  rightsMarker,
+} from "@/lib/access";
 import { ROLES, type Role } from "@/types";
 
 export const sessionCookieName = "sju-portal-session";
@@ -10,7 +17,55 @@ export type CookieSession = {
   menus: string[] | null;
 };
 
-type CookiePayload = CookieSession & { exp: number };
+/**
+ * Rights are packed as one base-32 flag per catalog menu so the cookie stays under the
+ * browser's 4 KB limit; a full office rights list written out in full is about 7 KB.
+ */
+type CookiePayload = Omit<CookieSession, "menus"> & {
+  exp: number;
+  menus?: string[] | null;
+  m?: string;
+  mc?: string;
+};
+
+function catalogStamp(role: Role) {
+  let hash = 2166136261;
+  for (const char of menuHrefs(role).join("|")) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function packMenus(role: Role, menus: string[]) {
+  const flags = new Map<string, number>();
+  menus.forEach((item) => {
+    const action = parseMenuActionKey(item);
+    const href = action ? action.href : item;
+    const bit = action ? 2 << menuActionKinds.indexOf(action.action) : 1;
+    flags.set(href, (flags.get(href) ?? 0) | bit);
+  });
+  const version = menus.includes(rightsMarker) ? "2" : "1";
+  return (
+    version +
+    menuHrefs(role)
+      .map((href) => (flags.get(href) ?? 0).toString(32))
+      .join("")
+  );
+}
+
+function unpackMenus(role: Role, packed: string) {
+  const menus: string[] = [];
+  menuHrefs(role).forEach((href, index) => {
+    const flags = Number.parseInt(packed.charAt(index + 1) || "0", 32);
+    if (flags & 1) menus.push(href);
+    menuActionKinds.forEach((action, bit) => {
+      if (flags & (2 << bit)) menus.push(menuActionKey(href, action));
+    });
+  });
+  if (packed.startsWith("2")) menus.push(rightsMarker);
+  return menus;
+}
 
 function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value);
@@ -57,9 +112,13 @@ async function sign(value: string) {
 
 export async function encodeSessionCookie(session: CookieSession, remember: boolean) {
   if (!secret()) return null;
+  const { menus, ...rest } = session;
   const payload: CookiePayload = {
-    ...session,
+    ...rest,
     exp: Date.now() + (remember ? 7 : 1) * 24 * 60 * 60 * 1000,
+    ...(menus === null
+      ? { menus: null }
+      : { m: packMenus(session.role, menus), mc: catalogStamp(session.role) }),
   };
   const body = toBase64Url(JSON.stringify(payload));
   const signature = await sign(body);
@@ -84,13 +143,19 @@ export async function decodeSessionCookie(token: string | undefined) {
     if (!parsed.identifier || !isRole(parsed.role) || parsed.exp < Date.now()) {
       return null;
     }
-    const menus = Array.isArray(parsed.menus)
-      ? parsed.menus.filter(
-          (item): item is string => typeof item === "string" && item.startsWith("/"),
-        )
-      : parsed.role === "admin" && parsed.identifier.trim().toLowerCase() === "admin"
-        ? null
-        : [];
+    if (typeof parsed.m === "string" && parsed.mc !== catalogStamp(parsed.role)) {
+      return null;
+    }
+    const menus =
+      typeof parsed.m === "string"
+        ? unpackMenus(parsed.role, parsed.m)
+        : Array.isArray(parsed.menus)
+          ? parsed.menus.filter(
+              (item): item is string => typeof item === "string" && item.startsWith("/"),
+            )
+          : parsed.role === "admin" && parsed.identifier.trim().toLowerCase() === "admin"
+            ? null
+            : [];
     return {
       role: parsed.role,
       identifier: parsed.identifier,
