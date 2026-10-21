@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { canOpenMenu, isOfficeRole } from "@/lib/access";
+import { canOpenMenu, isOfficeRole, resolvedMenus } from "@/lib/access";
 import { decodeSessionCookie, sessionCookieName } from "@/lib/session";
 
 function loginPath(pathname: string) {
@@ -52,9 +52,18 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith("/login/")) {
     return NextResponse.next();
   }
+  if (pathname.startsWith("/admin/profile/")) {
+    if (!isOfficeRole(session.role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${session.role}/dashboard`;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
   const menuRole =
     isOfficeRole(session.role) && !pathname.startsWith("/admin") ? null : session.role;
-  if (menuRole && !canOpenMenu(pathname, menuRole, session.menus)) {
+  if (menuRole && !canOpenMenu(pathname, menuRole, resolvedMenus(session))) {
     const url = request.nextUrl.clone();
     url.pathname = `/${session.role}/dashboard`;
     url.search = "";

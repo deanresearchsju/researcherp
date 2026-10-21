@@ -31,8 +31,8 @@ export const quickAccess: QuickAccessItem[] = [
   },
   {
     id: "status",
-    title: "Application Status",
-    description: "Look up an application number.",
+    title: "Track application",
+    description: "Look up a current-session Ph.D. application.",
     href: "/apply/status",
     icon: "search",
   },

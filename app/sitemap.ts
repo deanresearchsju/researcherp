@@ -18,7 +18,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/login/scholar",
     "/login/supervisor",
     "/login/admin",
-    "/privacy",
     "/terms",
   ];
   return paths.map((path) => ({

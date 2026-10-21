@@ -6,6 +6,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { DeskModal, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ export function SemesterPromotionScreen() {
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const form = useForm<PromotionValues>({
     resolver: zodResolver(promotionSchema),
     defaultValues: { batchId: "", semester: "", scholarIds: [] },
@@ -76,6 +78,8 @@ export function SemesterPromotionScreen() {
           currentLabel: scholarSemesterLabel(identifier),
         };
       });
+    // Semester labels are read from the doctoral store, so a change there rebuilds the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allotments, batchId, doctoral]);
 
   const listed = rows.filter((row) =>
@@ -112,6 +116,7 @@ export function SemesterPromotionScreen() {
       return;
     }
     form.setValue("scholarIds", []);
+    setMoveOpen(false);
     const batch = batchOf(values.batchId);
     const mapped =
       saved.moved === 1 && chosen.length === 1
@@ -126,13 +131,24 @@ export function SemesterPromotionScreen() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        {copy.kicker}
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">{copy.title}</h1>
-      <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
-        {copy.detail}
-      </p>
+      <PageTitle
+        kicker={copy.kicker}
+        title={copy.title}
+        actions={
+          <Button
+            type="button"
+            variant="gold"
+            disabled={!batchId || selectedIds.length === 0}
+            onClick={() => {
+              setNotice(null);
+              setMoveOpen(true);
+            }}
+          >
+            Change semester
+            {selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
+        }
+      />
       {doctoral?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{doctoral.detail}</p>
       ) : null}
@@ -141,10 +157,7 @@ export function SemesterPromotionScreen() {
           {notice}
         </p>
       ) : null}
-      <form
-        className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
-        onSubmit={(event) => event.preventDefault()}
-      >
+      <div className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2">
         <FormField
           label={copy.batchLabel}
           htmlFor="promote-batch"
@@ -167,55 +180,68 @@ export function SemesterPromotionScreen() {
             ))}
           </NativeSelect>
         </FormField>
-        <FormField
-          label={copy.semesterLabel}
-          htmlFor="promote-semester"
-          required
-          error={form.formState.errors.semester?.message}
+      </div>
+      {moveOpen ? (
+        <DeskModal
+          title={`${copy.title} · ${selectedIds.length} selected`}
+          onClose={() => setMoveOpen(false)}
+          size="sm"
         >
-          <NativeSelect
-            id="promote-semester"
-            value={semester}
-            onChange={(event) =>
-              form.setValue("semester", event.target.value, { shouldValidate: true })
-            }
-          >
-            <option value="">Select a semester</option>
-            {programmeSemesters.map((item) => (
-              <option key={item} value={String(item)}>
-                {formatSemester(item)}
-              </option>
-            ))}
-          </NativeSelect>
-        </FormField>
-        <div className="sm:col-span-2 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="gold"
-            disabled={busy || !batchId}
-            onClick={() =>
-              void form.handleSubmit((values) => onSubmit(values, "promote"))()
-            }
-          >
-            {copy.promote}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy || !batchId}
-            onClick={() =>
-              void form.handleSubmit((values) => onSubmit(values, "demote"))()
-            }
-          >
-            {copy.demote}
-          </Button>
-          {form.formState.errors.scholarIds?.message ? (
-            <p className="mt-2 w-full text-sm text-secondary">
-              {form.formState.errors.scholarIds.message}
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
             </p>
           ) : null}
-        </div>
-      </form>
+          <FormField
+            label={copy.semesterLabel}
+            htmlFor="promote-semester"
+            required
+            error={form.formState.errors.semester?.message}
+          >
+            <NativeSelect
+              id="promote-semester"
+              value={semester}
+              onChange={(event) =>
+                form.setValue("semester", event.target.value, { shouldValidate: true })
+              }
+            >
+              <option value="">Select a semester</option>
+              {programmeSemesters.map((item) => (
+                <option key={item} value={String(item)}>
+                  {formatSemester(item)}
+                </option>
+              ))}
+            </NativeSelect>
+          </FormField>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="gold"
+              disabled={busy || !batchId}
+              onClick={() =>
+                void form.handleSubmit((values) => onSubmit(values, "promote"))()
+              }
+            >
+              {copy.promote}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !batchId}
+              onClick={() =>
+                void form.handleSubmit((values) => onSubmit(values, "demote"))()
+              }
+            >
+              {copy.demote}
+            </Button>
+            {form.formState.errors.scholarIds?.message ? (
+              <p className="mt-2 w-full text-sm text-secondary">
+                {form.formState.errors.scholarIds.message}
+              </p>
+            ) : null}
+          </div>
+        </DeskModal>
+      ) : null}
       {!batchId ? (
         <p className="mt-6 text-sm text-muted-foreground">{copy.empty}</p>
       ) : (

@@ -11,12 +11,13 @@ import {
   DeskSection,
   DeskTable,
   DeskTabs,
+  FormDialog,
   GateBanner,
   ProcessFlow,
   ScholarIdentityHeader,
   ViewFilesButton,
 } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -35,6 +36,7 @@ import {
   latestCommittee,
   latestSynopsis,
   latestThesis,
+  plagiarismIssued,
   publicationEligibility,
   reportTarget,
   saveSynopsis,
@@ -42,6 +44,7 @@ import {
 } from "@/lib/doctoral";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { researchTitleOf } from "@/lib/research-title";
 
 const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
 
@@ -59,10 +62,15 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     () => currentScholarRecords("publication"),
     () => null,
   );
-  const [checks, setChecks] = useState<string[]>([]);
+  const titleChanges = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("title_change", onChange),
+    () => currentScholarRecords("title_change"),
+    () => null,
+  );
   const [file, setFile] = useState<StoredFile | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [popup, setPopup] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -88,24 +96,29 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
         })),
     );
     const third = latestCommittee(doctoral!, "third", identifier);
+    const title = researchTitleOf(doctoral!, identifier, titleChanges?.records ?? []);
     const missing = [
+      title.title && (title.stage === "Final" || title.stage === "Locked")
+        ? null
+        : "Research title finalised in the second doctoral committee",
       third?.status === "Approved" ? null : "Third doctoral committee approval",
       approvedReports >= needed
         ? null
         : `${needed} approved six-month reports (${approvedReports} approved)`,
       publication.met ? null : publication.detail,
     ].filter((item): item is string => Boolean(item));
-    return { enrollment, missing, publication, needed, approvedReports };
+    return { enrollment, missing, publication, needed, approvedReports, title };
   }
 
   async function upload() {
     if (!session) return;
     const review = eligibility(session.identifier);
-    if (review.missing.length || checks.length !== synopsisChecklist.length) {
+    const certificate = plagiarismIssued(doctoral!, session.identifier, "synopsis");
+    if (review.missing.length || !certificate) {
       setNotice(
         review.missing.length
           ? `Still needed: ${review.missing.join("; ")}.`
-          : "Complete the checklist.",
+          : "The research office has to issue the plagiarism certificate first.",
       );
       return;
     }
@@ -118,7 +131,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     const saved = await saveSynopsis({
       scholarIdentifier: session.identifier,
       scholarName: session.name,
-      checks,
+      checks: certificate.checks.length ? certificate.checks : [...synopsisChecklist],
       fileName: file.file.name,
       fileData: data || null,
     });
@@ -127,6 +140,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
       return;
     }
     setFile(null);
+    setUploading(false);
     setPopup(true);
   }
 
@@ -153,7 +167,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
   const queue = doctoral.synopses.filter((item) => {
     if (mode !== "admin") return item.scholarIdentifier === identifier;
     return (
-      (statusFilter === "" || item.status === statusFilter) &&
+      filterMatches(statusFilter, item.status) &&
       textMatches(query, [item.scholarName, item.fileName, item.status, item.remarks])
     );
   });
@@ -240,8 +254,12 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
           </div>
         ) : review.missing.length ? (
           <GateBanner tone="danger">
-            Synopsis proforma will be enabled after the checklist is complete. Still
-            needed: {review.missing.join("; ")}.
+            Still needed: {review.missing.join("; ")}.
+          </GateBanner>
+        ) : !plagiarismIssued(doctoral, session?.identifier ?? "", "synopsis") ? (
+          <GateBanner>
+            The research office will verify the checklist and issue the plagiarism
+            certificate. The synopsis upload opens after that.
           </GateBanner>
         ) : (
           <div className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -272,33 +290,52 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                 {item}
               </p>
             ))}
-            {synopsisChecklist.map((item) => (
-              <label key={item} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={checks.includes(item)}
-                  onChange={(event) =>
-                    setChecks((current) =>
-                      event.target.checked
-                        ? [...current, item]
-                        : current.filter((entry) => entry !== item),
-                    )
-                  }
-                />
-                {item}
-              </label>
-            ))}
-            <FormField label="Synopsis" htmlFor="synopsis-file" required>
-              <FileUpload
-                id="synopsis-file"
-                acceptRule="document"
-                value={file}
-                onChange={setFile}
-              />
-            </FormField>
-            <Button type="button" variant="gold" onClick={() => void upload()}>
-              Upload synopsis
-            </Button>
+            <p className="text-sm font-semibold text-primary">
+              Checklist verified and plagiarism certificate issued by the research office.
+            </p>
+            <div className="rounded-lg border border-secondary/30 bg-secondary/5 px-3 py-2 text-sm">
+              <p className="text-[0.65rem] font-bold tracking-[0.14em] text-secondary uppercase">
+                Research title · locked once you submit
+              </p>
+              <p className="mt-0.5 font-semibold text-primary">{review.title.title}</p>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="gold"
+                onClick={() => {
+                  setNotice(null);
+                  setUploading(true);
+                }}
+              >
+                Upload synopsis
+              </Button>
+            </div>
+            {uploading ? (
+              <FormDialog
+                title="Upload synopsis"
+                onClose={() => setUploading(false)}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void upload();
+                }}
+                submitLabel="Upload synopsis"
+              >
+                {notice ? (
+                  <p role="alert" className="text-sm text-secondary">
+                    {notice}
+                  </p>
+                ) : null}
+                <FormField label="Synopsis" htmlFor="synopsis-file" required>
+                  <FileUpload
+                    id="synopsis-file"
+                    acceptRule="document"
+                    value={file}
+                    onChange={setFile}
+                  />
+                </FormField>
+              </FormDialog>
+            ) : null}
           </div>
         )
       ) : null}

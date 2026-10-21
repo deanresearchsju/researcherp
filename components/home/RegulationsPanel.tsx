@@ -32,12 +32,18 @@ const eligibilityIcons: LucideIcon[] = [GraduationCap, Percent];
 
 const evaluationNoteIcons: LucideIcon[] = [FileSearch, Users, Timer];
 
+function labeledCopy(text: string) {
+  const sep = text.indexOf(": ");
+  if (sep < 1) return { label: "", body: text };
+  return { label: text.slice(0, sep), body: text.slice(sep + 2) };
+}
+
 export function RegulationsPanel() {
   const [tab, setTab] = useState<RegulationTabId>("eligibility");
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-card lg:grid lg:grid-cols-[17.5rem_minmax(0,1fr)]">
-      <div className="border-b border-border bg-muted/50 p-3 lg:border-r lg:border-b-0 lg:p-4">
+    <div className="overflow-hidden rounded-xl border border-border bg-background shadow-card lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+      <div className="border-b border-border bg-muted/50 p-2 lg:border-r lg:border-b-0 lg:p-3">
         <div
           className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
           role="tablist"
@@ -55,7 +61,7 @@ export function RegulationsPanel() {
                 aria-selected={selected}
                 aria-controls={`regulation-panel-${item.id}`}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors",
+                  "inline-flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors",
                   "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                   selected
                     ? "bg-primary text-primary-foreground shadow-card"
@@ -65,7 +71,7 @@ export function RegulationsPanel() {
               >
                 <span
                   className={cn(
-                    "grid size-8 shrink-0 place-items-center rounded-lg",
+                    "grid size-7 shrink-0 place-items-center rounded-md",
                     selected ? "bg-primary-foreground/15" : "bg-muted text-primary",
                   )}
                 >
@@ -82,7 +88,7 @@ export function RegulationsPanel() {
         id={`regulation-panel-${tab}`}
         role="tabpanel"
         aria-labelledby={`regulation-tab-${tab}`}
-        className="p-5 sm:p-7"
+        className="p-4 sm:p-5"
       >
         {tab === "eligibility" ? <EligibilityCopy /> : null}
         {tab === "admission" ? <AdmissionCopy /> : null}
@@ -96,25 +102,25 @@ function EligibilityCopy() {
   const { headers, row } = regulationEligibility;
 
   return (
-    <dl className="grid gap-3 sm:grid-cols-2">
+    <dl className="grid gap-2.5 sm:grid-cols-2">
       {headers.map((header, index) => {
         const Icon = eligibilityIcons[index] ?? GraduationCap;
         return (
           <div
             key={header}
-            className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 pt-6"
+            className="relative overflow-hidden rounded-xl border border-border bg-card px-4 py-3 pt-4"
           >
-            <div className="absolute inset-x-0 top-0 flex h-1.5" aria-hidden="true">
-              <span className="w-14 bg-accent" />
+            <div className="absolute inset-x-0 top-0 flex h-1" aria-hidden="true">
+              <span className="w-10 bg-accent" />
               <span className="flex-1 bg-gradient-to-r from-primary to-purple-deep" />
             </div>
-            <dt className="flex items-center gap-2 text-xs font-semibold tracking-[0.16em] text-secondary uppercase">
-              <span className="grid size-8 place-items-center rounded-lg bg-muted text-primary">
-                <Icon className="size-4" aria-hidden="true" />
+            <dt className="flex items-center gap-2 text-[0.65rem] font-semibold tracking-[0.14em] text-secondary uppercase">
+              <span className="grid size-7 place-items-center rounded-md bg-muted text-primary">
+                <Icon className="size-3.5" aria-hidden="true" />
               </span>
               {header}
             </dt>
-            <dd className="mt-3 font-heading text-2xl leading-snug text-primary">
+            <dd className="mt-1.5 font-heading text-xl leading-snug text-primary">
               {row[index]}
             </dd>
           </div>
@@ -126,17 +132,17 @@ function EligibilityCopy() {
 
 function AdmissionCopy() {
   return (
-    <div className="space-y-4">
-      <article className="rounded-2xl border border-border bg-card p-5">
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
-            <Award className="size-5" aria-hidden="true" />
+    <div className="space-y-3">
+      <article className="rounded-xl border border-border bg-card p-3.5">
+        <div className="flex items-start gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-primary">
+            <Award className="size-4" aria-hidden="true" />
           </span>
           <div>
-            <h4 className="font-heading text-lg text-primary">
+            <h4 className="font-heading text-sm text-primary">
               {researchPage.nationalTitle}
             </h4>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {researchPage.nationalTests}
             </p>
           </div>
@@ -145,24 +151,24 @@ function AdmissionCopy() {
 
       <p className="relative flex items-center justify-center">
         <span className="absolute inset-x-6 h-px bg-border" aria-hidden="true" />
-        <span className="relative rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold tracking-[0.2em] text-secondary">
+        <span className="relative rounded-full border border-border bg-background px-2.5 py-0.5 text-[0.65rem] font-semibold tracking-[0.16em] text-secondary">
           {researchPage.admissionOr}
         </span>
       </p>
 
-      <article className="rounded-2xl border border-border bg-card p-5">
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
-            <ClipboardList className="size-5" aria-hidden="true" />
+      <article className="rounded-xl border border-border bg-card p-3.5">
+        <div className="flex items-start gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-primary">
+            <ClipboardList className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h4 className="font-heading text-lg text-primary">
+            <h4 className="font-heading text-sm text-primary">
               {researchPage.entranceTitle}
             </h4>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
               {researchPage.entrancePoints.map((point) => (
                 <li key={point} className="flex gap-2">
-                  <span className="mt-2 size-1.5 shrink-0 rounded-full bg-secondary" />
+                  <span className="mt-1.5 size-1 shrink-0 rounded-full bg-secondary" />
                   <span>{point}</span>
                 </li>
               ))}
@@ -171,7 +177,7 @@ function AdmissionCopy() {
         </div>
       </article>
 
-      <p className="rounded-2xl border border-border bg-muted/60 px-5 py-4 text-sm font-semibold leading-6 text-primary">
+      <p className="rounded-xl border border-border bg-muted/60 px-3.5 py-2.5 text-xs font-semibold leading-5 text-primary">
         {researchPage.weightage}
       </p>
     </div>
@@ -180,32 +186,38 @@ function AdmissionCopy() {
 
 function EvaluationCopy() {
   return (
-    <div className="space-y-6">
-      <ol className="grid gap-3 sm:grid-cols-2">
+    <div className="space-y-4">
+      <ol className="grid gap-2 sm:grid-cols-2">
         {regulationEvaluation.steps.map((step, index) => (
           <li
             key={step}
-            className="flex items-start gap-3 rounded-2xl border border-border bg-card p-4"
+            className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2"
           >
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
               {index + 1}
             </span>
-            <p className="pt-1.5 font-semibold text-primary">{step}</p>
+            <p className="text-sm font-semibold leading-5 text-primary">{step}</p>
           </li>
         ))}
       </ol>
-      <ul className="space-y-3">
+      <ul className="space-y-2">
         {regulationEvaluation.notes.map((note, index) => {
           const Icon = evaluationNoteIcons[index] ?? FileSearch;
+          const copy = labeledCopy(note);
           return (
             <li
               key={note}
-              className="flex gap-3 rounded-2xl border border-border bg-muted/40 p-4"
+              className="flex gap-2.5 rounded-xl border border-border bg-muted/40 px-3 py-2.5"
             >
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-card text-primary">
-                <Icon className="size-4" aria-hidden="true" />
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-card text-primary">
+                <Icon className="size-3.5" aria-hidden="true" />
               </span>
-              <p className="pt-1.5 text-sm leading-6 text-muted-foreground">{note}</p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {copy.label ? (
+                  <span className="font-semibold text-primary">{copy.label}: </span>
+                ) : null}
+                {copy.body}
+              </p>
             </li>
           );
         })}

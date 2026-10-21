@@ -128,9 +128,6 @@ export function RegistrationNumbers() {
 
   return (
     <DeskPage kicker={registrationCopy.kicker} title={registrationCopy.title}>
-      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        {registrationCopy.detail}
-      </p>
       {stored?.detail ? (
         <p className="text-sm leading-6 text-secondary">
           {stored.detail} {registerMigrationHint}

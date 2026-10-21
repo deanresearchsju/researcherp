@@ -1,4 +1,5 @@
 export const personFileCopy = {
+  viewProfile: "Profile",
   scholarTitle: "Personal details",
   supervisorTitle: "Personal details",
   empty: "No application details are stored for this person yet.",

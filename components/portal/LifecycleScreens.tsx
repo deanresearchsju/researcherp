@@ -2,43 +2,38 @@
 
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
-import { z } from "zod";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
 import {
+  DeskModal,
   DeskPage,
+  FormDialog,
   GateBanner,
-  ProcessFlow,
   ScholarIdentityHeader,
+  StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { PrintActions, PrintPages } from "@/components/forms/PrintForm";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { completionKinds, examinerOutcomes, vivaOutcomes } from "@/data/doctoral";
-import { processFlows } from "@/data/portal-desk";
 import { university } from "@/lib/constants";
 import {
   completionBlocked,
   currentDoctoral,
-  decidePlagiarism,
   decideViva,
-  latestPlagiarism,
   latestThesis,
   latestViva,
-  plagiarismBlocked,
   reportsReady,
   revisionNeeded,
   reviseThesis,
   saveCompletion,
   saveExaminerReport,
-  savePlagiarism,
   saveViva,
   subscribeDoctoral,
   vivaBlocked,
@@ -46,238 +41,21 @@ import {
   type ThesisSubmission,
 } from "@/lib/doctoral";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
-import { currentPanels, subscribePanels } from "@/lib/thesis-panels";
+import { acceptedEvaluators, useEvaluationPanels } from "@/lib/thesis-evaluation";
+import { evaluatorGroupLabel } from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
-
-const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
-
-function idleSubscribe() {
-  return () => undefined;
-}
-
-export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
-  const ready = useClientReady();
-  const session = usePortalSession();
-  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const [file, setFile] = useState<StoredFile | null>(null);
-  const [similarity, setSimilarity] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [remarks, setRemarks] = useState<Record<string, string>>({});
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-
-  if (!ready || !doctoral) {
-    return <p className="text-sm text-muted-foreground">Loading plagiarism…</p>;
-  }
-
-  const identifier = session?.identifier ?? "";
-  const mine = latestPlagiarism(doctoral, identifier);
-  const gate = plagiarismBlocked(doctoral, identifier);
-
-  async function upload() {
-    if (!session) return;
-    const problem = fileError(file?.file ?? null, "document", true);
-    if (problem || !file?.file) {
-      setNotice(problem ?? "Attach the certificate.");
-      return;
-    }
-    if (!similarity.trim()) {
-      setNotice("Enter the similarity percentage.");
-      return;
-    }
-    const data = await fileToDataUrl(file.file).catch(() => "");
-    const saved = await savePlagiarism({
-      scholarIdentifier: session.identifier,
-      scholarName: session.name,
-      similarity: similarity.trim(),
-      fileName: file.file.name,
-      fileData: data || null,
-    });
-    setNotice(saved.ok ? "Certificate submitted." : saved.message);
-    if (saved.ok) setFile(null);
-  }
-
-  async function decide(id: string, status: "Approved" | "Rejected") {
-    const note = remarks[id] ?? "";
-    if (status === "Rejected") {
-      const parsed = remarksSchema.safeParse(note);
-      if (!parsed.success) {
-        setNotice(parsed.error.issues[0]?.message ?? "Enter the remarks.");
-        return;
-      }
-    }
-    const saved = await decidePlagiarism(id, {
-      status,
-      remarks: note,
-      decidedOn: new Date().toISOString().slice(0, 10),
-    });
-    setNotice(saved.ok ? status : saved.message);
-  }
-
-  const queue = doctoral.plagiarism.filter((item) => {
-    if (mode !== "admin") return item.scholarIdentifier === identifier;
-    return (
-      (statusFilter === "" || item.status === statusFilter) &&
-      textMatches(query, [item.scholarName, item.fileName, item.status, item.similarity])
-    );
-  });
-
-  return (
-    <DeskPage title="Plagiarism">
-      <ProcessFlow>{processFlows.plagiarism}</ProcessFlow>
-      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
-      {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
-      {mode === "scholar" ? (
-        gate ? (
-          <GateBanner tone="danger">{gate}</GateBanner>
-        ) : mine && mine.status !== "Rejected" ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm">
-            <p>
-              {mine.fileName} · {mine.similarity}% · {mine.status}
-              {mine.remarks ? ` · ${mine.remarks}` : ""}
-            </p>
-            <ViewFilesButton
-              fileName={mine.fileName}
-              data={mine.fileData}
-              onMissing={setNotice}
-            />
-          </div>
-        ) : (
-          <form
-            className="space-y-4 rounded-xl border border-border bg-card p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void upload();
-            }}
-          >
-            {mine ? (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-secondary">
-                  Previous file: {mine.fileName} · {mine.status}
-                </p>
-                <ViewFilesButton
-                  fileName={mine.fileName}
-                  data={mine.fileData}
-                  onMissing={setNotice}
-                />
-              </div>
-            ) : null}
-            <FormField label="Similarity %" htmlFor="similarity" required>
-              <Input
-                id="similarity"
-                value={similarity}
-                onChange={(event) => setSimilarity(event.target.value)}
-              />
-            </FormField>
-            <FormField label="Certificate" htmlFor="plagiarism-file" required>
-              <FileUpload
-                id="plagiarism-file"
-                acceptRule="document"
-                value={file}
-                onChange={setFile}
-              />
-            </FormField>
-            <Button type="submit" variant="gold">
-              Submit certificate
-            </Button>
-          </form>
-        )
-      ) : (
-        <>
-          <ListToolbar
-            query={query}
-            onQuery={setQuery}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                value: statusFilter,
-                options: ["Submitted", "Approved", "Rejected"].map((item) => ({
-                  value: item,
-                  label: item,
-                })),
-                onChange: setStatusFilter,
-              },
-            ]}
-            shown={queue.length}
-            total={doctoral.plagiarism.length}
-            filename="plagiarism.csv"
-            headers={["scholar", "similarity", "status"]}
-            rows={queue.map((item) => [item.scholarName, item.similarity, item.status])}
-          />
-          <ul className="space-y-3">
-            {queue.map((item) => (
-              <li
-                key={item.id}
-                className="space-y-2 rounded-xl border border-border bg-card p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-semibold text-primary">
-                    {item.scholarName} · {item.similarity}% · {item.fileName}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ViewFilesButton
-                      fileName={item.fileName}
-                      data={item.fileData}
-                      onMissing={setNotice}
-                    />
-                    <Badge variant={item.status === "Approved" ? "gold" : "purple"}>
-                      {item.status}
-                    </Badge>
-                  </div>
-                </div>
-                {item.status === "Submitted" ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      aria-label="Remarks"
-                      value={remarks[item.id] ?? ""}
-                      onChange={(event) =>
-                        setRemarks((current) => ({
-                          ...current,
-                          [item.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="gold"
-                        onClick={() => void decide(item.id, "Approved")}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="maroon"
-                        onClick={() => void decide(item.id, "Rejected")}
-                      >
-                        Return
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </DeskPage>
-  );
-}
 
 export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
   const ready = useClientReady();
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const panels = useSyncExternalStore(
-    mode === "admin" ? subscribePanels : idleSubscribe,
-    mode === "admin" ? currentPanels : () => null,
-    () => null,
+  const panels = useEvaluationPanels(
+    mode === "admin" && (session?.role === "admin" || session?.role === "dean"),
   );
   const [files, setFiles] = useState<Record<string, StoredFile | null>>({});
   const [reviseFile, setReviseFile] = useState<StoredFile | null>(null);
+  const [revising, setRevising] = useState(false);
+  const [recordingKey, setRecordingKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<
     Record<string, { outcome: ExaminerOutcome; remarks: string }>
@@ -290,14 +68,8 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
 
   const identifier = session?.identifier ?? "";
   const mine = latestThesis(doctoral, identifier);
-  const namesFor = (thesis: ThesisSubmission) => {
-    const panel = panels?.find((item) => item.thesisId === thesis.id);
-    return {
-      local: panel?.selectedLocal ?? "",
-      indian: panel?.selectedIndian ?? "",
-      foreign: panel?.selectedForeign ?? "",
-    };
-  };
+  const namesFor = (thesis: ThesisSubmission) =>
+    acceptedEvaluators(panels, thesis.scholarIdentifier);
 
   async function record(
     thesis: ThesisSubmission,
@@ -321,7 +93,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
       thesisId: thesis.id,
       scholarIdentifier: thesis.scholarIdentifier,
       scholarName: thesis.scholarName,
-      examinerName: name,
+      examinerName: `${evaluatorGroupLabel[group]} examiner`,
       group,
       version: thesis.version,
       outcome: chosen.outcome,
@@ -331,6 +103,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
     });
     setNotice(saved.ok ? `${name} recorded.` : saved.message);
     if (saved.ok) {
+      setRecordingKey(null);
       setFiles((current) => ({ ...current, [key]: null }));
     }
   }
@@ -348,7 +121,10 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
       fileData: data || null,
     });
     setNotice(saved.ok ? `Version ${mine.version + 1} saved.` : saved.message);
-    if (saved.ok) setReviseFile(null);
+    if (saved.ok) {
+      setReviseFile(null);
+      setRevising(false);
+    }
   }
 
   const queue = doctoral.theses.filter((thesis) => {
@@ -394,25 +170,41 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                 ))}
             </ul>
             {revisionNeeded(doctoral, mine) ? (
-              <form
-                className="space-y-4 rounded-xl border border-border bg-card p-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void resubmit();
-                }}
-              >
-                <FormField label="Revised thesis" htmlFor="revise-file" required>
-                  <FileUpload
-                    id="revise-file"
-                    acceptRule="document"
-                    value={reviseFile}
-                    onChange={setReviseFile}
-                  />
-                </FormField>
-                <Button type="submit" variant="gold">
-                  Submit revision
-                </Button>
-              </form>
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
+                  <p className="text-sm font-semibold text-primary">
+                    An examiner asked for a revision.
+                  </p>
+                  <Button type="button" variant="gold" onClick={() => setRevising(true)}>
+                    Submit revision
+                  </Button>
+                </div>
+                {revising ? (
+                  <FormDialog
+                    title="Submit revised thesis"
+                    onClose={() => setRevising(false)}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void resubmit();
+                    }}
+                    submitLabel="Submit revision"
+                  >
+                    {notice ? (
+                      <p role="alert" className="text-sm text-secondary">
+                        {notice}
+                      </p>
+                    ) : null}
+                    <FormField label="Revised thesis" htmlFor="revise-file" required>
+                      <FileUpload
+                        id="revise-file"
+                        acceptRule="document"
+                        value={reviseFile}
+                        onChange={setReviseFile}
+                      />
+                    </FormField>
+                  </FormDialog>
+                ) : null}
+              </>
             ) : null}
           </div>
         )
@@ -485,56 +277,87 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                     return (
                       <div
                         key={group}
-                        className="space-y-2 rounded-lg border border-border p-3"
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
                       >
-                        <p className="text-sm font-semibold text-primary">
-                          {group}: {name}
+                        <p className="text-sm">
+                          <span className="font-semibold text-primary capitalize">
+                            {group}
+                          </span>{" "}
+                          · {name} ·{" "}
+                          <span className="text-muted-foreground">Pending</span>
                         </p>
-                        <NativeSelect
-                          aria-label={`${name} outcome`}
-                          value={chosen.outcome}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [key]: {
-                                ...chosen,
-                                outcome: event.target.value as ExaminerOutcome,
-                              },
-                            }))
-                          }
-                        >
-                          {examinerOutcomes.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </NativeSelect>
-                        <Textarea
-                          aria-label={`${name} remarks`}
-                          value={chosen.remarks}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [key]: { ...chosen, remarks: event.target.value },
-                            }))
-                          }
-                        />
-                        <FileUpload
-                          id={`${key}-file`}
-                          acceptRule="document"
-                          value={files[key] ?? null}
-                          onChange={(value) =>
-                            setFiles((current) => ({ ...current, [key]: value }))
-                          }
-                        />
                         <Button
                           type="button"
                           size="sm"
-                          variant="gold"
-                          onClick={() => void record(thesis, group, name)}
+                          onClick={() => {
+                            setNotice(null);
+                            setRecordingKey(key);
+                          }}
                         >
-                          Save report
+                          Record report
                         </Button>
+                        {recordingKey === key ? (
+                          <DeskModal
+                            title={`Examiner report · ${name}`}
+                            onClose={() => setRecordingKey(null)}
+                            size="md"
+                          >
+                            {notice ? (
+                              <p role="alert" className="text-sm text-secondary">
+                                {notice}
+                              </p>
+                            ) : null}
+                            <FormField label="Outcome" htmlFor={`${key}-outcome`}>
+                              <NativeSelect
+                                id={`${key}-outcome`}
+                                aria-label={`${name} outcome`}
+                                value={chosen.outcome}
+                                onChange={(event) =>
+                                  setDraft((current) => ({
+                                    ...current,
+                                    [key]: {
+                                      ...chosen,
+                                      outcome: event.target.value as ExaminerOutcome,
+                                    },
+                                  }))
+                                }
+                              >
+                                {examinerOutcomes.map((item) => (
+                                  <option key={item} value={item}>
+                                    {item}
+                                  </option>
+                                ))}
+                              </NativeSelect>
+                            </FormField>
+                            <Textarea
+                              placeholder="Remarks"
+                              aria-label={`${name} remarks`}
+                              value={chosen.remarks}
+                              onChange={(event) =>
+                                setDraft((current) => ({
+                                  ...current,
+                                  [key]: { ...chosen, remarks: event.target.value },
+                                }))
+                              }
+                            />
+                            <FileUpload
+                              id={`${key}-file`}
+                              acceptRule="document"
+                              value={files[key] ?? null}
+                              onChange={(value) =>
+                                setFiles((current) => ({ ...current, [key]: value }))
+                              }
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="gold"
+                              onClick={() => void record(thesis, group, name)}
+                            >
+                              Save report
+                            </Button>
+                          </DeskModal>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -552,7 +375,9 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
   const ready = useClientReady();
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const panels = useSyncExternalStore(subscribePanels, currentPanels, () => null);
+  const panels = useEvaluationPanels(
+    mode === "admin" && (session?.role === "admin" || session?.role === "dean"),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [scheduledOn, setScheduledOn] = useState("");
   const [venue, setVenue] = useState("");
@@ -560,6 +385,8 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [minutes, setMinutes] = useState<Record<string, string>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const [scheduling, setScheduling] = useState<ThesisSubmission | null>(null);
+  const [recording, setRecording] = useState<string | null>(null);
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading viva…</p>;
@@ -570,12 +397,7 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
   const gate = vivaBlocked(doctoral, identifier);
 
   async function schedule(thesisRow: ThesisSubmission) {
-    const panelNames = panels?.find((item) => item.thesisId === thesisRow.id);
-    const chosen = {
-      local: panelNames?.selectedLocal ?? "",
-      indian: panelNames?.selectedIndian ?? "",
-      foreign: panelNames?.selectedForeign ?? "",
-    };
+    const chosen = acceptedEvaluators(panels, thesisRow.scholarIdentifier);
     const blocked = vivaBlocked(doctoral!, thesisRow.scholarIdentifier);
     if (blocked) {
       setNotice(blocked);
@@ -595,6 +417,7 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
         [chosen.local, chosen.indian, chosen.foreign].filter(Boolean).join(", "),
     });
     setNotice(saved.ok ? "Viva scheduled." : saved.message);
+    if (saved.ok) setScheduling(null);
   }
 
   async function decide(id: string, status: "Passed" | "Failed") {
@@ -604,7 +427,8 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
       minutes: minute,
       remarks: (remarks[id] ?? "").trim(),
     });
-    setNotice(saved.ok ? status : saved.message);
+    setNotice(saved.ok ? `Viva recorded as ${status.toLowerCase()}.` : saved.message);
+    if (saved.ok) setRecording(null);
   }
 
   const readyTheses = doctoral.theses.filter((item) => {
@@ -632,33 +456,47 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
         )
       ) : (
         <>
-          <form
-            className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-2"
-            onSubmit={(event) => event.preventDefault()}
-          >
-            <FormField label="Date" htmlFor="viva-date" required>
-              <Input
-                id="viva-date"
-                type="date"
-                value={scheduledOn}
-                onChange={(event) => setScheduledOn(event.target.value)}
-              />
-            </FormField>
-            <FormField label="Venue" htmlFor="viva-venue" required>
-              <Input
-                id="viva-venue"
-                value={venue}
-                onChange={(event) => setVenue(event.target.value)}
-              />
-            </FormField>
-            <FormField label="Panel" htmlFor="viva-panel" className="sm:col-span-2">
-              <Input
-                id="viva-panel"
-                value={panel}
-                onChange={(event) => setPanel(event.target.value)}
-              />
-            </FormField>
-          </form>
+          {scheduling ? (
+            <FormDialog
+              title={`Schedule viva · ${scheduling.scholarName}`}
+              onClose={() => setScheduling(null)}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void schedule(scheduling);
+              }}
+              submitLabel="Schedule viva"
+            >
+              {notice ? (
+                <p role="alert" className="text-sm text-secondary">
+                  {notice}
+                </p>
+              ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Date" htmlFor="viva-date" required>
+                  <Input
+                    id="viva-date"
+                    type="date"
+                    value={scheduledOn}
+                    onChange={(event) => setScheduledOn(event.target.value)}
+                  />
+                </FormField>
+                <FormField label="Venue" htmlFor="viva-venue" required>
+                  <Input
+                    id="viva-venue"
+                    value={venue}
+                    onChange={(event) => setVenue(event.target.value)}
+                  />
+                </FormField>
+                <FormField label="Panel" htmlFor="viva-panel" className="sm:col-span-2">
+                  <Input
+                    id="viva-panel"
+                    value={panel}
+                    onChange={(event) => setPanel(event.target.value)}
+                  />
+                </FormField>
+              </div>
+            </FormDialog>
+          ) : null}
           <ListToolbar
             query={query}
             onQuery={setQuery}
@@ -695,61 +533,100 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
                     type="button"
                     size="sm"
                     variant="gold"
-                    onClick={() => void schedule(thesis)}
+                    onClick={() => {
+                      setNotice(null);
+                      setScheduling(thesis);
+                    }}
                   >
-                    Schedule
+                    Schedule viva
                   </Button>
                 </li>
               ))}
             {doctoral.vivas.map((viva) => (
               <li
                 key={viva.id}
-                className="space-y-2 rounded-xl border border-border bg-card p-4"
+                className="space-y-2 rounded-xl border border-border bg-card p-4 shadow-card"
               >
-                <p className="font-semibold text-primary">
-                  {viva.scholarName} · {viva.scheduledOn} · {viva.status}
-                </p>
-                {viva.status === "Scheduled" ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      aria-label="Minutes"
-                      placeholder="Minutes"
-                      value={minutes[viva.id] ?? ""}
-                      onChange={(event) =>
-                        setMinutes((current) => ({
-                          ...current,
-                          [viva.id]: event.target.value,
-                        }))
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-semibold text-primary">
+                    {viva.scholarName} · {viva.scheduledOn} · {viva.venue}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <StatusPill
+                      status={
+                        viva.status === "Passed"
+                          ? "Approved"
+                          : viva.status === "Failed"
+                            ? "Rejected"
+                            : "Pending"
                       }
                     />
-                    <Textarea
-                      aria-label="Remarks"
-                      placeholder="Remarks"
-                      value={remarks[viva.id] ?? ""}
-                      onChange={(event) =>
-                        setRemarks((current) => ({
-                          ...current,
-                          [viva.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <div className="flex gap-2">
-                      {vivaOutcomes.map((outcome) => (
-                        <Button
-                          key={outcome}
-                          type="button"
-                          size="sm"
-                          variant={outcome === "Passed" ? "gold" : "maroon"}
-                          onClick={() => void decide(viva.id, outcome)}
-                        >
-                          {outcome}
-                        </Button>
-                      ))}
-                    </div>
+                    {viva.status === "Scheduled" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setNotice(null);
+                          setRecording(viva.id);
+                        }}
+                      >
+                        Record result
+                      </Button>
+                    ) : null}
                   </div>
-                ) : (
+                </div>
+                {viva.status === "Scheduled" && recording === viva.id ? (
+                  <DeskModal
+                    title={`Viva result · ${viva.scholarName}`}
+                    onClose={() => setRecording(null)}
+                    size="md"
+                  >
+                    {notice ? (
+                      <p role="alert" className="text-sm text-secondary">
+                        {notice}
+                      </p>
+                    ) : null}
+                    <div className="space-y-2">
+                      <Textarea
+                        aria-label="Minutes"
+                        placeholder="Minutes"
+                        value={minutes[viva.id] ?? ""}
+                        onChange={(event) =>
+                          setMinutes((current) => ({
+                            ...current,
+                            [viva.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <Textarea
+                        aria-label="Remarks"
+                        placeholder="Remarks"
+                        value={remarks[viva.id] ?? ""}
+                        onChange={(event) =>
+                          setRemarks((current) => ({
+                            ...current,
+                            [viva.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <div className="flex gap-2">
+                        {vivaOutcomes.map((outcome) => (
+                          <Button
+                            key={outcome}
+                            type="button"
+                            size="sm"
+                            variant={outcome === "Passed" ? "gold" : "maroon"}
+                            onClick={() => void decide(viva.id, outcome)}
+                          >
+                            {outcome}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </DeskModal>
+                ) : viva.minutes ? (
                   <p className="text-sm text-muted-foreground">{viva.minutes}</p>
-                )}
+                ) : null}
               </li>
             ))}
           </ul>
@@ -769,6 +646,9 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [remarks, setRemarks] = useState("");
   const [sheet, setSheet] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [issuing, setIssuing] = useState<{ identifier: string; name: string } | null>(
+    null,
+  );
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading completion…</p>;
@@ -798,7 +678,10 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
       remarks: remarks.trim(),
     });
     setNotice(saved.ok ? `${kind} issued.` : saved.message);
-    if (saved.ok) setSheet(scholarName);
+    if (saved.ok) {
+      setSheet(scholarName);
+      setIssuing(null);
+    }
   }
 
   const shown = doctoral.completions.filter((item) =>
@@ -830,45 +713,59 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
         )
       ) : (
         <>
-          <form
-            className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-2"
-            onSubmit={(event) => event.preventDefault()}
-          >
-            <FormField label="Kind" htmlFor="completion-kind">
-              <NativeSelect
-                id="completion-kind"
-                value={kind}
-                onChange={(event) =>
-                  setKind(event.target.value as (typeof completionKinds)[number])
-                }
-              >
-                {completionKinds.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </NativeSelect>
-            </FormField>
-            <FormField label="Issued on" htmlFor="completion-date" required>
-              <Input
-                id="completion-date"
-                type="date"
-                value={issuedOn}
-                onChange={(event) => setIssuedOn(event.target.value)}
-              />
-            </FormField>
-            <FormField
-              label="Remarks"
-              htmlFor="completion-remarks"
-              className="sm:col-span-2"
+          {issuing ? (
+            <FormDialog
+              title={`Issue certificate · ${issuing.name}`}
+              onClose={() => setIssuing(null)}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void issue(issuing.identifier, issuing.name);
+              }}
+              submitLabel="Issue"
             >
-              <Textarea
-                id="completion-remarks"
-                value={remarks}
-                onChange={(event) => setRemarks(event.target.value)}
-              />
-            </FormField>
-          </form>
+              {notice ? (
+                <p role="alert" className="text-sm text-secondary">
+                  {notice}
+                </p>
+              ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Kind" htmlFor="completion-kind">
+                  <NativeSelect
+                    id="completion-kind"
+                    value={kind}
+                    onChange={(event) =>
+                      setKind(event.target.value as (typeof completionKinds)[number])
+                    }
+                  >
+                    {completionKinds.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </FormField>
+                <FormField label="Issued on" htmlFor="completion-date" required>
+                  <Input
+                    id="completion-date"
+                    type="date"
+                    value={issuedOn}
+                    onChange={(event) => setIssuedOn(event.target.value)}
+                  />
+                </FormField>
+                <FormField
+                  label="Remarks"
+                  htmlFor="completion-remarks"
+                  className="sm:col-span-2"
+                >
+                  <Textarea
+                    id="completion-remarks"
+                    value={remarks}
+                    onChange={(event) => setRemarks(event.target.value)}
+                  />
+                </FormField>
+              </div>
+            </FormDialog>
+          ) : null}
           <ListToolbar
             query={query}
             onQuery={setQuery}
@@ -890,9 +787,15 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
                   type="button"
                   size="sm"
                   variant="gold"
-                  onClick={() => void issue(viva.scholarIdentifier, viva.scholarName)}
+                  onClick={() => {
+                    setNotice(null);
+                    setIssuing({
+                      identifier: viva.scholarIdentifier,
+                      name: viva.scholarName,
+                    });
+                  }}
                 >
-                  Issue {kind}
+                  Issue certificate
                 </Button>
               </li>
             ))}

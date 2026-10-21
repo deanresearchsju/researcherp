@@ -17,7 +17,6 @@ export type IdentityPair = {
 export type ScholarIdentity = {
   name: string;
   registerNo: string;
-  studentId: string;
   email: string;
   institution: string;
   program: string;
@@ -102,7 +101,6 @@ export function scholarIdentity(identifier: string): ScholarIdentity {
     : "Ph.D.";
   const name = scholar?.name.trim() || "—";
   const registerNo = scholar ? registrationOf(scholar, allotments) || "—" : "—";
-  const studentId = scholar?.fileNumber.trim() || "—";
   const email = scholar?.email.trim() || (identifier.includes("@") ? identifier : "—");
   const institution = scholar?.institution.trim() || university.name;
   const semester = scholarSemesterLabel(identifier);
@@ -112,7 +110,6 @@ export function scholarIdentity(identifier: string): ScholarIdentity {
   return {
     name,
     registerNo,
-    studentId,
     email,
     institution,
     program,
@@ -124,12 +121,12 @@ export function scholarIdentity(identifier: string): ScholarIdentity {
     school,
     pairs: [
       [
-        { label: "Student Name", value: name },
+        { label: "Scholar", value: name },
         { label: "Register No.", value: registerNo },
       ],
       [
         { label: "Institution", value: institution },
-        { label: "Program", value: program },
+        { label: "Programme", value: program },
       ],
       [
         { label: "Semester", value: semester },

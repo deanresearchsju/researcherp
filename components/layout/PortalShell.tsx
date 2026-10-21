@@ -29,21 +29,29 @@ import {
 import { portalShellCopy } from "@/data/portal";
 import { roleProfiles } from "@/data/roles";
 import {
+  actionForLabel,
+  canMenuAction,
   canOpenMenu,
-  effectiveMenus,
   isOfficeRole,
-  isPrincipalAdmin,
+  matchMenuHref,
+  menuActionCopy,
+  resolvedMenus,
   visibleGroups,
 } from "@/lib/access";
 import { currentAdmission, scholarIsAdmitted, subscribeAdmission } from "@/lib/admission";
-import { currentInbox, noticesFor, subscribeInbox } from "@/lib/audit";
+import {
+  currentInbox,
+  markNoticesRead,
+  subscribeInbox,
+  type InboxNotice,
+} from "@/lib/audit";
 import { clearPreviewSession, loginHref, type PreviewSession } from "@/lib/auth";
 import { university } from "@/lib/constants";
 import { closeOfficeView } from "@/lib/office-view";
 import { useOfficeView, usePreviewSession } from "@/lib/use-preview-session";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import { cn } from "@/lib/utils";
-import type { Role } from "@/types";
+import type { PortalNavGroup, Role } from "@/types";
 
 function roleFromPath(pathname: string, sessionRole?: Role | null): Role {
   if (pathname.startsWith("/supervisor")) return "supervisor";
@@ -58,8 +66,43 @@ function isCurrent(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function groupCount(count: number) {
-  return String(count).padStart(2, "0");
+const noNotices: InboxNotice[] = [];
+
+/** Unread notices that point at this menu (its page or a page under it). */
+function unreadFor(notices: readonly InboxNotice[], href: string) {
+  return notices.filter((notice) => {
+    const path = notice.href.split(/[?#]/)[0] ?? "";
+    if (!path) return false;
+    if (href.endsWith("/dashboard")) return path === href;
+    return path === href || path.startsWith(`${href}/`);
+  }).length;
+}
+
+function UnreadBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={cn(
+        "grid h-5 min-w-5 place-items-center rounded-full bg-secondary px-1.5 text-[0.65rem] font-bold tracking-normal text-secondary-foreground",
+        className,
+      )}
+      aria-label={`${count} new`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+function timeAgo(iso: string) {
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return iso;
+  const minutes = Math.round((Date.now() - at) / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
 function WorkspaceIcon({ role }: { role: Role }) {
@@ -76,15 +119,80 @@ function WorkspaceIcon({ role }: { role: Role }) {
   return <Icon className="size-5" aria-hidden="true" />;
 }
 
+function itemClass(pathname: string, href: string, dotted = false) {
+  const current = isCurrent(pathname, href);
+  return cn(
+    "group relative flex min-h-10 items-center rounded-xl text-sm font-semibold transition",
+    dotted ? "px-3 pl-10" : "px-3",
+    current
+      ? "bg-muted text-primary"
+      : "text-muted-foreground hover:bg-muted hover:text-primary",
+  );
+}
+
+function ItemList({
+  items,
+  pathname,
+  notices,
+  onNavigate,
+  dotted = false,
+}: {
+  items: PortalNavGroup["items"];
+  pathname: string;
+  notices: readonly InboxNotice[];
+  onNavigate?: () => void;
+  dotted?: boolean;
+}) {
+  return (
+    <ul className="space-y-1">
+      {items.map((item) => {
+        const current = isCurrent(pathname, item.href);
+        return (
+          <li key={item.href}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              className={itemClass(pathname, item.href, dotted)}
+              aria-current={current ? "page" : undefined}
+            >
+              {dotted ? (
+                <span
+                  className={cn(
+                    "absolute left-4 size-1.5 rounded-full transition",
+                    current
+                      ? "bg-primary ring-4 ring-primary/15"
+                      : "bg-border group-hover:bg-primary/60",
+                  )}
+                  aria-hidden="true"
+                />
+              ) : null}
+              {item.label}
+              {current ? (
+                <span className="ml-auto rounded-md bg-card px-2 py-0.5 text-[0.6rem] font-bold tracking-wider text-primary uppercase shadow-sm">
+                  {portalShellCopy.active}
+                </span>
+              ) : (
+                <UnreadBadge count={unreadFor(notices, item.href)} className="ml-auto" />
+              )}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function SideNav({
   role,
   pathname,
   groups,
+  notices,
   onNavigate,
 }: {
   role: Role;
   pathname: string;
   groups: ReturnType<typeof visibleGroups>;
+  notices: readonly InboxNotice[];
   onNavigate?: () => void;
 }) {
   const dashboard = groups.find((group) => !group.heading);
@@ -102,61 +210,6 @@ function SideNav({
     };
     if (active) setCollapsed(update);
     else setExpanded(update);
-  }
-
-  function itemClass(href: string, dotted = false) {
-    const current = isCurrent(pathname, href);
-    return cn(
-      "group relative flex min-h-10 items-center rounded-xl text-sm font-semibold transition",
-      dotted ? "px-3 pl-10" : "px-3",
-      current
-        ? "bg-muted text-primary"
-        : "text-muted-foreground hover:bg-muted hover:text-primary",
-    );
-  }
-
-  function ItemList({
-    items,
-    dotted = false,
-  }: {
-    items: (typeof groups)[number]["items"];
-    dotted?: boolean;
-  }) {
-    return (
-      <ul className="space-y-1">
-        {items.map((item) => {
-          const current = isCurrent(pathname, item.href);
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                onClick={onNavigate}
-                className={itemClass(item.href, dotted)}
-                aria-current={current ? "page" : undefined}
-              >
-                {dotted ? (
-                  <span
-                    className={cn(
-                      "absolute left-4 size-1.5 rounded-full transition",
-                      current
-                        ? "bg-primary ring-4 ring-primary/15"
-                        : "bg-border group-hover:bg-primary/60",
-                    )}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {item.label}
-                {current ? (
-                  <span className="ml-auto rounded-md bg-card px-2 py-0.5 text-[0.6rem] font-bold tracking-wider text-primary uppercase shadow-sm">
-                    {portalShellCopy.active}
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    );
   }
 
   return (
@@ -180,6 +233,7 @@ function SideNav({
               <LayoutDashboard className="size-4" aria-hidden="true" />
             </span>
             {item.label}
+            <UnreadBadge count={unreadFor(notices, item.href)} className="ml-auto" />
           </Link>
         );
       })}
@@ -190,7 +244,13 @@ function SideNav({
             {primary.heading}
           </p>
           <div className="mt-2">
-            <ItemList items={primary.items} dotted />
+            <ItemList
+              items={primary.items}
+              pathname={pathname}
+              notices={notices}
+              onNavigate={onNavigate}
+              dotted
+            />
           </div>
         </div>
       ) : null}
@@ -211,8 +271,13 @@ function SideNav({
                   onClick={() => toggle(group.heading, active)}
                 >
                   {group.heading}
-                  <span className="ml-auto mr-2 rounded-md bg-muted px-1.5 py-0.5 text-[0.6rem] tracking-normal text-muted-foreground">
-                    {groupCount(group.items.length)}
+                  <span className="mr-2 ml-auto">
+                    <UnreadBadge
+                      count={group.items.reduce(
+                        (sum, item) => sum + unreadFor(notices, item.href),
+                        0,
+                      )}
+                    />
                   </span>
                   <ChevronDown
                     className={cn("size-3.5 shrink-0 transition", open && "rotate-180")}
@@ -221,7 +286,12 @@ function SideNav({
                 </button>
                 {open ? (
                   <div className="mt-1 ml-3 border-l border-border pl-4">
-                    <ItemList items={group.items} />
+                    <ItemList
+                      items={group.items}
+                      pathname={pathname}
+                      notices={notices}
+                      onNavigate={onNavigate}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -266,10 +336,7 @@ export function PortalShell({
     view !== null &&
     ((view.role === "scholar" && pathname.startsWith("/scholar")) ||
       (view.role === "supervisor" && pathname.startsWith("/supervisor"))) &&
-    (session?.role === "admin" ||
-      session?.role === "staff" ||
-      session?.role === "dean" ||
-      (session?.role === "supervisor" && view.role === "scholar"));
+    (session?.role === "admin" || session?.role === "staff" || session?.role === "dean");
   const role = viewing && view ? view.role : pathRole;
   const account =
     session && users
@@ -281,19 +348,32 @@ export function PortalShell({
       : undefined;
   const menus = viewing
     ? null
-    : session && isPrincipalAdmin(session)
-      ? null
-      : session && session.menus !== undefined
-        ? session.menus
-        : effectiveMenus(account);
+    : resolvedMenus(
+        session
+          ? {
+              role: session.role,
+              identifier: session.identifier,
+              menus: session.menus ?? account?.menus ?? null,
+            }
+          : account,
+      );
   const scholarId = viewing && view ? view.identifier : (session?.identifier ?? "");
   const admitted =
     role !== "scholar" || viewing || scholarIsAdmitted(scholarId, admission?.cases);
   const groups = visibleGroups(role, menus, admitted);
   const allowed = viewing || canOpenMenu(pathname, role, menus, admitted);
-  const alerts =
-    session && inbox ? noticesFor(session.role, session.identifier, inbox) : [];
+  const alerts = session && !viewing && inbox ? inbox : noNotices;
   const closeSidebar = () => setSidebarOpen(false);
+
+  // Opening the page a notice points at clears that notice.
+  useEffect(() => {
+    if (!ready || viewing) return;
+    const opened = alerts.filter((notice) => {
+      const path = notice.href.split(/[?#]/)[0] ?? "";
+      return path && path === pathname;
+    });
+    if (opened.length > 0) void markNoticesRead(opened.map((notice) => notice.id));
+  }, [alerts, pathname, ready, viewing]);
 
   useEffect(() => {
     if (ready && session?.mustReset && !viewing) router.replace("/login/reset");
@@ -316,7 +396,36 @@ export function PortalShell({
     router.push(back);
   }
 
+  // Office sign-ins act only where they hold the right for this menu (add/edit, approve, export).
+  const rightsHolder =
+    !viewing && session && isOfficeRole(session.role) && pathname.startsWith("/admin")
+      ? { role: session.role, identifier: session.identifier, menus }
+      : null;
+  const menuHref = rightsHolder ? matchMenuHref(pathname, rightsHolder.role) : null;
+
+  function blockByRights(event: SyntheticEvent) {
+    if (!rightsHolder || !menuHref) return false;
+    const target = event.target;
+    if (!(target instanceof Element)) return false;
+    const native = event.nativeEvent as SubmitEvent;
+    const control =
+      event.type === "submit"
+        ? (native.submitter ?? null)
+        : target.closest("button, a[role='button']");
+    if (!control || control.closest("[data-readonly-allow]")) return false;
+    const label = control.textContent?.trim() || control.getAttribute("aria-label") || "";
+    const kind = actionForLabel(label);
+    if (!kind || canMenuAction(rightsHolder, menuHref, kind)) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    setViewNotice(
+      `Your sign-in is not permitted to ${menuActionCopy[kind].toLowerCase()} in this menu. Ask the administrator to give the right under Users.`,
+    );
+    return true;
+  }
+
   function blockOfficeAction(event: SyntheticEvent) {
+    if (blockByRights(event)) return;
     if (!viewing) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -367,7 +476,13 @@ export function PortalShell({
   }
 
   const nav = (
-    <SideNav role={role} pathname={pathname} groups={groups} onNavigate={closeSidebar} />
+    <SideNav
+      role={role}
+      pathname={pathname}
+      groups={groups}
+      notices={alerts}
+      onNavigate={closeSidebar}
+    />
   );
 
   return (
@@ -455,34 +570,77 @@ export function PortalShell({
                 <Button
                   variant="outline"
                   size="icon"
+                  className="relative"
+                  data-readonly-allow
                   aria-label={
                     alerts.length
                       ? `Notifications, ${alerts.length} unread`
                       : "Notifications"
                   }
                 >
-                  <Bell className="size-4" />
+                  <Bell className={cn("size-4", alerts.length > 0 && "text-primary")} />
+                  {alerts.length > 0 ? (
+                    <span className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-secondary px-1 text-[0.65rem] font-bold text-secondary-foreground ring-2 ring-card">
+                      {alerts.length > 99 ? "99+" : alerts.length}
+                    </span>
+                  ) : null}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                {alerts.length === 0 ? (
-                  <DropdownMenuItem className="text-sm text-muted-foreground">
-                    No notices yet.
-                  </DropdownMenuItem>
-                ) : (
-                  alerts.slice(0, 8).map((notice) => (
-                    <DropdownMenuItem
-                      key={notice.id}
-                      className="flex flex-col items-start gap-1 py-3"
+              <DropdownMenuContent align="end" className="w-80 p-0">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <p className="text-sm font-semibold text-primary">
+                    Notifications{alerts.length ? ` (${alerts.length})` : ""}
+                  </p>
+                  {alerts.length > 0 ? (
+                    <button
+                      type="button"
+                      data-readonly-allow
+                      className="text-xs font-semibold text-secondary hover:underline"
+                      onClick={() =>
+                        void markNoticesRead(alerts.map((notice) => notice.id))
+                      }
                     >
-                      <span className="font-semibold text-primary">{notice.title}</span>
-                      <span className="text-xs leading-5 text-muted-foreground">
-                        {notice.detail}
-                      </span>
-                      <span className="text-[11px] text-secondary">{notice.time}</span>
-                    </DropdownMenuItem>
-                  ))
-                )}
+                      Mark all as read
+                    </button>
+                  ) : null}
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {alerts.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      You are all caught up.
+                    </p>
+                  ) : (
+                    alerts.slice(0, 30).map((notice) => (
+                      <DropdownMenuItem
+                        key={notice.id}
+                        data-readonly-allow
+                        className="flex cursor-pointer items-start gap-3 rounded-none border-b border-border px-4 py-3 last:border-b-0"
+                        onSelect={() => {
+                          void markNoticesRead([notice.id]);
+                          if (notice.href) router.push(notice.href);
+                        }}
+                      >
+                        <span
+                          className="mt-1.5 size-2 shrink-0 rounded-full bg-secondary"
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-primary">
+                            {notice.title}
+                          </span>
+                          {notice.detail ? (
+                            <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-muted-foreground">
+                              {notice.detail}
+                            </span>
+                          ) : null}
+                          <span className="mt-1 block text-[11px] font-medium text-secondary">
+                            {timeAgo(notice.time)}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
             <span className="hidden max-w-40 truncate text-sm text-muted-foreground sm:inline">

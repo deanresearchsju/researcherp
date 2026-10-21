@@ -50,6 +50,7 @@ export type NewsItem = {
   lastDate: string | null;
   href: string | null;
   summary: string;
+  venue: string;
   image: string | null;
   photos: string[];
   createdAt: string | null;

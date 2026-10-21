@@ -24,16 +24,19 @@ export function VacancyList({
   }
 
   return (
-    <Container className="py-10">
-      <h1 className="font-heading text-3xl font-semibold text-primary sm:text-4xl">
+    <Container className="py-8 sm:py-10">
+      <h2 className="font-heading text-xl font-semibold text-primary sm:text-2xl">
         {vacancyListTitle}
-      </h1>
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">{vacancyListNote}</p>
       <div className="mt-6 overflow-hidden rounded-xl border border-border bg-card shadow-card">
         {groups.map((group) => {
           const expanded = openSchool === group.school;
           return (
-            <section key={group.school} className="border-t border-border first:border-t-0">
+            <section
+              key={group.school}
+              className="border-t border-border first:border-t-0"
+            >
               <h2>
                 <button
                   type="button"
@@ -60,6 +63,9 @@ export function VacancyList({
                           {vacancyListColumns.designation}
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
+                          {vacancyListColumns.subject}
+                        </th>
+                        <th scope="col" className="px-4 py-3 font-semibold">
                           {vacancyListColumns.researchArea}
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
@@ -76,6 +82,7 @@ export function VacancyList({
                           <td className="px-4 py-3 align-top text-muted-foreground">
                             {row.designation}
                           </td>
+                          <td className="px-4 py-3 align-top">{row.department}</td>
                           <td className="px-4 py-3 align-top">{row.researchArea}</td>
                           <td className="px-4 py-3 align-top font-semibold">
                             {row.vacancyCount}

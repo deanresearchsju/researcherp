@@ -1,12 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { EntranceMarksScreen } from "@/components/portal/EntranceMarksScreen";
-
-export const metadata: Metadata = {
-  title: "Entrance marks",
-  robots: { index: false, follow: false },
-};
-
+/** Entrance marks are entered at step 4 of Selection. */
 export default function EntranceMarksPage() {
-  return <EntranceMarksScreen />;
+  redirect("/admin/admission");
 }

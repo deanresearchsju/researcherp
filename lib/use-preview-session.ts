@@ -50,10 +50,7 @@ export function usePortalSession(): PreviewSession | null {
   const view = useOfficeView();
   if (!view || !session) return session;
   const canView =
-    session.role === "admin" ||
-    session.role === "staff" ||
-    session.role === "dean" ||
-    (session.role === "supervisor" && view.role === "scholar");
+    session.role === "admin" || session.role === "staff" || session.role === "dean";
   if (!canView) return session;
   if (view.role === "scholar" && pathname.startsWith("/scholar")) {
     return {

@@ -5,26 +5,25 @@ import {
   admissionSessions,
   admissionYear,
   bloodGroups,
+  communityNeedsName,
   genders,
   indexingOptions,
+  isNetQualified,
+  netIncludesNet,
+  netIncludesSet,
   maritalStatuses,
   months,
+  netQualifications,
   paymentModes,
   programmeName,
-  researchWordLimit,
+  researchAreaLimit,
   sexes,
   studyModes,
   isPartTimeMode,
   titles,
   yesNo,
 } from "@/lib/constants";
-import {
-  isOnOrBefore,
-  isPastDate,
-  isValidIsoDate,
-  monthsBetween,
-  wordCount,
-} from "@/lib/dates";
+import { isOnOrBefore, isPastDate, isValidIsoDate, monthsBetween } from "@/lib/dates";
 
 const oneOf = (values: readonly string[], message: string) =>
   z
@@ -124,24 +123,45 @@ export const scholarSchema = z
           (admissionSessions as readonly string[]).includes(value) || value === "June",
         "Select January or July.",
       ),
-    year: z.literal(admissionYear),
+    year: z
+      .string()
+      .trim()
+      .regex(/^(19|20)\d{2}$/, "The admission year is not open."),
     title: oneOf(titles, "Select a title."),
     fullName: z.string().trim().min(2, "Enter your full name.").max(120),
     dateOfBirth: z.string().refine(isPastDate, "Enter a valid past date of birth."),
     gender: oneOf(genders, "Select a gender."),
-    nationality: z.string().trim().min(2, "Enter your nationality.").max(60),
-    community: z.string().trim().min(1, "Enter your community.").max(60),
+    nationality: z.string().trim().min(2, "Select Indian or Non-Indian.").max(60),
+    country: z.string(),
+    community: z.string().trim().min(1, "Select a community.").max(80),
+    communityName: z.string(),
     bloodGroup: oneOf(bloodGroups, "Select a blood group."),
     maritalStatus: oneOf(maritalStatuses, "Select a marital status."),
     programme: z.literal(programmeName),
     studyMode: oneOf(studyModes, "Select a study mode."),
-    school: z.string().trim().min(1, "Select a school or department."),
-    specialization: z.string().trim().min(2, "Enter the specialisation.").max(120),
+    school: z.string().trim().min(1, "Select a school."),
+    specialization: z
+      .string()
+      .trim()
+      .min(1, "Select a subject that currently has a vacancy."),
     ug: educationSchema,
     pg: educationSchema,
-    netQualified: oneOf(yesNo, "Select Yes or No."),
+    netQualified: z
+      .string()
+      .trim()
+      .refine(
+        (value) =>
+          (netQualifications as readonly string[]).includes(value) ||
+          (yesNo as readonly string[]).includes(value),
+        "Select NET, SET, Both, or None.",
+      ),
+    netRoll: z.string(),
     netMonth: z.string(),
     netYear: z.string(),
+    netAgency: z.string(),
+    setRoll: z.string(),
+    setYear: z.string(),
+    setAgency: z.string(),
     email: z.string().trim().email("Enter a valid email address."),
     mobile: z
       .string()
@@ -154,20 +174,9 @@ export const scholarSchema = z
     researchArea: z
       .string()
       .trim()
-      .min(3, "Enter the proposed area of research.")
-      .max(160),
-    outline: z
-      .string()
-      .trim()
-      .superRefine((value, ctx) => {
-        const count = wordCount(value);
-        if (count < researchWordLimit.min || count > researchWordLimit.max) {
-          ctx.addIssue({
-            code: "custom",
-            message: `Write between ${researchWordLimit.min} and ${researchWordLimit.max} words.`,
-          });
-        }
-      }),
+      .min(3, "Enter the research area.")
+      .max(researchAreaLimit, `Use ${researchAreaLimit} characters or fewer.`),
+    outline: z.string(),
     paymentMode: oneOf(paymentModes, "Select UPI or Net Banking."),
     transactionNumber: z.string().trim().min(4, "Enter the transaction number.").max(40),
     paymentDate: z.string().refine(isOnOrBefore, "Enter the date of payment."),
@@ -175,21 +184,77 @@ export const scholarSchema = z
     applicantName: z.string().trim().min(2, "Enter the applicant name."),
   })
   .superRefine((value, ctx) => {
-    if (value.netQualified === "Yes") {
-      if (!months.includes(value.netMonth as (typeof months)[number])) {
+    if (value.nationality === "Non-Indian" && value.country.trim().length < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Select the country.",
+        path: ["country"],
+      });
+    }
+    if (communityNeedsName(value.community) && value.communityName.trim().length < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Enter the sub-caste / community name.",
+        path: ["communityName"],
+      });
+    }
+    function requireExam(
+      needed: boolean,
+      roll: string,
+      year: string,
+      agency: string,
+      paths: {
+        roll: "netRoll" | "setRoll";
+        year: "netYear" | "setYear";
+        agency: "netAgency" | "setAgency";
+      },
+    ) {
+      if (!needed) return;
+      if (roll.trim().length < 2) {
         ctx.addIssue({
           code: "custom",
-          message: "Select the month of passing.",
-          path: ["netMonth"],
+          message: "Enter the certificate number.",
+          path: [paths.roll],
         });
       }
-      if (!/^(19|20)\d{2}$/.test(value.netYear.trim())) {
+      if (!/^(19|20)\d{2}$/.test(year.trim())) {
         ctx.addIssue({
           code: "custom",
           message: "Enter the year of passing.",
-          path: ["netYear"],
+          path: [paths.year],
         });
       }
+      if (agency.trim().length < 2) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Enter the agency name.",
+          path: [paths.agency],
+        });
+      }
+    }
+    if (isNetQualified(value.netQualified)) {
+      requireExam(
+        netIncludesNet(value.netQualified),
+        value.netRoll,
+        value.netYear,
+        value.netAgency,
+        {
+          roll: "netRoll",
+          year: "netYear",
+          agency: "netAgency",
+        },
+      );
+      requireExam(
+        netIncludesSet(value.netQualified),
+        value.setRoll,
+        value.setYear,
+        value.setAgency,
+        {
+          roll: "setRoll",
+          year: "setYear",
+          agency: "setAgency",
+        },
+      );
     }
     if (!value.sameAddress) {
       const parsed = addressSchema.safeParse(value.permanent);
@@ -203,30 +268,21 @@ export const scholarSchema = z
         });
       }
     }
+    const partTime = isPartTimeMode(value.studyMode);
     const complete = value.experience.filter(
       (row) => row.organization.trim() && row.designation.trim() && row.from && row.to,
     );
-    if (isPartTimeMode(value.studyMode) && complete.length === 0) {
+    if (partTime && complete.length === 0) {
       ctx.addIssue({
         code: "custom",
-        message:
-          "Add at least one work-experience row. This is required for part-time study.",
+        message: "Enter work experience. This is required for part-time study.",
         path: ["experience"],
       });
     }
     value.experience.forEach((row, index) => {
       const started = rowFilled(row, ["organization", "designation", "from", "to"]);
-      if (!started && !isPartTimeMode(value.studyMode)) return;
-      if (!started && complete.length > 0) return;
-      if (isPartTimeMode(value.studyMode) && !started && index > 0) return;
-      if (
-        !started &&
-        isPartTimeMode(value.studyMode) &&
-        index === 0 &&
-        complete.length === 0
-      ) {
-        return;
-      }
+      if (!partTime) return;
+      if (!started && index > 0) return;
       requireRow(
         row,
         [
@@ -434,7 +490,7 @@ export const statusSchema = z.object({
     .trim()
     .refine(
       isPhdApplicationNo,
-      `Enter an application number such as SJU/PHD/${admissionYear}/Jan/0001.`,
+      `Enter an application number such as SJU/PHD/Jan${admissionYear.slice(-2)}/0001.`,
     ),
   dateOfBirth: z
     .string()
@@ -444,6 +500,11 @@ export const statusSchema = z.object({
 export const contactSchema = z.object({
   name: z.string().trim().min(2, "Enter your name."),
   email: z.string().trim().email("Enter a valid email address."),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number."),
+  subject: z.string().trim().min(3, "Enter the subject.").max(120),
   message: z.string().trim().min(10, "Write a short message.").max(1000),
 });
 
@@ -468,6 +529,10 @@ export function emptyEducation() {
     year: "",
     score: "",
   };
+}
+
+export function emptyExperience() {
+  return { organization: "", designation: "", from: "", to: "" };
 }
 
 export function emptyQualification() {

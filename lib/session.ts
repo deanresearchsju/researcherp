@@ -88,8 +88,7 @@ export async function decodeSessionCookie(token: string | undefined) {
       ? parsed.menus.filter(
           (item): item is string => typeof item === "string" && item.startsWith("/"),
         )
-      : parsed.menus === null ||
-          (parsed.role === "admin" && parsed.identifier.trim().toLowerCase() === "admin")
+      : parsed.role === "admin" && parsed.identifier.trim().toLowerCase() === "admin"
         ? null
         : [];
     return {

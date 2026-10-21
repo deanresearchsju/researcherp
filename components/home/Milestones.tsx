@@ -1,22 +1,17 @@
 import { Reveal } from "@/components/home/Reveal";
 import { Container } from "@/components/ui/container";
-import { SectionHeading } from "@/components/ui/section-heading";
 import { courseWork, milestones } from "@/data/milestones";
 import { sectionCopy } from "@/data/sections";
 
 export function Milestones() {
-  const copy = sectionCopy.journey;
-
   return (
-    <section id="journey" className="py-16 sm:py-24" aria-labelledby="journey-title">
+    <section
+      id="journey"
+      className="py-8 sm:py-10"
+      aria-label={sectionCopy.journey.title}
+    >
       <Container>
-        <SectionHeading
-          eyebrow={copy.eyebrow}
-          title={copy.title}
-          description={copy.description}
-          id="journey-title"
-        />
-        <div className="mt-8 rounded-xl border border-accent/60 bg-accent/15 p-5">
+        <div className="rounded-xl border border-accent/60 bg-accent/15 p-5">
           <p className="font-semibold text-accent-foreground">{courseWork.deadline}</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             {courseWork.semesters.map((semester) => (

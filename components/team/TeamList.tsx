@@ -1,7 +1,7 @@
-import { Mail, Phone, UserRound } from "lucide-react";
+import { Clock, Mail, MapPin, Phone, UserRound } from "lucide-react";
 
-import { buttonVariants } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
+import { university } from "@/lib/constants";
 import type { TeamMember } from "@/lib/team";
 import { cn } from "@/lib/utils";
 
@@ -9,163 +9,215 @@ function phoneHref(phone: string) {
   return `tel:${phone.replace(/[^\d+]/g, "")}`;
 }
 
-function roleBadge(role: string) {
-  const parts = role.split(/\s+[—–-]\s+/);
-  return (parts[1] ?? parts[0] ?? role).trim();
+/** "Dean - Research and Development" → title "Dean", unit "Research and Development". */
+function roleParts(role: string) {
+  const [title = role, unit = ""] = role.split(/\s+[—–-]\s+/);
+  return { title: title.trim(), unit: unit.trim() };
 }
 
 function Portrait({
   name,
   photo,
-  featured = false,
+  className,
 }: {
   name: string;
   photo: string;
-  featured?: boolean;
+  className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "relative overflow-hidden rounded-2xl border border-border bg-muted p-2 shadow-card",
-        featured ? "mx-auto h-40 w-32" : "mx-auto h-44 w-36 shrink-0 sm:mx-0",
-      )}
-    >
-      <div className="absolute inset-x-0 top-0 h-10 bg-muted" aria-hidden="true" />
+    <div className={cn("overflow-hidden border border-border bg-muted", className)}>
       {photo ? (
         // Stored team photograph; next/image cannot serve a data URL.
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={photo}
-          alt={name}
-          className="relative size-full rounded-xl object-cover object-top transition duration-500 group-hover:scale-[1.03]"
-        />
+        <img src={photo} alt={name} className="size-full object-cover object-top" />
       ) : (
-        <div className="relative flex size-full items-center justify-center rounded-xl bg-card">
-          <UserRound className="size-12 text-muted-foreground" aria-hidden="true" />
+        <div className="flex size-full items-center justify-center">
+          <UserRound className="size-10 text-muted-foreground/60" aria-hidden="true" />
         </div>
       )}
     </div>
   );
 }
 
-function ContactLinks({
-  member,
-  align = "start",
+function SectionTitle({
+  kicker,
+  title,
+  id,
 }: {
-  member: TeamMember;
-  align?: "center" | "start";
+  kicker: string;
+  title: string;
+  id: string;
 }) {
-  const label = member.name.trim() || member.role;
-  if (!member.email && !member.phone) return null;
-
   return (
-    <div
-      className={cn(
-        "mt-5 flex flex-wrap gap-2",
-        align === "center" ? "justify-center" : "justify-center sm:justify-start",
-      )}
-    >
-      {member.email ? (
-        <a
-          href={`mailto:${member.email}`}
-          aria-label={`Email ${label}`}
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "max-w-full min-w-0 overflow-hidden",
-          )}
-        >
-          <Mail />
-          <span className="min-w-0 truncate">{member.email}</span>
-        </a>
-      ) : null}
-      {member.phone ? (
-        <a
-          href={phoneHref(member.phone)}
-          aria-label={`Call ${label}`}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          <Phone />
-          {member.phone}
-        </a>
-      ) : null}
+    <div className="border-b-2 border-primary/15 pb-3">
+      <p className="text-[0.68rem] font-bold tracking-[0.2em] text-secondary uppercase">
+        {kicker}
+      </p>
+      <h2 id={id} className="mt-1 font-heading text-2xl text-primary sm:text-[1.7rem]">
+        {title}
+      </h2>
     </div>
   );
 }
 
-function MemberCard({
-  member,
-  featured = false,
-}: {
-  member: TeamMember;
-  featured?: boolean;
-}) {
-  const label = member.name.trim() || member.role;
-  const badge = roleBadge(member.role);
-
-  if (featured) {
-    return (
-      <article className="group relative mx-auto max-w-2xl overflow-hidden rounded-3xl border border-border bg-card px-6 py-8 text-center shadow-card transition duration-300 hover:-translate-y-1 hover:shadow-lift sm:px-10">
-        <div
-          className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-gold to-primary"
-          aria-hidden="true"
-        />
-        {badge ? (
-          <span className="inline-flex rounded-full bg-muted px-3 py-1.5 text-[0.65rem] font-bold tracking-[0.16em] text-primary uppercase">
-            {badge}
-          </span>
-        ) : null}
-        <div className="mt-5">
-          <Portrait name={label} photo={member.photo} featured />
-        </div>
-        {member.name ? (
-          <h3 className="mt-5 font-heading text-2xl font-semibold tracking-tight text-purple-deep sm:text-3xl">
-            {member.name}
-          </h3>
-        ) : null}
-        <p
-          className={cn(
-            "text-sm font-semibold text-muted-foreground sm:text-base",
-            member.name ? "mt-1.5" : "mt-5 font-heading text-2xl text-purple-deep",
-          )}
-        >
-          {member.role}
-        </p>
-        <ContactLinks member={member} align="center" />
-      </article>
-    );
-  }
-
+function ContactRows({ member }: { member: TeamMember }) {
+  const rows = [
+    member.email
+      ? {
+          icon: Mail,
+          label: "Email",
+          value: member.email,
+          href: `mailto:${member.email}`,
+        }
+      : null,
+    member.phone
+      ? {
+          icon: Phone,
+          label: "Phone",
+          value: member.phone,
+          href: phoneHref(member.phone),
+        }
+      : null,
+  ].filter((row) => row !== null);
+  if (rows.length === 0) return null;
   return (
-    <article className="group relative h-full overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-card transition duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-lift sm:p-6">
-      <div
-        className="absolute top-0 bottom-0 left-0 w-1 bg-gradient-to-b from-primary to-gold"
-        aria-hidden="true"
+    <dl className="space-y-1.5 text-sm">
+      {rows.map(({ icon: Icon, label, value, href }) => (
+        <div key={label} className="flex items-center gap-2">
+          <dt className="flex w-20 shrink-0 items-center gap-1.5 text-muted-foreground">
+            <Icon className="size-3.5" aria-hidden="true" />
+            {label}
+          </dt>
+          <dd className="min-w-0">
+            <a
+              href={href}
+              className="break-all text-primary underline-offset-4 hover:underline"
+            >
+              {value}
+            </a>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function DeanProfile({ member }: { member: TeamMember }) {
+  const { title, unit } = roleParts(member.role);
+  const name = member.name.trim() || member.role;
+  return (
+    <section aria-labelledby="dean-office" className="space-y-7">
+      <SectionTitle
+        id="dean-office"
+        kicker={university.researchOffice}
+        title="Office of the Dean"
       />
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <Portrait name={label} photo={member.photo} />
-        <div className="min-w-0 flex-1 text-center sm:text-left">
-          {badge ? (
-            <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-[0.62rem] font-bold tracking-[0.14em] text-gold-ink uppercase">
-              {badge}
-            </span>
-          ) : null}
-          {member.name ? (
-            <h3 className="mt-3 font-heading text-2xl font-semibold tracking-tight text-purple-deep">
-              {member.name}
-            </h3>
-          ) : null}
-          <p
-            className={cn(
-              "text-sm font-semibold leading-5 text-muted-foreground",
-              member.name ? "mt-1.5" : "mt-3 font-heading text-2xl text-purple-deep",
-            )}
-          >
-            {member.role}
+      <div className="grid gap-8 md:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12">
+        <div className="mx-auto w-44 md:mx-0 md:w-full">
+          <Portrait
+            name={name}
+            photo={member.photo}
+            className="aspect-[3/4] shadow-card"
+          />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold tracking-[0.16em] text-secondary uppercase">
+            {title}
+            {unit ? ` · ${unit}` : ""}
           </p>
-          <ContactLinks member={member} />
+          <h3 className="mt-2 font-heading text-3xl text-primary sm:text-4xl">{name}</h3>
+          <p className="mt-1 text-base text-foreground">
+            {member.role}, {university.researchOffice}, {university.name}
+          </p>
+          <div className="mt-5 h-px w-16 bg-accent" />
+          <p className="mt-5 max-w-2xl text-sm leading-7 text-muted-foreground">
+            The Dean heads the {university.researchOffice} and oversees Ph.D. admissions,
+            recognition of research supervisors, doctoral committees, course work, and the
+            evaluation and award of the doctoral degree.
+          </p>
+          <div className="mt-6 max-w-md border-t border-border pt-4">
+            <ContactRows member={member} />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StaffEntry({ member }: { member: TeamMember }) {
+  const name = member.name.trim() || member.role;
+  const { title, unit } = roleParts(member.role);
+  return (
+    <article className="flex gap-5 border-b border-border py-6">
+      <Portrait name={name} photo={member.photo} className="h-32 w-24 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <h3 className="font-heading text-xl text-primary">{name}</h3>
+        <p className="mt-0.5 text-sm font-semibold text-foreground">{title}</p>
+        {unit ? <p className="text-sm text-muted-foreground">{unit}</p> : null}
+        <div className="mt-3">
+          <ContactRows member={member} />
         </div>
       </div>
     </article>
+  );
+}
+
+function OfficeContact() {
+  const items: {
+    icon: typeof Mail;
+    label: string;
+    lines: readonly string[];
+    href?: string;
+  }[] = [
+    { icon: MapPin, label: "Address", lines: university.addressLines },
+    {
+      icon: Mail,
+      label: "Email",
+      lines: [university.email],
+      href: `mailto:${university.email}`,
+    },
+    {
+      icon: Phone,
+      label: "Phone",
+      lines: [university.phoneDisplay],
+      href: `tel:${university.phone}`,
+    },
+    { icon: Clock, label: "Office hours", lines: [university.hours] },
+  ];
+  return (
+    <section aria-labelledby="office-contact" className="space-y-6">
+      <SectionTitle
+        id="office-contact"
+        kicker="Get in touch"
+        title="Contact the Center for Research"
+      />
+      <dl className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        {items.map(({ icon: Icon, label, lines, href }) => (
+          <div key={label} className="bg-card p-5">
+            <dt className="flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">
+              <Icon className="size-4 text-secondary" aria-hidden="true" />
+              {label}
+            </dt>
+            <dd className="mt-2 text-sm leading-6 text-foreground">
+              {href ? (
+                <a
+                  href={href}
+                  className="break-all text-primary underline-offset-4 hover:underline"
+                >
+                  {lines[0]}
+                </a>
+              ) : (
+                lines.map((line) => (
+                  <span key={line} className="block">
+                    {line}
+                  </span>
+                ))
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -182,18 +234,26 @@ export function TeamList({ members }: { members: TeamMember[] }) {
   }
 
   return (
-    <section className="bg-background py-14 sm:py-20">
-      <Container className="space-y-6">
-        <MemberCard member={lead} featured />
-        {rest.length > 0 ? (
-          <ul className="grid gap-5 lg:grid-cols-2">
-            {rest.map((member) => (
-              <li key={member.id}>
-                <MemberCard member={member} />
-              </li>
-            ))}
-          </ul>
-        ) : null}
+    <section className="bg-background py-10 sm:py-14">
+      <Container>
+        <div className="space-y-14 border border-border bg-card px-5 py-8 shadow-card sm:px-10 sm:py-12">
+          <DeanProfile member={lead} />
+          {rest.length > 0 ? (
+            <section aria-labelledby="research-office" className="space-y-1">
+              <SectionTitle
+                id="research-office"
+                kicker={university.researchOffice}
+                title="Research Office"
+              />
+              <div className="grid gap-x-12 md:grid-cols-2">
+                {rest.map((member) => (
+                  <StaffEntry key={member.id} member={member} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <OfficeContact />
+        </div>
       </Container>
     </section>
   );

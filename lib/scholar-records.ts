@@ -1,11 +1,13 @@
 import {
   recordStatuses,
   scholarRecordKinds,
+  scholarRecordMenus,
   type RecordStatus,
   type ScholarRecordKind,
   type ScholarRecordMenu,
 } from "@/data/scholar-records";
-import { recordAudit, pushNotice } from "@/lib/audit";
+import { notifyOffice, recordAudit, pushNotice } from "@/lib/audit";
+import { recordHref, recordLabel } from "@/lib/notice-links";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { storageKeys } from "@/lib/constants";
 import { isValidIsoDate } from "@/lib/dates";
@@ -13,6 +15,9 @@ import { createSupabase } from "@/lib/supabase/client";
 import { toJson } from "@/lib/records";
 import type { Json } from "@/types/database";
 import { z } from "zod";
+import { isOfficeRole } from "@/lib/access";
+import { readPreviewSession } from "@/lib/auth";
+import { currentDoctoral, latestCommittee, synopsisSubmitted } from "@/lib/doctoral";
 
 export type ScholarRecord = {
   id: string;
@@ -47,7 +52,7 @@ function writeLocalScholarRecord(draft: RecordDraft, existingId?: string) {
     kind: draft.kind,
     scholarIdentifier: draft.scholarIdentifier,
     scholarName: draft.scholarName,
-    status: "Submitted",
+    status: draft.status ?? "Submitted",
     payload: draft.payload,
     fileName: draft.fileName,
     fileData: draft.fileData,
@@ -264,6 +269,8 @@ export type RecordDraft = {
   fileData: string | null;
   supervisorIdentifier?: string;
   supervisorName?: string;
+  /** Office entries (such as fees paid before the ERP) can be saved already approved. */
+  status?: "Submitted" | "Approved";
 };
 
 function recordById(kind: ScholarRecordKind, id: string) {
@@ -275,11 +282,84 @@ function recordById(kind: ScholarRecordKind, id: string) {
 
 const lockedMessage = "This record is approved and cannot be changed.";
 
+/** A scholar's new submission goes to the supervisor first when the menu needs one. */
+async function announceSubmission(draft: RecordDraft, resubmitted: boolean) {
+  if (draft.status === "Approved") return;
+  const signer = readPreviewSession();
+  if (signer && isOfficeRole(signer.role)) return;
+  const menu = scholarRecordMenus.find((item) => item.kind === draft.kind);
+  const label = recordLabel(draft.kind);
+  const verb = resubmitted ? "Updated" : "New";
+  if (menu?.needsSupervisor && draft.supervisorIdentifier?.trim()) {
+    await pushNotice({
+      role: "supervisor",
+      identifier: draft.supervisorIdentifier,
+      title: `${verb} ${label.toLowerCase()} to recommend`,
+      detail: `${draft.scholarName} sent a ${label.toLowerCase()}.`,
+      href: recordHref("supervisor", draft.kind),
+    });
+    return;
+  }
+  await notifyOffice({
+    title: `${verb} ${label.toLowerCase()} · ${draft.scholarName}`,
+    detail: `Waiting for the research office.`,
+    href: recordHref("admin", draft.kind),
+  });
+}
+
+/** Tells the scholar (and the office, after a supervisor's recommendation) of a decision. */
+async function announceStatus(
+  record: ScholarRecord,
+  status: RecordStatus,
+  remarks: string,
+) {
+  const label = recordLabel(record.kind);
+  if (status === "Supervisor approved") {
+    await notifyOffice({
+      title: `${label} recommended · ${record.scholarName}`,
+      detail: `${record.supervisorName || "The supervisor"} recommended it. Waiting for the research office.`,
+      href: recordHref("admin", record.kind),
+    });
+  }
+  await pushNotice({
+    role: "scholar",
+    identifier: record.scholarIdentifier,
+    title: `${label}: ${status === "Supervisor approved" ? "recommended by your supervisor" : status.toLowerCase()}`,
+    detail: remarks.trim() || `Your ${label.toLowerCase()} is ${status.toLowerCase()}.`,
+    href: recordHref("scholar", record.kind),
+  });
+}
+
 export async function saveScholarRecord(draft: RecordDraft, existingId?: string) {
   const blocked = officeViewWriteBlock();
   if (blocked) return blocked;
+  if (draft.status === "Approved") {
+    const signer = readPreviewSession();
+    if (!signer || !isOfficeRole(signer.role)) {
+      return { ok: false as const, message: "Only the research office can record this." };
+    }
+  }
   if (existingId && recordById(draft.kind, existingId)?.status === "Approved") {
     return { ok: false as const, message: lockedMessage };
+  }
+  if (draft.kind === "title_change") {
+    const doctoral = currentDoctoral();
+    if (doctoral && synopsisSubmitted(doctoral, draft.scholarIdentifier)) {
+      return {
+        ok: false as const,
+        message: "The synopsis is submitted, so the research title cannot be changed.",
+      };
+    }
+    if (
+      doctoral &&
+      latestCommittee(doctoral, "second", draft.scholarIdentifier)?.status !== "Approved"
+    ) {
+      return {
+        ok: false as const,
+        message:
+          "The title is finalised at the second doctoral committee. Propose the final title in that report.",
+      };
+    }
   }
   const cached = caches.get(draft.kind);
   const source = cached?.source ?? "browser";
@@ -289,9 +369,10 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     if (!supabase) return { ok: false as const, message: "Supabase is not configured." };
     const columns = {
       scholar_name: draft.scholarName,
-      status: "Submitted" as const,
+      status: draft.status ?? ("Submitted" as const),
       payload: toJson({
         ...draft.payload,
+        ...(draft.status === "Approved" ? decisionStamp("Approved", "Submitted") : {}),
         supervisorIdentifier: draft.supervisorIdentifier ?? "",
         supervisorName: draft.supervisorName ?? "",
       }),
@@ -342,6 +423,7 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
       ? cached.records.map((record) => (record.id === existingId ? mapped : record))
       : [mapped, ...cached.records];
     publish(draft.kind, { ...cached, records });
+    await announceSubmission(draft, Boolean(existingId));
     return { ok: true as const };
   }
 
@@ -351,7 +433,7 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     kind: draft.kind,
     scholarIdentifier: draft.scholarIdentifier,
     scholarName: draft.scholarName,
-    status: "Submitted",
+    status: draft.status ?? "Submitted",
     payload: draft.payload,
     fileName: draft.fileName,
     fileData: draft.fileData,
@@ -378,7 +460,23 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     source: "browser",
     detail: cached?.detail ?? null,
   });
+  await announceSubmission(draft, Boolean(existingId));
   return { ok: true as const };
+}
+
+/** Who acted and when, kept on the record so approved copies can show it. */
+function decisionStamp(
+  status: RecordStatus | undefined,
+  current: RecordStatus,
+): Record<string, string> {
+  if (!status || status === current) return {};
+  const signer = readPreviewSession();
+  const by = signer ? signer.name.trim() || signer.identifier : "";
+  const on = new Date().toISOString().slice(0, 10);
+  if (status === "Approved") return { approvedOn: on, approvedBy: by };
+  if (status === "Supervisor approved") return { supervisorOn: on, supervisorBy: by };
+  if (status === "Returned") return { returnedOn: on, returnedBy: by };
+  return {};
 }
 
 export async function annotateScholarRecord(
@@ -393,7 +491,11 @@ export async function annotateScholarRecord(
   const next: ScholarRecord = {
     ...record,
     status: patch.status ?? record.status,
-    payload: { ...record.payload, ...patch.extra },
+    payload: {
+      ...record.payload,
+      ...patch.extra,
+      ...decisionStamp(patch.status, record.status),
+    },
   };
   const cached = caches.get(record.kind);
   if (cached?.source === "database" && !record.id.startsWith("local-")) {
@@ -422,12 +524,7 @@ export async function annotateScholarRecord(
       subject: `${record.kind}:${record.id}`,
       detail: `${record.scholarName} · ${record.kind}`,
     });
-    await pushNotice({
-      role: "scholar",
-      identifier: record.scholarIdentifier,
-      title: `${record.kind.replaceAll("_", " ")} ${patch.status}`,
-      detail: patch.extra?.remarks || `The office marked this ${patch.status}.`,
-    });
+    await announceStatus(record, patch.status, patch.extra?.remarks ?? "");
   }
   return true;
 }
@@ -440,10 +537,17 @@ export async function setScholarRecordStatus(
   if (officeViewWriteBlock()) return false;
   if (record.status === "Approved") return false;
   if (status === "Returned" && remarks.trim().length < 2) return false;
-  const payload =
-    remarks.trim().length > 0
+  if (record.kind === "title_change" && status !== "Returned") {
+    // The title is locked once the synopsis is submitted.
+    const doctoral = currentDoctoral();
+    if (doctoral && synopsisSubmitted(doctoral, record.scholarIdentifier)) return false;
+  }
+  const payload = {
+    ...(remarks.trim().length > 0
       ? { ...record.payload, remarks: remarks.trim() }
-      : record.payload;
+      : record.payload),
+    ...decisionStamp(status, record.status),
+  };
   const next = { ...record, status, payload };
   const cached = caches.get(record.kind);
   if (cached?.source === "database" && !record.id.startsWith("local-")) {
@@ -471,12 +575,7 @@ export async function setScholarRecordStatus(
     subject: `${record.kind}:${record.id}`,
     detail: `${record.scholarName} · ${record.kind}`,
   });
-  await pushNotice({
-    role: "scholar",
-    identifier: record.scholarIdentifier,
-    title: `${record.kind.replaceAll("_", " ")} ${status}`,
-    detail: remarks.trim() || `The office marked this ${status}.`,
-  });
+  await announceStatus(record, status, remarks);
   return true;
 }
 
@@ -590,17 +689,25 @@ export function downloadStoredFile(filename: string, dataUrl: string) {
   link.remove();
 }
 
-function blobFromDataUrl(dataUrl: string) {
-  const match = /^data:([^;]+)(;base64)?,([\s\S]*)$/.exec(dataUrl);
-  if (!match) return null;
-  const mime = match[1] || "application/octet-stream";
-  const body = match[3] ?? "";
-  const binary = match[2] ? atob(body) : decodeURIComponent(body);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+export function blobFromDataUrl(dataUrl: string) {
+  if (!dataUrl.startsWith("data:")) return null;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return null;
+  const header = dataUrl.slice(5, comma);
+  const body = dataUrl.slice(comma + 1);
+  const parts = header.split(";").filter(Boolean);
+  const mime = parts[0] || "application/octet-stream";
+  const base64 = parts.some((part) => part.trim().toLowerCase() === "base64");
+  try {
+    const binary = base64 ? atob(body) : decodeURIComponent(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
   }
-  return new Blob([bytes], { type: mime });
 }
 
 export function openStoredFile(filename: string, dataUrl: string) {

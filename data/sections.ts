@@ -20,7 +20,7 @@ export const heroCopy = {
 export const sectionCopy = {
   announcements: {
     eyebrow: "Notices",
-    title: "News & Announcements",
+    title: "Announcements & Events",
     description: "",
     viewAll: "View all",
     viewLess: "Show fewer",
@@ -84,7 +84,7 @@ export const sectionCopy = {
   },
   contact: {
     eyebrow: "Helpdesk",
-    title: "Contact the Center for Research",
+    title: "Contact",
     description: "Write or call during helpdesk hours.",
   },
 };

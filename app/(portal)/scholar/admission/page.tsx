@@ -1,12 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { ScholarAdmission } from "@/components/portal/ScholarAdmission";
-
-export const metadata: Metadata = {
-  title: "Admission file",
-  robots: { index: false, follow: false },
-};
-
+/** The admission application is shown on the scholar dashboard. */
 export default function ScholarAdmissionPage() {
-  return <ScholarAdmission />;
+  redirect("/scholar/dashboard#admission");
 }

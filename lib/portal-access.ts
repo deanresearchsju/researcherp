@@ -100,7 +100,8 @@ export function scholarMayUsePortal(
       (item.applicationNo && item.applicationNo.toLowerCase() === id),
   );
   if (!row) return false;
-  return row.letterIssued || row.verification === "Approved";
+  // Sign-in opens only after the documents are submitted and verified.
+  return row.verification === "Approved";
 }
 
 export function supervisorMayUsePortal(
@@ -117,6 +118,11 @@ export function supervisorMayUsePortal(
     return { ok: false, message: loginGateCopy.supervisorInactive };
   }
   if (register && active) return { ok: true };
+  // Supervisors approved after the register was built: a past (resigned) standing closes sign-in.
+  const later = standingFor(standings, [identifier]);
+  if (later && !later.active) {
+    return { ok: false, message: loginGateCopy.supervisorInactive };
+  }
   const id = identifier.trim().toLowerCase();
   if (approvedEmails.some((email) => email.trim().toLowerCase() === id)) {
     return { ok: true };

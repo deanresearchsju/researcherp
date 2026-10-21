@@ -17,7 +17,7 @@ export function PhdApplyCta() {
 
   if (!settings.phdOpen) {
     return (
-      <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+      <p className="max-w-sm text-xs leading-5 text-muted-foreground sm:text-sm sm:leading-6">
         {phdWindowCopy.closedStatus}. {phdWindowCopy.closedDetail}
       </p>
     );
@@ -28,7 +28,7 @@ export function PhdApplyCta() {
       href={heroCopy.primaryHref}
       className={buttonVariants({
         variant: "gold",
-        size: "lg",
+        size: "sm",
         className: "shrink-0",
       })}
     >

@@ -12,7 +12,7 @@ import {
 
 import { DynamicRows } from "@/components/forms/DynamicRows";
 import { FileUpload } from "@/components/forms/FileUpload";
-import { WordCountTextarea } from "@/components/forms/WordCountTextarea";
+import { PaymentInstructions } from "@/components/forms/PaymentInstructions";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -22,9 +22,33 @@ import { ApplicationReceipt } from "@/components/forms/scholar/ApplicationReceip
 import { ApplicationStart } from "@/components/forms/scholar/ApplicationStart";
 import { scholarDocuments } from "@/data/documents";
 import { scholarDeclaration } from "@/data/declarations";
-import { scholarFormCopy } from "@/data/forms";
-import { schools } from "@/data/schools";
+import { netExamCopy, scholarFormCopy } from "@/data/forms";
+import { countries } from "@/data/countries";
 import { saveSubmission } from "@/lib/applications";
+import {
+  admissionYear,
+  applicationFeeInr,
+  bloodGroups,
+  communities,
+  communityNeedsName,
+  genders,
+  isNetQualified,
+  netIncludesNet,
+  netIncludesSet,
+  maritalStatuses,
+  nationalities,
+  netQualifications,
+  paymentModes,
+  paymentStatus,
+  programmeName,
+  researchAreaLimit,
+  studyModes,
+  isPartTimeMode,
+  titles,
+  referenceDate,
+} from "@/lib/constants";
+import { formatNetQualification } from "@/lib/net-exam";
+import { currentOffice, formatPhdSession, parsePhdSession } from "@/lib/office";
 import { attachmentFiles, attachmentNames, savePhdApplication } from "@/lib/records";
 import {
   blankScholar,
@@ -37,22 +61,12 @@ import {
   type PhdReceipt,
 } from "@/lib/scholar-progress";
 import {
-  admissionSessions,
-  admissionYear,
-  applicationFeeInr,
-  bloodGroups,
-  genders,
-  maritalStatuses,
-  months,
-  paymentModes,
-  paymentStatus,
-  programmeName,
-  studyModes,
-  isPartTimeMode,
-  titles,
-  referenceDate,
-  yesNo,
-} from "@/lib/constants";
+  hasOpenVacancy,
+  loadVacancies,
+  openSchools,
+  openSubjects,
+  type Vacancy,
+} from "@/lib/vacancies";
 import {
   ageParts,
   formatAge,
@@ -63,7 +77,7 @@ import {
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import { fieldMessage, nestedMessage } from "@/lib/form-errors";
 import { formatInr } from "@/lib/utils";
-import { scholarSchema, type ScholarFormValues } from "@/lib/validation";
+import { emptyExperience, scholarSchema, type ScholarFormValues } from "@/lib/validation";
 const steps = [
   {
     label: "Personal",
@@ -73,24 +87,63 @@ const steps = [
       "dateOfBirth",
       "gender",
       "nationality",
+      "country",
       "community",
+      "communityName",
       "bloodGroup",
       "maritalStatus",
     ],
   },
   { label: "Programme", fields: ["studyMode", "school", "specialization"] },
-  { label: "Education", fields: ["ug", "pg", "netQualified", "netMonth", "netYear"] },
+  {
+    label: "Education",
+    fields: [
+      "ug",
+      "pg",
+      "netQualified",
+      "netRoll",
+      "netYear",
+      "netAgency",
+      "setRoll",
+      "setYear",
+      "setAgency",
+    ],
+  },
   {
     label: "Contact",
     fields: ["email", "mobile", "communication", "sameAddress", "permanent"],
   },
   { label: "Experience", fields: ["experience", "studyMode"] },
-  { label: "Research", fields: ["researchArea", "outline"] },
+  { label: "Research", fields: ["researchArea"] },
   { label: "Payment", fields: ["paymentMode", "transactionNumber", "paymentDate"] },
   { label: "Documents", fields: [] },
   { label: "Declaration", fields: ["agree", "applicantName"] },
   { label: "Review", fields: [] },
 ] as const;
+
+function asksExperience(studyMode: string) {
+  return isPartTimeMode(studyMode);
+}
+
+function adjacentStep(from: number, direction: 1 | -1, studyMode: string) {
+  let index = from + direction;
+  while (
+    index >= 0 &&
+    index < steps.length &&
+    steps[index]?.label === "Experience" &&
+    !asksExperience(studyMode)
+  ) {
+    index += direction;
+  }
+  return Math.min(Math.max(index, 0), steps.length - 1);
+}
+
+function clampStep(index: number, studyMode: string) {
+  if (steps[index]?.label === "Experience" && !asksExperience(studyMode)) {
+    return Math.min(index + 1, steps.length - 1);
+  }
+  return index;
+}
 
 type ScholarFiles = Record<(typeof scholarDocuments)[number]["id"], StoredFile | null>;
 
@@ -113,6 +166,7 @@ function documentRequired(
 ) {
   if (spec.required === "always") return true;
   if (spec.required === "part-time") return isPartTimeMode(values.studyMode);
+  if (spec.id === "net") return isNetQualified(values.netQualified);
   return false;
 }
 
@@ -123,6 +177,7 @@ export function ScholarApplication() {
   const [editing, setEditing] = useState(false);
   const [receipt, setReceipt] = useState<PhdReceipt | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [vacancies, setVacancies] = useState<Vacancy[]>([]);
 
   const form = useForm<ScholarFormValues>({
     resolver: zodResolver(scholarSchema),
@@ -159,26 +214,28 @@ export function ScholarApplication() {
   async function beginApplication(start: {
     mobile: string;
     email: string;
-    department: string;
+    vacancies: Vacancy[];
   }) {
+    setVacancies(start.vacancies);
     const found = await findPhdByMobile(start.mobile);
     if (found.kind === "submitted") {
       setReceipt(found.receipt);
       return;
     }
+    const open = parsePhdSession(currentOffice()?.settings.admissionSession ?? "");
     const values: ScholarFormValues = {
       ...(found.kind === "draft" ? found.values : blankScholar()),
       mobile: start.mobile,
       email: start.email,
-      school: start.department,
-      year: admissionYear,
+      session: open.month,
+      year: open.year || admissionYear,
       programme: programmeName,
     };
-    const nextStep = found.kind === "draft" ? found.step : 0;
+    const nextStep = clampStep(found.kind === "draft" ? found.step : 0, values.studyMode);
     form.reset(values);
     setStep(nextStep);
     writeLocalDraft(start.mobile, nextStep, values);
-    void saveRemoteDraft(start.mobile, start.email, start.department, nextStep, values);
+    void saveRemoteDraft(start.mobile, start.email, values.school, nextStep, values);
     setEditing(true);
   }
 
@@ -222,11 +279,31 @@ export function ScholarApplication() {
       if (current.label === "Documents" && !getValues("applicantName").trim()) {
         setValue("applicantName", getValues("fullName"));
       }
+    } else if (current.label === "Programme") {
+      let rows = vacancies;
+      if (rows.length === 0) {
+        const loaded = await loadVacancies();
+        rows = loaded.rows;
+        setVacancies(rows);
+      }
+      const school = getValues("school");
+      const subject = getValues("specialization");
+      if (!hasOpenVacancy(rows, school, subject)) {
+        setSubmitError(scholarFormCopy.noVacancy);
+        return;
+      }
+      setSubmitError(null);
+      const ok = await trigger([...current.fields]);
+      if (!ok) return;
     } else if (current.fields.length > 0) {
       const ok = await trigger([...current.fields]);
       if (!ok) return;
     }
-    const nextStep = Math.min(step + 1, steps.length - 1);
+    const studyMode = getValues("studyMode");
+    if (current.label === "Programme" && !asksExperience(studyMode)) {
+      setValue("experience", [emptyExperience()]);
+    }
+    const nextStep = adjacentStep(step, 1, studyMode);
     setStep(nextStep);
     persist(nextStep);
     const currentValues = getValues();
@@ -244,13 +321,20 @@ export function ScholarApplication() {
     const index = steps.findIndex((item) =>
       item.fields.some((field) => keys.includes(field)),
     );
-    if (index >= 0) setStep(index);
+    if (index >= 0) setStep(clampStep(index, getValues("studyMode")));
   }
 
   async function onSubmit(submitted: ScholarFormValues) {
     const { phdApplicationsOpen } = await import("@/lib/office");
     if (!phdApplicationsOpen()) {
-      setSubmitError("Ph.D. applications are closed.");
+      setSubmitError("Admissions are currently closed.");
+      return;
+    }
+    const openRows = vacancies.length > 0 ? vacancies : (await loadVacancies()).rows;
+    if (vacancies.length === 0) setVacancies(openRows);
+    if (!hasOpenVacancy(openRows, submitted.school, submitted.specialization)) {
+      setSubmitError(scholarFormCopy.noVacancy);
+      setStep(steps.findIndex((item) => item.label === "Programme"));
       return;
     }
     if (!validateFiles(submitted)) {
@@ -316,24 +400,31 @@ export function ScholarApplication() {
   }
 
   const current = steps[step];
+  const visibleSteps = steps.filter(
+    (item) => item.label !== "Experience" || asksExperience(values.studyMode),
+  );
+  const visibleIndex = Math.max(
+    visibleSteps.findIndex((item) => item.label === current?.label),
+    0,
+  );
 
   return (
     <form
-      className="space-y-6"
+      className="space-y-4"
       onSubmit={handleSubmit(onSubmit, onInvalid)}
       onChange={() => persist()}
       noValidate
     >
-      <header className="rounded-xl border border-border bg-card p-5 shadow-card sm:p-6">
+      <header className="rounded-xl border border-border bg-card p-4 shadow-card sm:p-5">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="font-heading text-2xl text-primary">
               {scholarFormCopy.university}
             </p>
             <p className="text-sm text-muted-foreground">{scholarFormCopy.unit}</p>
-            <h1 className="mt-2 text-lg font-semibold tracking-wide text-secondary">
+            <h2 className="mt-2 text-lg font-semibold tracking-wide text-secondary">
               {scholarFormCopy.title}
-            </h1>
+            </h2>
           </div>
           <div className="w-full max-w-56">
             <div className="relative mx-auto mb-2 aspect-[7/9] w-36 overflow-hidden rounded-xl border border-dashed border-primary/30 bg-white">
@@ -373,35 +464,27 @@ export function ScholarApplication() {
             </FormField>
           </div>
         </fieldset>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <FormField
             label={scholarFormCopy.session}
             htmlFor="session"
             required
             error={errors.session?.message}
           >
-            <NativeSelect id="session" {...register("session")}>
-              {values.session &&
-              !(admissionSessions as readonly string[]).includes(values.session) ? (
-                <option value={values.session}>
-                  {values.session} {admissionYear}
-                </option>
-              ) : null}
-              {admissionSessions.map((session) => (
-                <option key={session} value={session}>
-                  {session} {admissionYear}
-                </option>
-              ))}
-            </NativeSelect>
+            <Input
+              id="session"
+              readOnly
+              value={formatPhdSession(values.session, values.year)}
+            />
           </FormField>
         </div>
       </header>
 
-      <Stepper steps={steps.map((item) => item.label)} current={step} />
+      <Stepper steps={visibleSteps.map((item) => item.label)} current={visibleIndex} />
 
       {current?.label === "Personal" ? (
-        <section className="grid gap-4 rounded-xl border border-border bg-card p-5 shadow-card sm:grid-cols-2">
-          <h2 className="font-heading text-2xl text-primary sm:col-span-2">
+        <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2 lg:grid-cols-3">
+          <h2 className="font-heading text-xl text-primary sm:col-span-2 lg:col-span-3">
             1. Personal Details
           </h2>
           <SelectField
@@ -457,16 +540,65 @@ export function ScholarApplication() {
             required
             error={errors.nationality?.message}
           >
-            <Input id="nationality" {...register("nationality")} />
+            <NativeSelect id="nationality" {...register("nationality")}>
+              <option value="">Select</option>
+              {values.nationality &&
+              !(nationalities as readonly string[]).includes(values.nationality) ? (
+                <option value={values.nationality}>{values.nationality}</option>
+              ) : null}
+              {nationalities.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </NativeSelect>
           </FormField>
+          {values.nationality === "Non-Indian" ? (
+            <FormField
+              label="Country"
+              htmlFor="country"
+              required
+              error={errors.country?.message}
+            >
+              <NativeSelect id="country" {...register("country")}>
+                <option value="">Select</option>
+                {countries.map((country) => (
+                  <option key={country} value={country}>
+                    {country}
+                  </option>
+                ))}
+              </NativeSelect>
+            </FormField>
+          ) : null}
           <FormField
             label="Community"
             htmlFor="community"
             required
             error={errors.community?.message}
           >
-            <Input id="community" {...register("community")} />
+            <NativeSelect id="community" {...register("community")}>
+              <option value="">Select</option>
+              {values.community &&
+              !(communities as readonly string[]).includes(values.community) ? (
+                <option value={values.community}>{values.community}</option>
+              ) : null}
+              {communities.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </NativeSelect>
           </FormField>
+          {communityNeedsName(values.community) ? (
+            <FormField
+              label="Sub-caste / Community name"
+              htmlFor="communityName"
+              required
+              error={errors.communityName?.message}
+            >
+              <Input id="communityName" {...register("communityName")} />
+            </FormField>
+          ) : null}
           <SelectField
             id="bloodGroup"
             label="Blood Group"
@@ -487,8 +619,8 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Programme" ? (
-        <section className="grid gap-4 rounded-xl border border-border bg-card p-5 shadow-card sm:grid-cols-2">
-          <h2 className="font-heading text-2xl text-primary sm:col-span-2">
+        <section className="grid gap-3 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2 lg:grid-cols-3">
+          <h2 className="font-heading text-xl text-primary sm:col-span-2 lg:col-span-3">
             2. Programme Details
           </h2>
           <FormField label="Programme" htmlFor="programme">
@@ -503,71 +635,149 @@ export function ScholarApplication() {
             options={studyModes}
           />
           <FormField
-            label="School / Department"
+            label="School"
             htmlFor="school"
             required
             error={errors.school?.message}
           >
-            <NativeSelect id="school" {...register("school")}>
+            <NativeSelect
+              id="school"
+              {...register("school", {
+                onChange: (event) => {
+                  const school = event.target.value;
+                  const allowed = openSubjects(vacancies, school);
+                  if (!allowed.includes(getValues("specialization"))) {
+                    setValue("specialization", "");
+                  }
+                },
+              })}
+            >
               <option value="">Select</option>
-              {schools.map((school) => (
-                <option key={school.id} value={school.name}>
-                  {school.name}
+              {openSchools(vacancies).map((school) => (
+                <option key={school} value={school}>
+                  {school}
                 </option>
               ))}
             </NativeSelect>
           </FormField>
           <FormField
-            label="Specialization"
+            label="Subject"
             htmlFor="specialization"
             required
             error={errors.specialization?.message}
           >
-            <Input id="specialization" {...register("specialization")} />
+            <NativeSelect
+              id="specialization"
+              disabled={
+                !values.school || openSubjects(vacancies, values.school).length === 0
+              }
+              {...register("specialization")}
+            >
+              <option value="">Select</option>
+              {(values.school ? openSubjects(vacancies, values.school) : []).map(
+                (subject) => (
+                  <option key={subject} value={subject}>
+                    {subject}
+                  </option>
+                ),
+              )}
+            </NativeSelect>
           </FormField>
-        </section>
-      ) : null}
-
-      {current?.label === "Education" ? (
-        <section className="space-y-6 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">3. Education Details</h2>
-          <EducationBlock title="UG" prefix="ug" register={register} errors={errors} />
-          <EducationBlock title="PG" prefix="pg" register={register} errors={errors} />
-          <SelectField
-            id="netQualified"
-            label="Qualified in NET?"
-            register={register}
-            name="netQualified"
-            error={errors.netQualified?.message}
-            options={yesNo}
-          />
-          {values.netQualified === "Yes" ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField
-                id="netMonth"
-                label="Month of passing"
-                register={register}
-                name="netMonth"
-                error={errors.netMonth?.message}
-                options={months}
-              />
-              <FormField
-                label="Year of passing"
-                htmlFor="netYear"
-                required
-                error={errors.netYear?.message}
-              >
-                <Input id="netYear" inputMode="numeric" {...register("netYear")} />
-              </FormField>
-            </div>
+          {openSchools(vacancies).length === 0 ? (
+            <p
+              role="alert"
+              className="text-sm font-semibold text-secondary sm:col-span-2 lg:col-span-3"
+            >
+              {scholarFormCopy.noVacancy}
+            </p>
           ) : null}
         </section>
       ) : null}
 
+      {current?.label === "Education" ? (
+        <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">3. Education Details</h2>
+          <EducationBlock title="UG" prefix="ug" register={register} errors={errors} />
+          <EducationBlock title="PG" prefix="pg" register={register} errors={errors} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <SelectField
+              id="netQualified"
+              label={netExamCopy.question}
+              register={register}
+              name="netQualified"
+              error={errors.netQualified?.message}
+              options={netQualifications}
+            />
+            {netIncludesNet(values.netQualified) ? (
+              <div className="space-y-3 sm:col-span-2 lg:col-span-3">
+                <h3 className="text-sm font-semibold text-primary">{netExamCopy.net}</h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField
+                    label={netExamCopy.certificateNo}
+                    htmlFor="netRoll"
+                    required
+                    error={errors.netRoll?.message}
+                  >
+                    <Input id="netRoll" {...register("netRoll")} />
+                  </FormField>
+                  <FormField
+                    label={netExamCopy.year}
+                    htmlFor="netYear"
+                    required
+                    error={errors.netYear?.message}
+                  >
+                    <Input id="netYear" inputMode="numeric" {...register("netYear")} />
+                  </FormField>
+                  <FormField
+                    label={netExamCopy.agency}
+                    htmlFor="netAgency"
+                    required
+                    error={errors.netAgency?.message}
+                  >
+                    <Input id="netAgency" {...register("netAgency")} />
+                  </FormField>
+                </div>
+              </div>
+            ) : null}
+            {netIncludesSet(values.netQualified) ? (
+              <div className="space-y-3 sm:col-span-2 lg:col-span-3">
+                <h3 className="text-sm font-semibold text-primary">{netExamCopy.set}</h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField
+                    label={netExamCopy.certificateNo}
+                    htmlFor="setRoll"
+                    required
+                    error={errors.setRoll?.message}
+                  >
+                    <Input id="setRoll" {...register("setRoll")} />
+                  </FormField>
+                  <FormField
+                    label={netExamCopy.year}
+                    htmlFor="setYear"
+                    required
+                    error={errors.setYear?.message}
+                  >
+                    <Input id="setYear" inputMode="numeric" {...register("setYear")} />
+                  </FormField>
+                  <FormField
+                    label={netExamCopy.agency}
+                    htmlFor="setAgency"
+                    required
+                    error={errors.setAgency?.message}
+                  >
+                    <Input id="setAgency" {...register("setAgency")} />
+                  </FormField>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {current?.label === "Contact" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">4. Contact Details</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">4. Contact Details</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <FormField
               label="Email Address"
               htmlFor="email"
@@ -615,8 +825,11 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Experience" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">5. Work Experience</h2>
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">5. Work Experience</h2>
+          <p className="text-sm text-muted-foreground">
+            Work experience is required for part-time study.
+          </p>
           {fieldMessage(errors.experience) ? (
             <p role="alert" className="text-sm text-secondary">
               {fieldMessage(errors.experience)}
@@ -625,10 +838,7 @@ export function ScholarApplication() {
           <DynamicRows
             addLabel="Add a row"
             onAdd={() =>
-              setValue("experience", [
-                ...getValues("experience"),
-                { organization: "", designation: "", from: "", to: "" },
-              ])
+              setValue("experience", [...getValues("experience"), emptyExperience()])
             }
           >
             {values.experience.map((row, index) => (
@@ -642,6 +852,7 @@ export function ScholarApplication() {
                 <FormField
                   label="Organization / Institution"
                   htmlFor={`org-${index}`}
+                  required
                   error={nestedMessage(errors, `experience.${index}.organization`)}
                 >
                   <Input
@@ -652,6 +863,7 @@ export function ScholarApplication() {
                 <FormField
                   label="Designation"
                   htmlFor={`des-${index}`}
+                  required
                   error={nestedMessage(errors, `experience.${index}.designation`)}
                 >
                   <Input
@@ -662,6 +874,7 @@ export function ScholarApplication() {
                 <FormField
                   label="From"
                   htmlFor={`from-${index}`}
+                  required
                   error={nestedMessage(errors, `experience.${index}.from`)}
                 >
                   <Input
@@ -673,6 +886,7 @@ export function ScholarApplication() {
                 <FormField
                   label="To"
                   htmlFor={`to-${index}`}
+                  required
                   error={nestedMessage(errors, `experience.${index}.to`)}
                 >
                   <Input
@@ -708,41 +922,36 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Research" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">6. Proposed Research</h2>
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">6. Proposed Research</h2>
           <FormField
-            label="Proposed Area of Research"
+            label="Research Area"
             htmlFor="researchArea"
             required
             error={errors.researchArea?.message}
           >
-            <Input id="researchArea" {...register("researchArea")} />
-          </FormField>
-          <FormField
-            label="Brief Outline of Proposed Research (150–200 words)"
-            htmlFor="outline"
-            required
-            error={errors.outline?.message}
-          >
-            <WordCountTextarea
-              id="outline"
-              value={values.outline}
-              invalid={Boolean(errors.outline)}
-              onChange={(next) => setValue("outline", next, { shouldDirty: true })}
+            <Input
+              id="researchArea"
+              maxLength={researchAreaLimit}
+              {...register("researchArea")}
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {values.researchArea.trim().length} / {researchAreaLimit} characters
+            </p>
           </FormField>
         </section>
       ) : null}
 
       {current?.label === "Payment" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">7. Payment Details</h2>
-          <div className="rounded-xl bg-muted p-4 text-sm leading-6">
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">7. Payment Details</h2>
+          <div className="rounded-xl bg-muted p-3 text-sm leading-6">
             <p className="font-semibold text-primary">
               Application fee ₹{formatInr(applicationFeeInr)}
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <BankAccountCard />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField
               id="paymentMode"
               label="Mode"
@@ -783,8 +992,8 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Documents" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">8. Document Checklist</h2>
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">8. Document Checklist</h2>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-left text-sm">
               <thead>
@@ -827,8 +1036,8 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Declaration" ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-card">
-          <h2 className="font-heading text-2xl text-primary">9. Declaration</h2>
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <h2 className="font-heading text-xl text-primary">9. Declaration</h2>
           <p className="text-sm leading-6 text-foreground">{scholarDeclaration}</p>
           <label className="flex items-start gap-2 text-sm">
             <input
@@ -879,20 +1088,53 @@ export function ScholarApplication() {
       ) : null}
 
       {current?.label === "Review" ? (
-        <section className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-card text-sm">
-          <h2 className="font-heading text-2xl text-primary">Review</h2>
+        <section className="space-y-2 rounded-xl border border-border bg-card p-4 shadow-card text-sm">
+          <h2 className="font-heading text-xl text-primary">Review</h2>
+          <ReviewLine
+            label="Session"
+            value={formatPhdSession(values.session, values.year)}
+          />
           <ReviewLine label="Name" value={`${values.title} ${values.fullName}`.trim()} />
           <ReviewLine
             label="Date of birth"
             value={`${formatIsoDate(values.dateOfBirth)} (${age || "age pending"})`}
           />
           <ReviewLine
-            label="Programme"
-            value={`${values.programme} · ${values.studyMode} · ${values.school}`}
+            label="Nationality"
+            value={
+              values.nationality === "Non-Indian"
+                ? `${values.nationality} · ${values.country}`
+                : values.nationality
+            }
           />
-          <ReviewLine label="Specialization" value={values.specialization} />
+          <ReviewLine
+            label="Community"
+            value={[values.community, values.communityName].filter(Boolean).join(" · ")}
+          />
+          <ReviewLine
+            label="Programme"
+            value={`${values.programme} · ${values.studyMode}`}
+          />
+          <ReviewLine label="School" value={values.school} />
+          <ReviewLine label="Subject" value={values.specialization} />
+          <ReviewLine label="NET / SET / SLET" value={formatNetQualification(values)} />
           <ReviewLine label="Email" value={values.email} />
           <ReviewLine label="Mobile" value={values.mobile} />
+          {asksExperience(values.studyMode) ? (
+            <ReviewLine
+              label="Work experience"
+              value={
+                values.experience
+                  .filter((row) => row.organization.trim())
+                  .map((row) =>
+                    [row.organization, row.designation, row.from, row.to]
+                      .filter(Boolean)
+                      .join(" · "),
+                  )
+                  .join(" | ") || "—"
+              }
+            />
+          ) : null}
           <ReviewLine label="Research area" value={values.researchArea} />
           <ReviewLine
             label="Payment"
@@ -912,12 +1154,14 @@ export function ScholarApplication() {
           {submitError}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-3">
+      <div className="sticky bottom-0 z-20 flex flex-wrap gap-3 border-t border-border bg-card/95 py-3 backdrop-blur-md">
         {step > 0 ? (
           <Button
             type="button"
             variant="outline"
-            onClick={() => setStep((value) => value - 1)}
+            onClick={() =>
+              setStep((value) => adjacentStep(value, -1, getValues("studyMode")))
+            }
           >
             Back
           </Button>
@@ -927,13 +1171,24 @@ export function ScholarApplication() {
             Submit application
           </Button>
         ) : (
-          <Button type="button" variant="gold" onClick={() => void continueStep()}>
-            Continue
+          <Button
+            type="button"
+            variant="gold"
+            disabled={
+              current?.label === "Programme" && openSchools(vacancies).length === 0
+            }
+            onClick={() => void continueStep()}
+          >
+            Save & Next
           </Button>
         )}
       </div>
     </form>
   );
+}
+
+function BankAccountCard() {
+  return <PaymentInstructions amount={applicationFeeInr} purpose="Application fee" />;
 }
 
 function ReviewLine({ label, value }: { label: string; value: string }) {
@@ -993,7 +1248,7 @@ function AddressFields({
     ["country", "Country"],
   ] as const;
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {fields.map(([key, label]) => (
         <FormField
           key={key}
@@ -1031,7 +1286,7 @@ function EducationBlock({
   return (
     <div className="space-y-3">
       <h3 className="font-semibold text-primary">{title}</h3>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map(([key, label]) => (
           <FormField
             key={key}

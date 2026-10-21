@@ -13,6 +13,7 @@ import {
   supervisorDownloadHeaders,
   supervisorDownloadRow,
 } from "@/lib/register";
+import { formatNetQualification } from "@/lib/net-exam";
 import { currentApplications, type StoredApplication } from "@/lib/records";
 import { scholarSemesterLabel } from "@/lib/scholar-identity";
 import { currentScholarRecords } from "@/lib/scholar-records";
@@ -38,14 +39,14 @@ export const scholarApplicationHeaders = [
   "Marital status",
   "Study mode (application)",
   "School",
-  "Specialisation",
+  "Subject",
   "UG",
   "PG",
-  "NET",
+  "NET / SET / SLET",
   "Communication address",
   "Permanent address",
   "Experience",
-  "Proposed research area",
+  "Research area",
   "Research outline",
   "Father's name",
   "Mother's name",
@@ -227,13 +228,15 @@ function scholarApplicationCellsFromPayload(
   payload: Record<string, unknown>,
   overlay: Record<string, string>,
 ) {
-  const netQualified = textOf(payload.netQualified);
-  const net =
-    netQualified === "Yes"
-      ? ["Yes", textOf(payload.netMonth), textOf(payload.netYear)]
-          .filter(Boolean)
-          .join(" ")
-      : netQualified;
+  const net = formatNetQualification({
+    netQualified: textOf(payload.netQualified),
+    netRoll: textOf(payload.netRoll),
+    netYear: textOf(payload.netYear),
+    netAgency: textOf(payload.netAgency),
+    setRoll: textOf(payload.setRoll),
+    setYear: textOf(payload.setYear),
+    setAgency: textOf(payload.setAgency),
+  });
   return [
     textOf(payload.title),
     textOf(payload.dateOfBirth) || overlay.dateOfBirth || "",
@@ -332,7 +335,7 @@ export function scholarPersonSections(
     permanent,
     experience,
     researchArea,
-    outline,
+    ,
     fatherName,
     motherName,
     parentContact,
@@ -361,7 +364,11 @@ export function scholarPersonSections(
       pair("Date of birth", dateOfBirth),
       pair("Gender", gender),
       pair("Nationality", nationality),
-      pair("Community", community),
+      pair("Country", textOf(payload.country)),
+      pair(
+        "Community",
+        [community, textOf(payload.communityName)].filter(Boolean).join(" · "),
+      ),
       pair("Blood group", bloodGroup),
       pair("Marital status", maritalStatus),
       pair("Father's name", fatherName),
@@ -376,13 +383,13 @@ export function scholarPersonSections(
       ),
       pair("Study mode", studyMode),
       pair("School", school),
-      pair("Specialisation", specialization),
+      pair("Subject", specialization),
       pair(
         "Admission session",
         [textOf(payload.session), textOf(payload.year)].filter(Boolean).join(" "),
       ),
     ]),
-    section("Education", [pair("UG", ug), pair("PG", pg), pair("NET / SET", net)]),
+    section("Education", [pair("UG", ug), pair("PG", pg), pair("NET / SET / SLET", net)]),
     section("Address", [
       pair("Communication address", communication || overlay.address || ""),
       pair("Permanent address", permanent),
@@ -391,8 +398,7 @@ export function scholarPersonSections(
       pair("Pincode", overlay.pincode ?? ""),
     ]),
     section("Research", [
-      pair("Proposed research area", researchArea),
-      pair("Outline", outline),
+      pair("Research area", researchArea),
       pair("Experience", experience),
     ]),
   ].filter((item): item is PersonFileSection => item !== null);

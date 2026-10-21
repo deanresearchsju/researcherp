@@ -1,22 +1,17 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 
 import { AdmissionLetter } from "@/components/portal/AdmissionPrint";
 import { StatusPill, ViewFilesButton } from "@/components/portal/Desk";
 import { Button } from "@/components/ui/button";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
-import { Input } from "@/components/ui/input";
 import { admissionChecklist, admissionLockCopy } from "@/data/admission";
 import {
   admissionCompleted,
   currentAdmission,
-  displayName,
   missingItems,
   provisionalOrder,
   saveAdmission,
@@ -27,29 +22,56 @@ import {
 import { fileToDataUrl, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
 import { scholarBySignIn } from "@/lib/register";
+import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
+import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
+import type { StoredApplication } from "@/lib/records";
+import { createSupabase } from "@/lib/supabase/client";
 
-const feeSchema = z.object({
-  feeReference: z.string().min(3, "Enter the payment reference.").max(80),
-  feeAmount: z.string().regex(/^\d+$/, "Enter the amount in rupees."),
-});
+/** The scholar's own application, read by its number. */
+async function loadOwnApplication(
+  applicationNo: string,
+): Promise<StoredApplication | null> {
+  const supabase = createSupabase();
+  if (!supabase || !applicationNo) return null;
+  const { data } = await supabase
+    .from("phd_applications")
+    .select(
+      "id, application_no, date_of_birth, applicant_name, email, study_mode, status, payload, created_at",
+    )
+    .eq("application_no", applicationNo)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id,
+    kind: "phd",
+    applicationNo: data.application_no,
+    applicantName: data.applicant_name,
+    email: data.email,
+    dateOfBirth: data.date_of_birth,
+    studyMode: data.study_mode,
+    status: data.status,
+    createdAt: data.created_at,
+    payload: data.payload,
+  };
+}
 
-type FeeValues = z.infer<typeof feeSchema>;
-
-export function ScholarAdmission() {
+export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
   const ready = useClientReady();
   const session = usePortalSession();
+  const payments = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("payment", onChange),
+    () => currentScholarRecords("payment"),
+    () => null,
+  );
   const store = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
-  const form = useForm<FeeValues>({
-    resolver: zodResolver(feeSchema),
-    defaultValues: { feeReference: "", feeAmount: "" },
-  });
-  const [receipt, setReceipt] = useState<StoredFile | null>(null);
-  const [receiptError, setReceiptError] = useState("");
   const [notice, setNotice] = useState("");
   const [letterOpen, setLetterOpen] = useState(false);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<StoredFile | null>(null);
+  const [application, setApplication] = useState<StoredApplication | null>(null);
+  const [opening, setOpening] = useState(false);
 
   if (!ready || !store) {
     return <p className="text-sm text-muted-foreground">Loading your admission file…</p>;
@@ -75,6 +97,7 @@ export function ScholarAdmission() {
   );
   if (!row) {
     const onRegister = scholarBySignIn(session.identifier);
+    if (embedded) return null;
     return (
       <div>
         <h1 className="font-serif text-3xl text-primary">Admission file</h1>
@@ -115,16 +138,53 @@ export function ScholarAdmission() {
     setNotice(saved.ok ? "Saved." : saved.message);
   }
 
+  async function openApplication() {
+    setOpening(true);
+    const found = await loadOwnApplication(currentRow.applicationNo);
+    setOpening(false);
+    if (!found) {
+      setNotice("Your application could not be opened. Write to the research office.");
+      return;
+    }
+    setApplication(found);
+  }
+
   return (
-    <div className="space-y-6">
+    <div
+      id="admission"
+      className={
+        embedded
+          ? "scroll-mt-24 space-y-5 rounded-2xl border border-border bg-card p-5 shadow-card sm:p-6"
+          : "space-y-6"
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
+            Admission
+          </p>
+          {embedded ? (
+            <h2 className="mt-1 font-heading text-2xl text-primary">
+              Admission application
+            </h2>
+          ) : (
+            <h1 className="mt-1 font-serif text-3xl text-primary">Admission file</h1>
+          )}
+          <p className="mt-2 text-sm text-muted-foreground">
+            {row.applicationNo} · {row.department}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={opening}
+          data-readonly-allow
+          onClick={() => void openApplication()}
+        >
+          {opening ? "Opening…" : "View full application"}
+        </Button>
+      </div>
       <div>
-        <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-          Admission
-        </p>
-        <h1 className="mt-1 font-serif text-3xl text-primary">Admission file</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {row.applicationNo} · {row.department}
-        </p>
         {notice ? <p className="mt-2 text-sm text-secondary">{notice}</p> : null}
         {frozen ? (
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
@@ -152,26 +212,21 @@ export function ScholarAdmission() {
                 : "Attendance has not been marked."}
           </li>
           <li>
-            {row.selected
-              ? "On the provisional selection list."
-              : "Not on the selection list."}
+            {row.reporting
+              ? `Provisional admission cancelled: ${row.reporting.toLowerCase()}.`
+              : row.selected
+                ? "On the provisional selection list."
+                : row.waitlistRank !== null
+                  ? `On the waiting list for ${row.department} (W${row.waitlistRank}).`
+                  : "Not on the selection list."}
           </li>
         </ul>
       </section>
 
-      {row.selected ? (
+      {row.selected && row.letterIssued ? (
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Provisional admission letter</h2>
-          <Button
-            type="button"
-            className="mt-3"
-            onClick={() => {
-              setLetterOpen(true);
-              if (!currentRow.letterIssued) {
-                void saveRow({ ...currentRow, letterIssued: true });
-              }
-            }}
-          >
+          <Button type="button" className="mt-3" onClick={() => setLetterOpen(true)}>
             Open letter
           </Button>
           {letterOpen ? (
@@ -184,19 +239,15 @@ export function ScholarAdmission() {
                 >
                   Close
                 </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    if (!currentRow.letterIssued) {
-                      void saveRow({ ...currentRow, letterIssued: true });
-                    }
-                    window.print();
-                  }}
-                >
+                <Button type="button" onClick={() => window.print()}>
                   Print
                 </Button>
               </div>
-              <AdmissionLetter row={row} serial={serial} letter={store.letter} />
+              <AdmissionLetter
+                row={row}
+                serial={row.letterNo ?? serial}
+                letter={store.letter}
+              />
             </div>
           ) : null}
         </section>
@@ -204,73 +255,17 @@ export function ScholarAdmission() {
 
       {row.selected ? (
         <section className="rounded-xl border border-border p-4">
-          <h2 className="font-semibold">Tuition fee</h2>
-          {row.feeReceiptName ? (
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-              <p>
-                Uploaded {row.feeReceiptName}
-                {row.feeAmount ? ` for ₹${row.feeAmount}` : ""}. Reference{" "}
-                {row.feeReference}.
-              </p>
-              <ViewFilesButton fileName={row.feeReceiptName} data={row.feeReceiptData} />
-            </div>
-          ) : frozen ? (
-            <p className="mt-2 text-sm text-muted-foreground">
-              {admissionLockCopy.scholarFrozen}
-            </p>
-          ) : (
-            <form
-              className="mt-3 grid max-w-lg gap-3"
-              onSubmit={form.handleSubmit(async (values) => {
-                if (!receipt?.file) {
-                  setReceiptError("Choose the fee receipt.");
-                  return;
-                }
-                setReceiptError("");
-                const fileData = await fileToDataUrl(receipt.file).catch(() => "");
-                if (!fileData) {
-                  setReceiptError("The receipt could not be read.");
-                  return;
-                }
-                await saveRow({
-                  ...row,
-                  feeReference: values.feeReference,
-                  feeAmount: values.feeAmount,
-                  feeReceiptName: receipt.file.name,
-                  feeReceiptData: fileData,
-                });
-              })}
-            >
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Payment reference</span>
-                <Input {...form.register("feeReference")} />
-                {form.formState.errors.feeReference ? (
-                  <span className="mt-1 block text-secondary">
-                    {form.formState.errors.feeReference.message}
-                  </span>
-                ) : null}
-              </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Amount (₹)</span>
-                <Input inputMode="numeric" {...form.register("feeAmount")} />
-                {form.formState.errors.feeAmount ? (
-                  <span className="mt-1 block text-secondary">
-                    {form.formState.errors.feeAmount.message}
-                  </span>
-                ) : null}
-              </label>
-              <FileUpload
-                id="tuition-receipt"
-                acceptRule="document"
-                value={receipt}
-                error={receiptError}
-                onChange={setReceipt}
-              />
-              <Button type="submit" className="w-fit">
-                Upload receipt
-              </Button>
-            </form>
-          )}
+          <h2 className="font-semibold">Fee</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pay the annual research fee under Fee in this portal and upload the receipt
+            there. The research office verifies it.
+          </p>
+          <Link
+            href="/scholar/fee"
+            className="mt-3 inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
+          >
+            Go to Fee
+          </Link>
         </section>
       ) : null}
 
@@ -371,13 +366,31 @@ export function ScholarAdmission() {
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Guide</h2>
           <p className="mt-2 text-sm">
-            {row.guideName} is your guide for {row.department}.
+            {guideReleased(session.identifier, payments?.records ?? [])
+              ? `${row.guideName} is your guide for ${row.department}.`
+              : guideHiddenCopy}
           </p>
+          {!guideReleased(session.identifier, payments?.records ?? []) ? (
+            <Link
+              href="/scholar/fee"
+              className="mt-3 inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
+            >
+              Pay the fee
+            </Link>
+          ) : null}
         </section>
       ) : row.selected ? (
         <p className="text-sm text-muted-foreground">
-          The guide's name appears here after the office approves the certificates.
+          The guide&apos;s name appears after your documents are verified and the first
+          fee payment is verified.
         </p>
+      ) : null}
+      {application ? (
+        <ApplicationViewer
+          application={application}
+          admission={currentRow}
+          onClose={() => setApplication(null)}
+        />
       ) : null}
     </div>
   );

@@ -58,9 +58,6 @@ export function AdmissionArchive() {
 
   return (
     <DeskPage kicker={admissionArchiveCopy.kicker} title={admissionArchiveCopy.title}>
-      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        {admissionArchiveCopy.detail}
-      </p>
       {sessions.length === 0 ? (
         <p className="text-sm text-muted-foreground">{admissionArchiveCopy.empty}</p>
       ) : (

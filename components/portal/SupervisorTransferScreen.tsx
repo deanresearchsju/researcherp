@@ -6,25 +6,28 @@ import { useForm, useWatch } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { FormDialog, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { NativeSelect } from "@/components/ui/native-select";
 import { officeActionCopy } from "@/data/office-actions";
-import { researchRegister } from "@/data/research-register";
 import { currentOffice, saveAllocation, sameId, subscribeOffice } from "@/lib/office";
 import {
-  batchOf,
   currentAllotments,
+  currentPassedOut,
   currentQuotas,
-  guideFigures,
-  registrationOf,
+  currentStandings,
   sameGuide,
-  scholarSignInId,
   subscribeRegister,
-  supervisorForGuide,
 } from "@/lib/register";
+import {
+  guideOptions,
+  scholarRows,
+  type GuideOption,
+  type ScholarRow,
+} from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
 const copy = officeActionCopy.transfer;
@@ -35,22 +38,6 @@ const transferSchema = z.object({
 });
 
 type TransferValues = z.infer<typeof transferSchema>;
-
-type GuideOption = {
-  id: string;
-  identifier: string;
-  name: string;
-  vacancy: number | null;
-};
-
-type ScholarRow = {
-  identifier: string;
-  name: string;
-  batchName: string;
-  registration: string;
-  currentName: string;
-  currentIdentifier: string;
-};
 
 export function SupervisorTransferScreen() {
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
@@ -67,6 +54,7 @@ export function SupervisorTransferScreen() {
   );
   const [fromSupervisor, setFromSupervisor] = useState("");
   const [query, setQuery] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const form = useForm<TransferValues>({
@@ -76,90 +64,25 @@ export function SupervisorTransferScreen() {
   const selectedIds = useWatch({ control: form.control, name: "scholarIds" }) ?? [];
   const toSupervisor = useWatch({ control: form.control, name: "toSupervisor" }) ?? "";
 
-  const supervisors = useMemo<GuideOption[]>(() => {
-    if (!office || !users) return [];
-    const idCounts = new Map<string, number>();
-    for (const supervisor of researchRegister.supervisors) {
-      const identifier = supervisor.supervisorId.trim();
-      if (!identifier) continue;
-      idCounts.set(identifier, (idCounts.get(identifier) ?? 0) + 1);
-    }
-    const registerSupervisors = researchRegister.supervisors.map((supervisor) => {
-      const identifier = supervisor.supervisorId.trim();
-      const unique = identifier.length > 0 && idCounts.get(identifier) === 1;
-      return {
-        id: `${supervisor.serialNo}-${supervisor.name}`,
-        identifier: unique ? identifier : supervisor.name,
-        name: supervisor.name,
-        vacancy: guideFigures(supervisor, quotas, office.allocations).vacancy,
-      };
-    });
-    return [
-      ...registerSupervisors,
-      ...users.users
-        .filter(
-          (user) =>
-            user.role === "supervisor" &&
-            !registerSupervisors.some(
-              (supervisor) =>
-                supervisor.identifier.toLowerCase() === user.identifier.toLowerCase() ||
-                sameGuide(supervisor.name, user.name),
-            ),
-        )
-        .map((user) => ({
-          id: user.id,
-          identifier: user.identifier,
-          name: user.name,
-          vacancy: null as number | null,
-        })),
-    ];
-  }, [office, quotas, users]);
+  const standings = useSyncExternalStore(
+    subscribeRegister,
+    currentStandings,
+    currentStandings,
+  );
+  useSyncExternalStore(subscribeRegister, currentPassedOut, currentPassedOut);
 
-  const rows = useMemo<ScholarRow[]>(() => {
-    if (!office || !users) return [];
-    const allocations = office.allocations;
-    const registerRows = researchRegister.scholars.map((scholar) => {
-      const identifier = scholarSignInId(scholar);
-      const allocation =
-        allocations.find((item) => sameId(item.scholarIdentifier, identifier)) ??
-        allocations.find(
-          (item) =>
-            item.scholarName.trim().toLowerCase() === scholar.name.trim().toLowerCase(),
-        );
-      const guide = supervisorForGuide(scholar.guideName);
-      const currentName =
-        allocation?.supervisorName.trim() ||
-        guide?.name.trim() ||
-        scholar.guideName.trim();
-      const currentIdentifier =
-        allocation?.supervisorIdentifier.trim() ||
-        guide?.supervisorId.trim() ||
-        scholar.guideName.trim();
-      return {
-        identifier,
-        name: scholar.name,
-        batchName: batchOf(scholar.batchId)?.name ?? "",
-        registration:
-          registrationOf(scholar, allotments) || scholar.applicationNumber || identifier,
-        currentName: currentName || "—",
-        currentIdentifier,
-      };
-    });
-    const extra = allocations
-      .filter(
-        (item) =>
-          !registerRows.some((row) => sameId(row.identifier, item.scholarIdentifier)),
-      )
-      .map((item) => ({
-        identifier: item.scholarIdentifier,
-        name: item.scholarName,
-        batchName: "",
-        registration: item.scholarIdentifier,
-        currentName: item.supervisorName,
-        currentIdentifier: item.supervisorIdentifier,
-      }));
-    return [...registerRows, ...extra];
-  }, [allotments, office, users]);
+  const supervisors = useMemo<GuideOption[]>(
+    () =>
+      office && users
+        ? guideOptions(office.allocations, users.users, quotas, standings)
+        : [],
+    [office, quotas, standings, users],
+  );
+
+  const rows = useMemo<ScholarRow[]>(
+    () => (office ? scholarRows(office.allocations, allotments) : []),
+    [allotments, office],
+  );
 
   if (!office || !users) {
     return <p className="text-sm text-muted-foreground">Loading transfers…</p>;
@@ -230,6 +153,7 @@ export function SupervisorTransferScreen() {
     }
     setBusy(false);
     form.setValue("scholarIds", []);
+    setTransferOpen(false);
     setNotice(
       moved.length === 1
         ? `${moved[0]} is now with ${supervisor.name}.`
@@ -239,22 +163,30 @@ export function SupervisorTransferScreen() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        {copy.kicker}
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">{copy.title}</h1>
-      <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
-        {copy.detail}
-      </p>
+      <PageTitle
+        kicker={copy.kicker}
+        title={copy.title}
+        actions={
+          <Button
+            type="button"
+            variant="gold"
+            disabled={selectedIds.length === 0}
+            onClick={() => {
+              setNotice(null);
+              setTransferOpen(true);
+            }}
+          >
+            {copy.submit}
+            {selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
+        }
+      />
       {notice ? (
         <p role="status" className="mt-4 text-sm text-secondary">
           {notice}
         </p>
       ) : null}
-      <form
-        className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
-        onSubmit={form.handleSubmit((values) => void onSubmit(values))}
-      >
+      <div className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2">
         <FormField label={copy.fromLabel} htmlFor="transfer-from">
           <NativeSelect
             id="transfer-from"
@@ -272,39 +204,55 @@ export function SupervisorTransferScreen() {
             ))}
           </NativeSelect>
         </FormField>
-        <FormField
-          label={copy.toLabel}
-          htmlFor="transfer-to"
-          required
-          error={form.formState.errors.toSupervisor?.message}
+      </div>
+      {transferOpen ? (
+        <FormDialog
+          title={`${copy.title} · ${selectedIds.length} selected`}
+          onClose={() => setTransferOpen(false)}
+          onSubmit={form.handleSubmit((values) => void onSubmit(values))}
+          busy={busy}
+          submitLabel={copy.submit}
+          size="sm"
         >
-          <NativeSelect
-            id="transfer-to"
-            value={toSupervisor}
-            onChange={(event) =>
-              form.setValue("toSupervisor", event.target.value, { shouldValidate: true })
-            }
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          <FormField
+            label={copy.toLabel}
+            htmlFor="transfer-to"
+            required
+            error={form.formState.errors.toSupervisor?.message}
           >
-            <option value="">Select the new supervisor</option>
-            {supervisors.map((item) => (
-              <option key={item.id} value={item.identifier}>
-                {item.name}
-                {item.vacancy === null ? "" : ` · vacancy ${item.vacancy}`}
-              </option>
-            ))}
-          </NativeSelect>
-        </FormField>
-        <div className="sm:col-span-2">
-          <Button type="submit" variant="gold" disabled={busy}>
-            {copy.submit}
-          </Button>
+            <NativeSelect
+              id="transfer-to"
+              value={toSupervisor}
+              onChange={(event) =>
+                form.setValue("toSupervisor", event.target.value, {
+                  shouldValidate: true,
+                })
+              }
+            >
+              <option value="">Select the new supervisor</option>
+              {supervisors
+                .filter((item) => item.status === "Active")
+                .map((item) => (
+                  <option key={item.id} value={item.identifier}>
+                    {item.name}
+                    {item.subject ? ` · ${item.subject}` : ""}
+                    {item.vacancy === null ? "" : ` · vacancy ${item.vacancy}`}
+                  </option>
+                ))}
+            </NativeSelect>
+          </FormField>
           {form.formState.errors.scholarIds?.message ? (
-            <p className="mt-2 text-sm text-secondary">
+            <p className="text-sm text-secondary">
               {form.formState.errors.scholarIds.message}
             </p>
           ) : null}
-        </div>
-      </form>
+        </FormDialog>
+      ) : null}
       <ListToolbar
         query={query}
         onQuery={setQuery}

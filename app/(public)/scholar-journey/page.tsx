@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
 import { Milestones } from "@/components/home/Milestones";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -10,5 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default function ScholarJourneyPage() {
-  return <Milestones />;
+  const copy = pageHeroes.journey;
+  return (
+    <>
+      <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
+      <Milestones />
+    </>
+  );
 }

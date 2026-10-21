@@ -1,41 +1,102 @@
 "use client";
 
+import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { sampleApplications } from "@/data/sample-applications";
-import { readSubmissions, type ScholarSubmission } from "@/lib/applications";
-import { lookupPhdApplication } from "@/lib/records";
+import { scholarFormCopy } from "@/data/forms";
 import { referenceDate } from "@/lib/constants";
 import { formatIsoDate } from "@/lib/dates";
+import {
+  ensureAdmission,
+  type AdmissionCase,
+  type AdmissionState,
+} from "@/lib/admission";
+import { downloadHallTickets } from "@/lib/hall-ticket-pdf";
+import { downloadPhdApplications } from "@/lib/phd-application-pdf";
+import { trackPhdApplication, type PhdReceipt } from "@/lib/scholar-progress";
 import { statusSchema } from "@/lib/validation";
 import type { z } from "zod";
 
 type StatusValues = z.infer<typeof statusSchema>;
 
 export function StatusLookup() {
-  const [match, setMatch] = useState<ScholarSubmission | null>(null);
+  const [receipt, setReceipt] = useState<PhdReceipt | null>(null);
+  const [archived, setArchived] = useState(false);
   const [missed, setMissed] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [ticket, setTicket] = useState<{
+    row: AdmissionCase;
+    office: AdmissionState;
+  } | null>(null);
+  const [ticketBusy, setTicketBusy] = useState(false);
   const form = useForm<StatusValues>({
     resolver: zodResolver(statusSchema),
     defaultValues: { applicationNo: "", dateOfBirth: "" },
   });
+  const admitted = receipt?.status === "Admitted";
+  const selected = receipt?.status === "Selected" || admitted;
 
   async function onSubmit(values: StatusValues) {
-    const remote = await lookupPhdApplication(values.applicationNo, values.dateOfBirth);
-    const found =
-      remote ??
-      [...readSubmissions(), ...sampleApplications].find(
+    setReceipt(null);
+    setArchived(false);
+    setMissed(false);
+    setTicket(null);
+    const found = await trackPhdApplication(values.applicationNo, values.dateOfBirth);
+    if (found.kind === "current") {
+      setReceipt(found.receipt);
+      const office = await ensureAdmission().catch(() => null);
+      const row = office?.cases.find(
         (item) =>
-          item.applicationNo.toUpperCase() === values.applicationNo.toUpperCase() &&
-          item.dateOfBirth === values.dateOfBirth,
+          item.applicationNo.trim().toLowerCase() ===
+          found.receipt.applicationNo.trim().toLowerCase(),
       );
-    setMatch(found ?? null);
-    setMissed(!found);
+      if (
+        office &&
+        row?.shortlisted &&
+        row.hallTicketNo &&
+        office.progress.entranceReady
+      ) {
+        setTicket({ row, office });
+      }
+      return;
+    }
+    if (found.kind === "archived") {
+      setArchived(true);
+      return;
+    }
+    setMissed(true);
+  }
+
+  async function downloadTicket() {
+    if (!ticket || !receipt) return;
+    setTicketBusy(true);
+    try {
+      await downloadHallTickets([
+        {
+          row: ticket.row,
+          receipt,
+          schedule: ticket.office.progress.entrance,
+          letter: ticket.office.letter,
+        },
+      ]);
+    } finally {
+      setTicketBusy(false);
+    }
+  }
+
+  async function download() {
+    if (!receipt || selected) return;
+    setDownloading(true);
+    try {
+      await downloadPhdApplications([receipt]);
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
@@ -66,24 +127,80 @@ export function StatusLookup() {
         />
       </FormField>
       <Button type="submit" variant="gold">
-        Check status
+        {scholarFormCopy.track}
       </Button>
-      {match ? (
+      {receipt ? (
         <div
           className="rounded-xl border border-border bg-card p-4 text-sm shadow-card"
           role="status"
         >
-          <p className="font-semibold text-primary">{match.applicationNo}</p>
-          <p className="mt-1">{match.name}</p>
-          <p className="mt-1 text-muted-foreground">{match.status}.</p>
-          <p className="mt-1 text-muted-foreground">
-            Date of birth {formatIsoDate(match.dateOfBirth)}
+          <p className="font-semibold text-primary">{receipt.applicationNo}</p>
+          <p className="mt-1">
+            {receipt.values.title} {receipt.values.fullName}
           </p>
+          <p className="mt-1 text-muted-foreground">{receipt.status}.</p>
+          <p className="mt-1 text-muted-foreground">
+            Date of birth {formatIsoDate(receipt.values.dateOfBirth)}
+          </p>
+          {ticket ? (
+            <div className="mt-3 rounded-lg border border-accent/50 bg-accent/10 p-3">
+              <p className="font-semibold text-primary">
+                {scholarFormCopy.hallTicketReady} {ticket.row.hallTicketNo}
+              </p>
+              <Button
+                type="button"
+                variant="gold"
+                className="mt-2"
+                disabled={ticketBusy}
+                aria-busy={ticketBusy}
+                onClick={() => void downloadTicket()}
+              >
+                {ticketBusy ? "Preparing…" : scholarFormCopy.hallTicket}
+              </Button>
+            </div>
+          ) : null}
+          {selected ? (
+            <>
+              <p className="mt-3 font-semibold text-secondary">
+                {admitted ? scholarFormCopy.trackAdmitted : scholarFormCopy.trackSelected}
+              </p>
+              {admitted ? (
+                <Link
+                  href="/login/scholar"
+                  className={buttonVariants({ variant: "gold", className: "mt-3" })}
+                >
+                  {scholarFormCopy.scholarLogin}
+                </Link>
+              ) : null}
+            </>
+          ) : receipt.status === "Waiting list" || receipt.status === "Not reported" ? (
+            <p className="mt-3 font-semibold text-secondary">
+              {receipt.status === "Waiting list"
+                ? scholarFormCopy.trackWaiting
+                : scholarFormCopy.trackNotReported}
+            </p>
+          ) : (
+            <Button
+              type="button"
+              variant="gold"
+              className="mt-3"
+              disabled={downloading}
+              aria-busy={downloading}
+              onClick={() => void download()}
+            >
+              {downloading ? "Preparing…" : scholarFormCopy.download}
+            </Button>
+          )}
         </div>
+      ) : null}
+      {archived ? (
+        <p role="alert" className="text-sm text-secondary">
+          {scholarFormCopy.trackArchived}
+        </p>
       ) : null}
       {missed ? (
         <p role="alert" className="text-sm text-secondary">
-          No application matches that number and date of birth.
+          {scholarFormCopy.trackMissing}
         </p>
       ) : null}
     </form>

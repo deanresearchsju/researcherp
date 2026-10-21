@@ -2,14 +2,16 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { FormDialog, PageTitle } from "@/components/portal/Desk";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { schools } from "@/data/schools";
 import { vacancySeed } from "@/data/vacancies";
 import { field } from "@/lib/csv";
 import { createSupabase } from "@/lib/supabase/client";
@@ -18,6 +20,7 @@ import {
   mapVacancy,
   officeVacancies,
   vacancyMigrationHint,
+  vacancySchoolName,
   type Vacancy,
   type VacancyLoad,
 } from "@/lib/vacancies";
@@ -26,6 +29,7 @@ const vacancyColumns = [
   "serial_no",
   "supervisor_name",
   "designation",
+  "school",
   "department",
   "research_area",
   "vacancy_count",
@@ -39,7 +43,8 @@ const vacancyFormSchema = z.object({
     .refine((value) => Number(value) >= 1, "Enter a serial number of 1 or more."),
   supervisorName: z.string().trim().min(2, "Enter the supervisor name."),
   designation: z.string().trim().min(2, "Enter the designation."),
-  department: z.string().trim().min(2, "Enter the department."),
+  school: z.string().trim().min(2, "Enter the school name."),
+  department: z.string().trim().min(2, "Enter the subject."),
   researchArea: z.string().trim().min(2, "Enter the area of research."),
   vacancyCount: z.string().trim().regex(/^\d+$/, "Enter the number of vacancies."),
 });
@@ -50,6 +55,7 @@ const emptyForm: VacancyFormValues = {
   serialNo: "",
   supervisorName: "",
   designation: "",
+  school: "",
   department: "",
   researchArea: "",
   vacancyCount: "",
@@ -60,10 +66,96 @@ function toColumns(values: VacancyFormValues) {
     serial_no: Number(values.serialNo),
     supervisor_name: values.supervisorName.trim(),
     designation: values.designation.trim(),
+    school: values.school.trim(),
     department: values.department.trim(),
     research_area: values.researchArea.trim(),
     vacancy_count: Number(values.vacancyCount),
   };
+}
+
+function withoutSchool(columns: ReturnType<typeof toColumns>) {
+  return {
+    serial_no: columns.serial_no,
+    supervisor_name: columns.supervisor_name,
+    designation: columns.designation,
+    department: columns.department,
+    research_area: columns.research_area,
+    vacancy_count: columns.vacancy_count,
+  };
+}
+
+function VacancyFields({
+  form,
+  schoolOptions,
+}: {
+  form: UseFormReturn<VacancyFormValues>;
+  schoolOptions: string[];
+}) {
+  return (
+    <>
+      <FormField
+        label="S. No."
+        htmlFor="serialNo"
+        required
+        error={form.formState.errors.serialNo?.message}
+      >
+        <Input id="serialNo" inputMode="numeric" {...form.register("serialNo")} />
+      </FormField>
+      <FormField
+        label="No. of vacancy"
+        htmlFor="vacancyCount"
+        required
+        error={form.formState.errors.vacancyCount?.message}
+      >
+        <Input id="vacancyCount" inputMode="numeric" {...form.register("vacancyCount")} />
+      </FormField>
+      <FormField
+        label="Name of the supervisor"
+        htmlFor="supervisorName"
+        required
+        error={form.formState.errors.supervisorName?.message}
+      >
+        <Input id="supervisorName" {...form.register("supervisorName")} />
+      </FormField>
+      <FormField
+        label="Designation"
+        htmlFor="designation"
+        required
+        error={form.formState.errors.designation?.message}
+      >
+        <Input id="designation" {...form.register("designation")} />
+      </FormField>
+      <FormField
+        label="School"
+        htmlFor="school"
+        required
+        error={form.formState.errors.school?.message}
+      >
+        <Input id="school" list="vacancy-schools" {...form.register("school")} />
+        <datalist id="vacancy-schools">
+          {schoolOptions.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      </FormField>
+      <FormField
+        label="Subject"
+        htmlFor="department"
+        required
+        error={form.formState.errors.department?.message}
+      >
+        <Input id="department" {...form.register("department")} />
+      </FormField>
+      <FormField
+        label="Area of research"
+        htmlFor="researchArea"
+        required
+        error={form.formState.errors.researchArea?.message}
+      >
+        <Input id="researchArea" {...form.register("researchArea")} />
+      </FormField>
+    </>
+  );
 }
 
 export function VacancyManager({ initial }: { initial: VacancyLoad }) {
@@ -72,6 +164,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
   );
   const [source, setSource] = useState(initial.source);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(initial.detail);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -86,11 +179,13 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
   const writable = source === "database" || source === "empty";
 
   function beginEdit(row: Vacancy) {
+    setNotice(null);
     setEditingId(row.id);
     form.reset({
       serialNo: String(row.serialNo),
       supervisorName: row.supervisorName,
       designation: row.designation,
+      school: vacancySchoolName(row),
       department: row.department,
       researchArea: row.researchArea,
       vacancyCount: String(row.vacancyCount),
@@ -99,6 +194,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
 
   function cancelEdit() {
     setEditingId(null);
+    setAdding(false);
     form.reset(emptyForm);
   }
 
@@ -114,16 +210,21 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
     if (!supabase) return;
     setBusy(true);
     setNotice(null);
-    const { error } = await supabase.from("supervisor_vacancies").insert(
-      vacancySeed.map((row) => ({
-        serial_no: row.serialNo,
-        supervisor_name: row.supervisorName,
-        designation: row.designation,
-        department: row.department,
-        research_area: row.researchArea,
-        vacancy_count: row.vacancyCount,
-      })),
-    );
+    const seedRows = vacancySeed.map((row) => ({
+      serial_no: row.serialNo,
+      supervisor_name: row.supervisorName,
+      designation: row.designation,
+      school: vacancySchoolName(row),
+      department: row.department,
+      research_area: row.researchArea,
+      vacancy_count: row.vacancyCount,
+    }));
+    const first = await supabase.from("supervisor_vacancies").insert(seedRows);
+    const { error } = first.error
+      ? await supabase
+          .from("supervisor_vacancies")
+          .insert(seedRows.map((row) => withoutSchool(row)))
+      : first;
     setBusy(false);
     if (error) {
       setNotice(
@@ -142,7 +243,10 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
     const columns = toColumns(values);
 
     if (source === "empty") {
-      const { error } = await supabase.from("supervisor_vacancies").insert(columns);
+      const first = await supabase.from("supervisor_vacancies").insert(columns);
+      const { error } = first.error
+        ? await supabase.from("supervisor_vacancies").insert(withoutSchool(columns))
+        : first;
       setBusy(false);
       if (error) {
         setNotice("That supervisor could not be added.");
@@ -153,15 +257,26 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
       return;
     }
 
+    const selectColumns =
+      "id, serial_no, supervisor_name, designation, department, research_area, vacancy_count, school";
+
     if (editingId && !editingId.startsWith("office-")) {
-      const { data, error } = await supabase
+      const first = await supabase
         .from("supervisor_vacancies")
         .update(columns)
         .eq("id", editingId)
-        .select(
-          "id, serial_no, supervisor_name, designation, department, research_area, vacancy_count",
-        )
+        .select(selectColumns)
         .single();
+      const { data, error } = first.error
+        ? await supabase
+            .from("supervisor_vacancies")
+            .update(withoutSchool(columns))
+            .eq("id", editingId)
+            .select(
+              "id, serial_no, supervisor_name, designation, department, research_area, vacancy_count",
+            )
+            .single()
+        : first;
       setBusy(false);
       if (error || !data) {
         setNotice(
@@ -179,13 +294,20 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
       return;
     }
 
-    const { data, error } = await supabase
+    const first = await supabase
       .from("supervisor_vacancies")
       .insert(columns)
-      .select(
-        "id, serial_no, supervisor_name, designation, department, research_area, vacancy_count",
-      )
+      .select(selectColumns)
       .single();
+    const { data, error } = first.error
+      ? await supabase
+          .from("supervisor_vacancies")
+          .insert(withoutSchool(columns))
+          .select(
+            "id, serial_no, supervisor_name, designation, department, research_area, vacancy_count",
+          )
+          .single()
+      : first;
     setBusy(false);
     if (error || !data) {
       setNotice(
@@ -237,6 +359,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
     const problems: string[] = [];
 
     for (const [index, record] of records.entries()) {
+      const subject = field(record, ["department", "subject"]);
       const parsed = vacancyFormSchema.safeParse({
         serialNo: field(record, ["serial_no", "s. no.", "s no"]),
         supervisorName: field(record, [
@@ -245,7 +368,10 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
           "name of the supervisor",
         ]),
         designation: field(record, ["designation"]),
-        department: field(record, ["department"]),
+        school:
+          field(record, ["school", "school name"]) ||
+          vacancySchoolName({ department: subject }),
+        department: subject,
         researchArea: field(record, ["research_area", "area of research"]),
         vacancyCount: field(record, ["vacancy_count", "vacancy", "no. of vacancy"]),
       });
@@ -258,19 +384,32 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
       const columns = toColumns(parsed.data);
       const existingId = known.get(columns.serial_no);
       if (existingId) {
-        const { error } = await supabase
+        const first = await supabase
           .from("supervisor_vacancies")
           .update(columns)
           .eq("id", existingId);
+        const { error } = first.error
+          ? await supabase
+              .from("supervisor_vacancies")
+              .update(withoutSchool(columns))
+              .eq("id", existingId)
+          : first;
         if (error) problems.push(`Row ${index + 2} could not be updated.`);
         else updated += 1;
         continue;
       }
-      const { data, error } = await supabase
+      const first = await supabase
         .from("supervisor_vacancies")
         .insert(columns)
         .select("id")
         .single();
+      const { data, error } = first.error
+        ? await supabase
+            .from("supervisor_vacancies")
+            .insert(withoutSchool(columns))
+            .select("id")
+            .single()
+        : first;
       if (error || !data) {
         problems.push(
           `Row ${index + 2} could not be added. The serial number may already be used.`,
@@ -289,11 +428,12 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
 
   const visible = rows.filter(
     (row) =>
-      (department === "" || row.department === department) &&
-      (designation === "" || row.designation === designation) &&
+      filterMatches(department, row.department) &&
+      filterMatches(designation, row.designation) &&
       textMatches(query, [
         row.supervisorName,
         row.designation,
+        vacancySchoolName(row),
         row.department,
         row.researchArea,
         String(row.serialNo),
@@ -301,20 +441,43 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
   );
   const choices = (values: string[]) =>
     [...new Set(values)].sort().map((value) => ({ value, label: value }));
+  const schoolOptions = [
+    ...new Set([
+      ...schools.map((school) => school.name),
+      ...rows.map((row) => vacancySchoolName(row)).filter(Boolean),
+    ]),
+  ];
+  const editingRow = rows.find((row) => row.id === editingId) ?? null;
+  const editing = Boolean(editingRow);
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Supervisor vacancies</h1>
+      <PageTitle
+        kicker="Admissions"
+        title="Supervisor vacancies"
+        actions={
+          writable && source === "database" ? (
+            <Button
+              type="button"
+              variant="gold"
+              onClick={() => {
+                cancelEdit();
+                setNotice(null);
+                setAdding(true);
+              }}
+            >
+              Add supervisor
+            </Button>
+          ) : null
+        }
+      />
       <ListToolbar
         query={query}
         onQuery={setQuery}
         filters={[
           {
             id: "department",
-            label: "Department",
+            label: "Subject",
             value: department,
             options: choices(rows.map((row) => row.department)),
             onChange: setDepartment,
@@ -335,6 +498,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
           String(row.serialNo),
           row.supervisorName,
           row.designation,
+          vacancySchoolName(row),
           row.department,
           row.researchArea,
           String(row.vacancyCount),
@@ -347,6 +511,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
           String(row.serialNo),
           row.supervisorName,
           row.designation,
+          vacancySchoolName(row),
           row.department,
           row.researchArea,
           String(row.vacancyCount),
@@ -379,78 +544,23 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
         </div>
       ) : null}
 
-      {writable && source === "database" ? (
-        <form
-          className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
+      {writable && source === "database" && (editing || adding) ? (
+        <FormDialog
+          title={editingRow ? `Edit ${editingRow.supervisorName}` : "Add supervisor"}
+          onClose={cancelEdit}
           onSubmit={form.handleSubmit(onSubmit)}
-          noValidate
+          busy={busy}
+          submitLabel={editing ? "Save changes" : "Add supervisor"}
         >
-          <h2 className="sm:col-span-2 font-semibold text-primary">
-            {editingId ? "Edit supervisor" : "Add supervisor"}
-          </h2>
-          <FormField
-            label="S. No."
-            htmlFor="serialNo"
-            required
-            error={form.formState.errors.serialNo?.message}
-          >
-            <Input id="serialNo" inputMode="numeric" {...form.register("serialNo")} />
-          </FormField>
-          <FormField
-            label="No. of vacancy"
-            htmlFor="vacancyCount"
-            required
-            error={form.formState.errors.vacancyCount?.message}
-          >
-            <Input
-              id="vacancyCount"
-              inputMode="numeric"
-              {...form.register("vacancyCount")}
-            />
-          </FormField>
-          <FormField
-            label="Name of the supervisor"
-            htmlFor="supervisorName"
-            required
-            error={form.formState.errors.supervisorName?.message}
-          >
-            <Input id="supervisorName" {...form.register("supervisorName")} />
-          </FormField>
-          <FormField
-            label="Designation"
-            htmlFor="designation"
-            required
-            error={form.formState.errors.designation?.message}
-          >
-            <Input id="designation" {...form.register("designation")} />
-          </FormField>
-          <FormField
-            label="Department"
-            htmlFor="department"
-            required
-            error={form.formState.errors.department?.message}
-          >
-            <Input id="department" {...form.register("department")} />
-          </FormField>
-          <FormField
-            label="Area of research"
-            htmlFor="researchArea"
-            required
-            error={form.formState.errors.researchArea?.message}
-          >
-            <Input id="researchArea" {...form.register("researchArea")} />
-          </FormField>
-          <div className="flex flex-wrap gap-3 sm:col-span-2">
-            <Button type="submit" variant="gold" disabled={busy}>
-              {editingId ? "Save changes" : "Add supervisor"}
-            </Button>
-            {editingId ? (
-              <Button type="button" variant="outline" onClick={cancelEdit}>
-                Cancel
-              </Button>
-            ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <VacancyFields form={form} schoolOptions={schoolOptions} />
           </div>
-        </form>
+          {notice ? (
+            <p role="alert" className="text-sm font-semibold text-secondary">
+              {notice}
+            </p>
+          ) : null}
+        </FormDialog>
       ) : null}
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -459,7 +569,8 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
             <tr>
               <th className="px-3 py-3 font-semibold">S. No.</th>
               <th className="px-3 py-3 font-semibold">Supervisor</th>
-              <th className="px-3 py-3 font-semibold">Department</th>
+              <th className="px-3 py-3 font-semibold">School</th>
+              <th className="px-3 py-3 font-semibold">Subject</th>
               <th className="px-3 py-3 font-semibold">Area of research</th>
               <th className="px-3 py-3 font-semibold">Vacancy</th>
               {source === "database" ? (
@@ -477,6 +588,7 @@ export function VacancyManager({ initial }: { initial: VacancyLoad }) {
                     {row.designation}
                   </span>
                 </td>
+                <td className="px-3 py-3 align-top">{vacancySchoolName(row)}</td>
                 <td className="px-3 py-3 align-top">{row.department}</td>
                 <td className="px-3 py-3 align-top">{row.researchArea}</td>
                 <td className="px-3 py-3 align-top">{row.vacancyCount}</td>

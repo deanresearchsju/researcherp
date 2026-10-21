@@ -140,7 +140,7 @@ export function ReviewScreen() {
   }
 
   return (
-    <DeskPage kicker="Supervisor" title="Scholar requests">
+    <DeskPage kicker="Scholars" title="Scholar requests">
       <ProcessFlow>
         Scholar submits &gt;&gt; Supervisor recommendation &gt;&gt; Research office
       </ProcessFlow>

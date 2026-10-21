@@ -386,9 +386,9 @@ export function SupervisorApplication() {
           <div>
             <p className="font-heading text-2xl text-primary">St. JOSEPH UNIVERSITY</p>
             <p className="text-sm text-muted-foreground">{university.unit}</p>
-            <h1 className="mt-2 text-lg font-semibold text-secondary">
+            <h2 className="mt-2 text-lg font-semibold text-secondary">
               {supervisorFormCopy.title}
-            </h1>
+            </h2>
           </div>
           <div className="w-full max-w-56">
             <div className="relative mx-auto mb-2 aspect-[7/9] w-36 overflow-hidden rounded-xl border border-dashed border-primary/30 bg-white">

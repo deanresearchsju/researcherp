@@ -1,26 +1,88 @@
-import { cn } from "@/lib/utils";
+import { ChevronRight, Home } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+import { Container } from "@/components/ui/container";
 
 type PageHeaderProps = {
   eyebrow: string;
   title: string;
-  description?: string;
+  summary?: string;
+  children?: ReactNode;
 };
 
-export function PageHeader({ eyebrow, title, description }: PageHeaderProps) {
+/**
+ * Banner at the top of every inner page of the public website: a full-width campus image
+ * with the page title, and a breadcrumb bar underneath.
+ */
+export function PageHeader({ eyebrow, title, summary, children }: PageHeaderProps) {
   return (
-    <header className="border-b border-border bg-card">
-      <div className={cn("mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8")}>
-        <p className="text-xs font-semibold tracking-[0.22em] text-secondary uppercase">
-          {eyebrow}
-        </p>
-        <div className="mt-3 h-px w-12 bg-accent" aria-hidden="true" />
-        <h1 className="mt-4 font-heading text-4xl text-primary">{title}</h1>
-        {description ? (
-          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-            {description}
+    <>
+      <section
+        className="relative isolate overflow-hidden bg-purple-deep text-primary-foreground"
+        aria-labelledby="page-hero-title"
+      >
+        <Image
+          src="/pic.jpeg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="-z-20 object-cover object-[center_35%]"
+        />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-purple-deep via-purple-deep/90 to-purple-deep/55" />
+        <Container className="py-12 sm:py-16 lg:py-20">
+          <p className="text-xs font-semibold tracking-[0.24em] text-accent uppercase">
+            {eyebrow}
           </p>
-        ) : null}
+          <h1
+            id="page-hero-title"
+            className="mt-3 max-w-3xl font-heading text-4xl leading-tight sm:text-5xl"
+          >
+            {title}
+          </h1>
+          <div className="mt-5 h-[3px] w-20 bg-accent" />
+          {summary ? (
+            <p className="mt-5 max-w-2xl text-base leading-7 text-primary-foreground/85">
+              {summary}
+            </p>
+          ) : null}
+        </Container>
+        <div className="h-1 bg-accent" />
+      </section>
+      <div className="border-b border-border bg-card">
+        <Container className="flex min-h-12 flex-wrap items-center justify-between gap-3 py-2">
+          <nav aria-label="Breadcrumb">
+            <ol className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+              <li>
+                <Link
+                  href="/"
+                  className="inline-flex items-center gap-1 hover:text-primary"
+                >
+                  <Home className="size-3.5" aria-hidden="true" />
+                  Home
+                </Link>
+              </li>
+              {eyebrow !== title ? (
+                <li className="inline-flex items-center gap-1.5">
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
+                  {eyebrow}
+                </li>
+              ) : null}
+              <li className="inline-flex items-center gap-1.5">
+                <ChevronRight className="size-3.5" aria-hidden="true" />
+                <span aria-current="page" className="font-semibold text-primary">
+                  {title}
+                </span>
+              </li>
+            </ol>
+          </nav>
+          {children ? (
+            <div className="flex flex-wrap items-center gap-2">{children}</div>
+          ) : null}
+        </Container>
       </div>
-    </header>
+    </>
   );
 }

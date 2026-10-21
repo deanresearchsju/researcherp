@@ -1,4 +1,5 @@
 import { researchRegister } from "@/data/research-register";
+import { defaultMenuHrefs } from "@/lib/access";
 import {
   insertPortalUsers,
   loadPortalUsers,
@@ -65,7 +66,7 @@ function toUser(row: SignInDraft): PortalUser {
     identifier: row.identifier,
     password: row.password,
     mustReset: row.mustReset,
-    menus: null,
+    menus: defaultMenuHrefs(row.role),
   };
 }
 

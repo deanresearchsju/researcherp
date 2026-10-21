@@ -7,6 +7,8 @@ import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
 import { FileUpload } from "@/components/forms/FileUpload";
+import { FormDialog, PageTitle } from "@/components/portal/Desk";
+import { filterMatches, ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -39,9 +41,10 @@ const newsSchema = z
       .trim()
       .min(2, "Enter the title.")
       .max(140, "Use 140 characters or fewer."),
-    isoDate: z.string().refine(isValidIsoDate, "Enter the posted date."),
+    isoDate: z.string().refine(isValidIsoDate, "Enter the date."),
     lastDate: z.string(),
     href: z.string(),
+    venue: z.string().max(160, "Use 160 characters or fewer."),
     summary: z
       .string()
       .trim()
@@ -49,7 +52,7 @@ const newsSchema = z
       .max(500, "Use 500 characters or fewer."),
   })
   .superRefine((value, ctx) => {
-    const lastDate = value.lastDate.trim();
+    const lastDate = value.kind === "Event" ? "" : value.lastDate.trim();
     if (lastDate && !isValidIsoDate(lastDate)) {
       ctx.addIssue({
         code: "custom",
@@ -62,6 +65,13 @@ const newsSchema = z
         code: "custom",
         message: "The last date cannot be before the posted date.",
         path: ["lastDate"],
+      });
+    }
+    if (value.kind === "Event" && !value.venue.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Enter the venue.",
+        path: ["venue"],
       });
     }
     const href = value.href.trim();
@@ -82,6 +92,7 @@ const emptyValues: NewsValues = {
   isoDate: "",
   lastDate: "",
   href: "",
+  venue: "",
   summary: "",
 };
 
@@ -89,6 +100,9 @@ export function NewsManager() {
   const stored = useSyncExternalStore(subscribeNews, currentNewsLoad, currentNewsLoad);
   const items = stored?.items ?? newsSeed;
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState("");
   const [poster, setPoster] = useState<StoredFile | null>(null);
   const [keepImage, setKeepImage] = useState(true);
   const [galleryFiles, setGalleryFiles] = useState<StoredFile[]>([]);
@@ -97,6 +111,11 @@ export function NewsManager() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const editing = items.find((item) => item.id === editingId) ?? null;
+  const shownItems = newestNewsFirst(items).filter(
+    (item) =>
+      filterMatches(kindFilter, item.kind) &&
+      textMatches(query, [item.title, item.summary, item.venue ?? "", item.kind]),
+  );
 
   async function publish(next: NewsItem[], message: string) {
     setBusy(true);
@@ -112,6 +131,7 @@ export function NewsManager() {
       return;
     }
     setNotice(message);
+    setFormOpen(false);
     setEditingId(null);
     setPoster(null);
     setKeepImage(true);
@@ -167,9 +187,10 @@ export function NewsManager() {
       kind: values.kind,
       title: values.title.trim(),
       isoDate: values.isoDate,
-      lastDate: values.lastDate.trim() || null,
+      lastDate: values.kind === "Event" ? null : values.lastDate.trim() || null,
       href: values.href.trim() || null,
       summary: values.summary.trim(),
+      venue: values.kind === "Event" ? values.venue.trim() : "",
       image,
       photos,
       createdAt: editing?.createdAt ?? clientNowIso(),
@@ -185,10 +206,26 @@ export function NewsManager() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">{newsFormCopy.title}</h1>
+      <PageTitle
+        kicker="Website"
+        title={newsFormCopy.title}
+        actions={
+          <Button
+            type="button"
+            variant="gold"
+            onClick={() => {
+              setEditingId(null);
+              setPoster(null);
+              setKeepImage(true);
+              setKeptPhotos([]);
+              setError(null);
+              setFormOpen(true);
+            }}
+          >
+            {newsFormCopy.addTitle}
+          </Button>
+        }
+      />
       {stored?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{newsMigrationHint}</p>
       ) : null}
@@ -198,47 +235,77 @@ export function NewsManager() {
         </p>
       ) : null}
 
-      <NewsForm
-        key={editing?.id ?? "new"}
-        initial={
-          editing
-            ? {
-                kind: editing.kind,
-                title: editing.title,
-                isoDate: editing.isoDate,
-                lastDate: editing.lastDate ?? "",
-                href: editing.href ?? "",
-                summary: editing.summary,
-              }
-            : emptyValues
-        }
-        poster={poster}
-        onPoster={setPoster}
-        keepImage={keepImage && Boolean(editing?.image)}
-        onClearImage={() => setKeepImage(false)}
-        keptPhotos={keptPhotos}
-        onRemoveKept={(src) =>
-          setKeptPhotos((current) => current.filter((item) => item !== src))
-        }
-        galleryFiles={galleryFiles}
-        onGalleryFiles={setGalleryFiles}
-        busy={busy}
-        error={error}
-        editing={Boolean(editing)}
-        onCancel={() => {
-          setEditingId(null);
-          setPoster(null);
-          setKeepImage(true);
-          galleryFiles.forEach(releaseFile);
-          setGalleryFiles([]);
-          setKeptPhotos([]);
-          setError(null);
-        }}
-        onSubmit={(values) => void onSubmit(values)}
-      />
+      {formOpen ? (
+        <NewsForm
+          key={editing?.id ?? "new"}
+          initial={
+            editing
+              ? {
+                  kind: editing.kind,
+                  title: editing.title,
+                  isoDate: editing.isoDate,
+                  lastDate: editing.lastDate ?? "",
+                  href: editing.href ?? "",
+                  venue: editing.venue ?? "",
+                  summary: editing.summary,
+                }
+              : emptyValues
+          }
+          poster={poster}
+          onPoster={setPoster}
+          keepImage={keepImage && Boolean(editing?.image)}
+          onClearImage={() => setKeepImage(false)}
+          keptPhotos={keptPhotos}
+          onRemoveKept={(src) =>
+            setKeptPhotos((current) => current.filter((item) => item !== src))
+          }
+          galleryFiles={galleryFiles}
+          onGalleryFiles={setGalleryFiles}
+          busy={busy}
+          error={error}
+          editing={Boolean(editing)}
+          onCancel={() => {
+            setEditingId(null);
+            setPoster(null);
+            setKeepImage(true);
+            galleryFiles.forEach(releaseFile);
+            setGalleryFiles([]);
+            setKeptPhotos([]);
+            setError(null);
+            setFormOpen(false);
+          }}
+          onSubmit={(values) => void onSubmit(values)}
+        />
+      ) : null}
 
-      <ul className="mt-8 space-y-3">
-        {newestNewsFirst(items).map((item) => (
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "kind",
+            label: newsFormCopy.kind,
+            value: kindFilter,
+            options: newsKinds.map((kind) => ({ value: kind, label: kind })),
+            onChange: setKindFilter,
+          },
+        ]}
+        shown={shownItems.length}
+        total={items.length}
+        filename="news-and-events.csv"
+        headers={["Kind", "Title", "Date", "Last date", "Venue", "Link", "Summary"]}
+        rows={shownItems.map((item) => [
+          item.kind,
+          item.title,
+          formatIsoDate(item.isoDate),
+          item.lastDate ? formatIsoDate(item.lastDate) : "",
+          item.venue ?? "",
+          item.href ?? "",
+          item.summary,
+        ])}
+      />
+      <ul className="mt-6 space-y-3">
+        {shownItems.map((item) => (
           <li
             key={item.id}
             className="rounded-xl border border-border bg-card p-4 shadow-card"
@@ -247,6 +314,7 @@ export function NewsManager() {
               <div>
                 <p className="text-xs font-semibold tracking-[0.14em] text-secondary uppercase">
                   {item.kind} · {formatIsoDate(item.isoDate)}
+                  {item.kind === "Event" && item.venue ? ` · ${item.venue}` : ""}
                   {item.lastDate
                     ? ` · ${newsFormCopy.lastDate} ${formatIsoDate(item.lastDate)}`
                     : ""}
@@ -279,6 +347,7 @@ export function NewsManager() {
                     setGalleryFiles([]);
                     setKeptPhotos(item.photos);
                     setError(null);
+                    setFormOpen(true);
                   }}
                 >
                   Edit
@@ -345,14 +414,13 @@ function NewsForm({
   const remaining = newsPhotosMaxCount - keptPhotos.length - galleryFiles.length;
 
   return (
-    <form
-      className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card"
+    <FormDialog
+      title={editing ? newsFormCopy.editTitle : newsFormCopy.addTitle}
+      onClose={onCancel}
       onSubmit={form.handleSubmit(onSubmit)}
-      noValidate
+      busy={busy}
+      submitLabel={editing ? "Save changes" : "Publish"}
     >
-      <h2 className="font-semibold text-primary">
-        {editing ? newsFormCopy.editTitle : newsFormCopy.addTitle}
-      </h2>
       <FormField
         label={newsFormCopy.kind}
         htmlFor="news-kind"
@@ -376,20 +444,31 @@ function NewsForm({
         <Input id="news-title" {...form.register("title")} />
       </FormField>
       <FormField
-        label={newsFormCopy.postedDate}
+        label={kind === "Event" ? newsFormCopy.eventDate : newsFormCopy.postedDate}
         htmlFor="news-date"
         required
         error={form.formState.errors.isoDate?.message}
       >
         <Input id="news-date" type="date" {...form.register("isoDate")} />
       </FormField>
-      <FormField
-        label={newsFormCopy.lastDate}
-        htmlFor="news-last-date"
-        error={form.formState.errors.lastDate?.message}
-      >
-        <Input id="news-last-date" type="date" {...form.register("lastDate")} />
-      </FormField>
+      {kind === "Event" ? (
+        <FormField
+          label={newsFormCopy.venue}
+          htmlFor="news-venue"
+          required
+          error={form.formState.errors.venue?.message}
+        >
+          <Input id="news-venue" {...form.register("venue")} />
+        </FormField>
+      ) : (
+        <FormField
+          label={newsFormCopy.lastDate}
+          htmlFor="news-last-date"
+          error={form.formState.errors.lastDate?.message}
+        >
+          <Input id="news-last-date" type="date" {...form.register("lastDate")} />
+        </FormField>
+      )}
       <FormField
         label={newsFormCopy.link}
         htmlFor="news-href"
@@ -417,7 +496,7 @@ function NewsForm({
         />
       </FormField>
       <FormField
-        label={newsFormCopy.poster}
+        label={kind === "Event" ? newsFormCopy.invitation : newsFormCopy.poster}
         htmlFor="news-poster"
         hint={fileLimits.newsPoster.label}
       >
@@ -517,16 +596,6 @@ function NewsForm({
           {error}
         </p>
       ) : null}
-      <div className="flex gap-2">
-        <Button type="submit" variant="gold" disabled={busy}>
-          {editing ? "Save changes" : "Publish"}
-        </Button>
-        {editing ? (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        ) : null}
-      </div>
-    </form>
+    </FormDialog>
   );
 }

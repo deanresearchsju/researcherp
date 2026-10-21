@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PageTitle } from "@/components/portal/Desk";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -16,11 +17,13 @@ import {
   subscribeOffice,
 } from "@/lib/office";
 import {
+  currentPassedOut,
   currentQuotas,
-  guideFigures,
-  sameGuide,
+  currentStandings,
+  isPassedOut,
   subscribeRegister,
 } from "@/lib/register";
+import { guideOptions } from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
 export function AllocationScreen() {
@@ -31,6 +34,12 @@ export function AllocationScreen() {
     () => null,
   );
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
+  const standings = useSyncExternalStore(
+    subscribeRegister,
+    currentStandings,
+    currentStandings,
+  );
+  useSyncExternalStore(subscribeRegister, currentPassedOut, currentPassedOut);
   const [scholarId, setScholarId] = useState("");
   const [supervisorId, setSupervisorId] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -50,7 +59,7 @@ export function AllocationScreen() {
       scholar.id,
     name: scholar.name,
   }));
-  const scholars = [
+  const allScholars = [
     ...registerScholars,
     ...users.users
       .filter(
@@ -63,41 +72,9 @@ export function AllocationScreen() {
       )
       .map((user) => ({ id: user.id, identifier: user.identifier, name: user.name })),
   ];
-  const idCounts = new Map<string, number>();
-  for (const supervisor of researchRegister.supervisors) {
-    const identifier = supervisor.supervisorId.trim();
-    if (!identifier) continue;
-    idCounts.set(identifier, (idCounts.get(identifier) ?? 0) + 1);
-  }
-  const registerSupervisors = researchRegister.supervisors.map((supervisor) => {
-    const identifier = supervisor.supervisorId.trim();
-    const unique = identifier.length > 0 && idCounts.get(identifier) === 1;
-    return {
-      id: `${supervisor.serialNo}-${supervisor.name}`,
-      identifier: unique ? identifier : supervisor.name,
-      name: supervisor.name,
-      vacancy: guideFigures(supervisor, quotas, office.allocations).vacancy,
-    };
-  });
-  const supervisors = [
-    ...registerSupervisors,
-    ...users.users
-      .filter(
-        (user) =>
-          user.role === "supervisor" &&
-          !registerSupervisors.some(
-            (supervisor) =>
-              supervisor.identifier.toLowerCase() === user.identifier.toLowerCase() ||
-              sameGuide(supervisor.name, user.name),
-          ),
-      )
-      .map((user) => ({
-        id: user.id,
-        identifier: user.identifier,
-        name: user.name,
-        vacancy: null as number | null,
-      })),
-  ];
+  const scholars = allScholars.filter((user) => !isPassedOut(user.identifier, user.name));
+  const supervisors = guideOptions(office.allocations, users.users, quotas, standings);
+  const activeSupervisors = supervisors.filter((user) => user.status === "Active");
 
   async function allot() {
     const scholar = scholars.find((user) => user.identifier === scholarId);
@@ -116,19 +93,13 @@ export function AllocationScreen() {
       setNotice(saved.message);
       return;
     }
-    const guide = researchRegister.supervisors.find(
-      (item) =>
-        (item.supervisorId.trim() &&
-          item.supervisorId.trim() === supervisor.identifier) ||
-        sameGuide(item.name, supervisor.name),
-    );
-    const remaining = guide
-      ? guideFigures(
-          guide,
-          quotas,
-          currentOffice()?.allocations ?? office?.allocations ?? [],
-        ).vacancy
-      : null;
+    const remaining =
+      guideOptions(
+        currentOffice()?.allocations ?? office?.allocations ?? [],
+        users?.users ?? [],
+        quotas,
+        standings,
+      ).find((item) => item.identifier === supervisor.identifier)?.vacancy ?? null;
     setNotice(
       remaining === null
         ? `${scholar.name} is allotted to ${supervisor.name}.`
@@ -138,10 +109,7 @@ export function AllocationScreen() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Research office
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Scholar allotment</h1>
+      <PageTitle kicker="Research office" title="Scholar allotment" />
       {office.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">{office.detail}</p>
       ) : null}
@@ -172,9 +140,10 @@ export function AllocationScreen() {
             onChange={(event) => setSupervisorId(event.target.value)}
           >
             <option value="">Select a supervisor</option>
-            {supervisors.map((user) => (
+            {activeSupervisors.map((user) => (
               <option key={user.id} value={user.identifier}>
                 {user.name}
+                {user.subject ? ` · ${user.subject}` : ""}
                 {user.vacancy === null ? "" : ` · vacancy ${user.vacancy}`}
               </option>
             ))}
@@ -204,7 +173,7 @@ export function AllocationScreen() {
         shown={
           office.allocations.filter(
             (item) =>
-              (guideFilter === "" || item.supervisorIdentifier === guideFilter) &&
+              filterMatches(guideFilter, item.supervisorIdentifier) &&
               textMatches(query, [
                 item.scholarName,
                 item.scholarIdentifier,
@@ -224,7 +193,7 @@ export function AllocationScreen() {
         rows={office.allocations
           .filter(
             (item) =>
-              (guideFilter === "" || item.supervisorIdentifier === guideFilter) &&
+              filterMatches(guideFilter, item.supervisorIdentifier) &&
               textMatches(query, [
                 item.scholarName,
                 item.scholarIdentifier,
@@ -254,7 +223,7 @@ export function AllocationScreen() {
             {office.allocations
               .filter(
                 (item) =>
-                  (guideFilter === "" || item.supervisorIdentifier === guideFilter) &&
+                  filterMatches(guideFilter, item.supervisorIdentifier) &&
                   textMatches(query, [
                     item.scholarName,
                     item.scholarIdentifier,

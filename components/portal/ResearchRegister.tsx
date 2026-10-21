@@ -6,9 +6,10 @@ import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { FormDialog, PageTitle } from "@/components/portal/Desk";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { applicationReviewCopy } from "@/data/application-review";
 import { registrationCopy } from "@/data/registration";
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
 import { downloadCsv, toCsv } from "@/lib/csv";
+import { useCanMenuAction } from "@/lib/use-menu-action";
 import { currentOffice, subscribeOffice } from "@/lib/office";
 import {
   matchPhdApplication,
@@ -101,6 +103,7 @@ function scholarApplicationFile(
 export function ResearchRegister() {
   const ready = useClientReady();
   const session = usePreviewSession();
+  const canExport = useCanMenuAction("export");
   const allotments = useSyncExternalStore(
     subscribeRegister,
     currentAllotments,
@@ -111,7 +114,8 @@ export function ResearchRegister() {
     currentRegister,
     currentRegister,
   );
-  const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
+  // Quotas feed the supervisor figures shown in this register.
+  useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
   useSyncExternalStore(subscribeOffice, currentOffice, currentOffice);
   const applications = useSyncExternalStore(
     subscribeApplications,
@@ -131,14 +135,15 @@ export function ResearchRegister() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const shownAllotments = ready ? allotments : [];
-  const shownQuotas = ready ? quotas : [];
   const scholarRows = researchRegister.scholars.filter(
     (scholar) =>
-      (batchId === "" || scholar.batchId === batchId) &&
-      (department === "" || scholar.department === department) &&
-      (guide === "" || scholar.guideName === guide) &&
-      (researchArea === "" ||
-        supervisorForGuide(scholar.guideName)?.researchArea === researchArea) &&
+      filterMatches(batchId, scholar.batchId) &&
+      filterMatches(department, scholar.department) &&
+      filterMatches(guide, scholar.guideName) &&
+      filterMatches(
+        researchArea,
+        supervisorForGuide(scholar.guideName)?.researchArea ?? "",
+      ) &&
       textMatches(query, [
         scholar.name,
         scholar.department,
@@ -195,10 +200,7 @@ export function ResearchRegister() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Scholar register</h1>
+      <PageTitle kicker="Administration" title="Scholar register" />
       {stored?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
           {stored.detail} {registerMigrationHint}
@@ -233,38 +235,42 @@ export function ResearchRegister() {
         })}
       </ul>
 
-      <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            downloadCsv(
-              "all-scholars.csv",
-              toCsv(
-                scholarWideHeaders(),
-                researchRegister.scholars.map((scholar) =>
-                  scholarWideDownloadRow(scholar, storedApplications),
-                ),
-              ),
-            )
-          }
-        >
-          All scholar details
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            downloadCsv(
-              "supervisor-wise-scholars.csv",
-              toCsv(scholarWideHeaders(), allScholarRows),
-            )
-          }
-        >
-          Supervisor-wise scholars
-        </Button>
-      </div>
+      {canExport ? (
+        <>
+          <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                downloadCsv(
+                  "all-scholars.csv",
+                  toCsv(
+                    scholarWideHeaders(),
+                    researchRegister.scholars.map((scholar) =>
+                      scholarWideDownloadRow(scholar, storedApplications),
+                    ),
+                  ),
+                )
+              }
+            >
+              All scholar details
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                downloadCsv(
+                  "supervisor-wise-scholars.csv",
+                  toCsv(scholarWideHeaders(), allScholarRows),
+                )
+              }
+            >
+              Supervisor-wise scholars
+            </Button>
+          </div>
+        </>
+      ) : null}
 
       <h2 className="mt-10 font-heading text-2xl text-primary">Scholars</h2>
       <ListToolbar
@@ -419,21 +425,23 @@ export function ResearchRegister() {
                       >
                         {applicationReviewCopy.view}
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          downloadCsv(
-                            `scholar-${fileSlug(scholar.name)}.csv`,
-                            toCsv(scholarWideHeaders(), [
-                              scholarWideDownloadRow(scholar, storedApplications),
-                            ]),
-                          )
-                        }
-                      >
-                        Download
-                      </Button>
+                      {canExport ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            downloadCsv(
+                              `scholar-${fileSlug(scholar.name)}.csv`,
+                              toCsv(scholarWideHeaders(), [
+                                scholarWideDownloadRow(scholar, storedApplications),
+                              ]),
+                            )
+                          }
+                        >
+                          Download
+                        </Button>
+                      ) : null}
                       {savedNumber && session?.role === "admin" ? (
                         <Button
                           type="button"
@@ -520,14 +528,14 @@ function AllotForm({
   }
 
   return (
-    <form
-      className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
+    <FormDialog
+      title={`Allot registration number · ${scholar.name}`}
+      onClose={onCancel}
       onSubmit={form.handleSubmit(onSubmit)}
-      noValidate
+      busy={busy}
+      submitLabel="Save number"
+      size="sm"
     >
-      <h2 className="font-semibold text-primary sm:col-span-2">
-        Allot registration number — {scholar.name}
-      </h2>
       <FormField
         label="Registration number"
         htmlFor="registrationNumber"
@@ -537,18 +545,10 @@ function AllotForm({
         <Input id="registrationNumber" {...form.register("registrationNumber")} />
       </FormField>
       {error ? (
-        <p role="alert" className="text-sm text-secondary sm:col-span-2">
+        <p role="alert" className="text-sm text-secondary">
           {error}
         </p>
       ) : null}
-      <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" variant="gold" disabled={busy}>
-          Save number
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+    </FormDialog>
   );
 }

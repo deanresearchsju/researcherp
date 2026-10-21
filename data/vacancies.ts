@@ -5,6 +5,7 @@ export type VacancySeed = {
   department: string;
   researchArea: string;
   vacancyCount: number;
+  school?: string;
 };
 
 export const vacancyListTitle = "List of Research Supervisors and Vacancy Position";
@@ -14,6 +15,7 @@ export const vacancyListNote = "(Vacancy after Ph.D. July 2026 admission)";
 export const vacancyListColumns = {
   name: "Name",
   designation: "Designation",
+  subject: "Subject",
   researchArea: "Area of Research",
   vacancy: "No. of Vacancy",
 } as const;

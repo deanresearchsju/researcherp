@@ -21,61 +21,67 @@ export function Hero() {
   const applyLabel = settings.phdOpen ? heroCopy.primaryCta : "Applications closed";
 
   return (
-    <section className="overflow-hidden px-4 py-5 sm:px-6 sm:py-8 lg:px-8" aria-labelledby="hero-title">
+    <section
+      className="overflow-hidden px-4 py-3 sm:px-6 sm:py-4 lg:px-8"
+      aria-labelledby="hero-title"
+    >
       <div className="relative mx-auto max-w-6xl">
-        <div className="relative min-h-[min(36rem,calc(100dvh-11rem))] overflow-hidden rounded-[2rem] bg-primary shadow-lift sm:min-h-[min(40rem,calc(100dvh-12rem))] lg:min-h-[42rem]">
+        <div className="relative min-h-[18rem] overflow-hidden rounded-2xl bg-primary shadow-lift sm:min-h-[22rem] lg:min-h-[24rem]">
           <Image
             src="/pic.jpeg"
             alt=""
             fill
             priority
             sizes="(min-width: 1024px) 72rem, 100vw"
-            className="object-cover object-center transition duration-700 hover:scale-[1.02]"
+            className="object-cover object-center"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-purple-deep/80 via-purple-deep/10 to-black/15" />
+          <div className="absolute inset-0 bg-gradient-to-t from-purple-deep/85 via-purple-deep/15 to-black/10" />
 
-          <div className="absolute top-5 left-5 flex items-center gap-3 rounded-full border border-primary-foreground/25 bg-purple-deep/75 py-2 pr-4 pl-2 text-primary-foreground shadow-card backdrop-blur-md sm:top-7 sm:left-7">
-            <span className="grid size-8 place-items-center rounded-full bg-accent text-accent-foreground">
-              <FlaskConical className="size-4" aria-hidden="true" />
+          <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full border border-primary-foreground/25 bg-purple-deep/80 py-1 pr-3 pl-1 text-primary-foreground shadow-card backdrop-blur-md sm:top-4 sm:left-4">
+            <span className="grid size-6 place-items-center rounded-full bg-accent text-accent-foreground">
+              <FlaskConical className="size-3.5" aria-hidden="true" />
             </span>
-            <span className="text-[0.65rem] font-bold tracking-[0.18em] uppercase sm:text-xs">
+            <span className="text-[0.6rem] font-bold tracking-[0.16em] uppercase">
               {researchPage.badge}
             </span>
           </div>
 
-          <div className="absolute bottom-4 left-1/2 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 overflow-hidden rounded-2xl border border-card/80 bg-card/95 text-center shadow-lift backdrop-blur-md sm:bottom-6 sm:w-[calc(100%-4rem)]">
-            <div className="mx-auto h-1 w-20 rounded-b-full bg-accent" />
-            <div className="px-5 py-6 sm:px-8 sm:py-7 lg:px-10">
+          <div className="absolute right-3 bottom-3 left-3 mx-auto max-w-3xl overflow-hidden rounded-xl border border-card/80 bg-card/95 text-center shadow-lift backdrop-blur-md sm:right-5 sm:bottom-4 sm:left-5">
+            <div className="mx-auto h-0.5 w-14 rounded-b-full bg-accent" />
+            <div className="px-3 py-2.5 sm:px-5 sm:py-3">
               <h1
                 id="hero-title"
-                className="font-heading text-3xl leading-tight font-extrabold tracking-tight text-primary sm:text-4xl"
+                className="font-heading text-xl leading-tight font-extrabold tracking-tight text-primary sm:text-2xl"
               >
                 {researchPage.title}
               </h1>
-              <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
+              <p className="mx-auto mt-1 max-w-2xl line-clamp-2 text-xs leading-5 text-muted-foreground sm:line-clamp-3 sm:text-sm">
                 {researchPage.summary}
               </p>
-              <div className="mt-5 flex flex-col justify-center gap-2.5 sm:flex-row">
-                <Link href={applyHref} className={buttonVariants({ variant: "gold", size: "lg" })}>
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+                <Link
+                  href={applyHref}
+                  className={buttonVariants({ variant: "gold", size: "sm" })}
+                >
                   {applyLabel}
                 </Link>
                 <Link
                   href={heroCopy.secondaryHref}
                   className={cn(
-                    buttonVariants({ variant: "outline", size: "lg" }),
+                    buttonVariants({ variant: "outline", size: "sm" }),
                     "border-border bg-card font-bold",
                   )}
                 >
                   {heroCopy.secondaryCta}
                 </Link>
+                <Link
+                  href={heroCopy.tertiaryHref}
+                  className="inline-flex items-center justify-center gap-1 text-xs font-bold text-primary transition hover:gap-2 hover:text-gold-ink"
+                >
+                  {heroCopy.tertiaryCta}
+                  <ArrowRight className="size-3.5" aria-hidden="true" />
+                </Link>
               </div>
-              <Link
-                href={heroCopy.tertiaryHref}
-                className="mt-3 inline-flex items-center justify-center gap-2 text-sm font-bold text-primary transition hover:gap-3 hover:text-gold-ink"
-              >
-                {heroCopy.tertiaryCta}
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
             </div>
           </div>
         </div>

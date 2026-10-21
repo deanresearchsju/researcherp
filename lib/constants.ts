@@ -14,11 +14,11 @@ export const university = {
   hours: "Monday to Friday, 8:30 AM – 4:00 PM",
   addressLines: ["Center for Research", "St. Joseph University", "Tamil Nadu, India"],
   bank: {
-    accountName: "St. Joseph University",
-    accountNumber: "To be confirmed",
-    ifsc: "To be confirmed",
-    bankName: "To be confirmed",
-    branch: "To be confirmed",
+    accountName: "St. Joseph University - Tuition Fee A/C",
+    accountNumber: "5594831736",
+    ifsc: "CBIN0282740",
+    bankName: "Central Bank of India",
+    branch: "Nandambakkam",
   },
   social: [
     { label: "Facebook", href: "https://example.com" },
@@ -43,6 +43,8 @@ export const applicationFeeInr = 500;
 
 export const researchWordLimit = { min: 150, max: 200 } as const;
 
+export const researchAreaLimit = 200;
+
 export const admissionYear = "2026";
 
 export const admissionSessions = ["January", "July"] as const;
@@ -55,8 +57,8 @@ export const admissionSessionsCopy = {
 } as const;
 
 export const applicationNumbers = {
-  scholarPattern: "SJU/PHD/YEAR/Jan/0001",
-  scholarPatternJuly: "SJU/PHD/YEAR/Jul/0001",
+  scholarPattern: "SJU/PHD/Jan26/0001",
+  scholarPatternJuly: "SJU/PHD/Jul26/0001",
   supervisorPattern: "SJU/PHD/SUP.App/MM/YY/001",
 } as const;
 
@@ -86,6 +88,7 @@ export const storageKeys = {
   profilePhotos: "sju-profile-photo",
   auditLog: "sju-audit-log",
   inbox: "sju-inbox",
+  helpdesk: "sju-helpdesk",
 } as const;
 
 export const sessionStorageKey = "sju-research-session";
@@ -95,13 +98,34 @@ export const officeViewEventName = "sju-office-view-change";
 const kb = (value: number) => value * 1024;
 const mb = (value: number) => value * 1024 * 1024;
 
+export const uploadStandards = {
+  allowedTypes: ["application/pdf", "image/jpeg", "image/png"] as const,
+  documents: {
+    maxBytes: mb(1),
+    types: ["application/pdf", "image/jpeg", "image/png"] as const,
+    label: "PDF, JPG or PNG. PDF up to 1 MB",
+  },
+  photo: {
+    maxBytes: kb(200),
+    types: ["image/jpeg", "image/png"] as const,
+    aspect: 3.5 / 4.5,
+    label: "JPG or PNG, up to 200 KB (3.5 × 4.5 cm)",
+  },
+  signature: {
+    maxBytes: kb(100),
+    types: ["image/jpeg", "image/png"] as const,
+    aspect: 3,
+    label: "JPG or PNG, up to 100 KB",
+  },
+} as const;
+
 export const fileLimits = {
   photo: {
     minBytes: 1,
-    maxBytes: kb(100) - 1,
-    types: ["image/jpeg", "image/png"],
+    maxBytes: uploadStandards.photo.maxBytes,
+    types: uploadStandards.photo.types,
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, below 100 KB",
+    label: uploadStandards.photo.label,
   },
   teamPhoto: {
     minBytes: 1,
@@ -119,31 +143,31 @@ export const fileLimits = {
   },
   scholarSignature: {
     minBytes: 1,
-    maxBytes: kb(100) - 1,
-    types: ["image/jpeg", "image/png"],
+    maxBytes: uploadStandards.signature.maxBytes,
+    types: uploadStandards.signature.types,
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, below 100 KB",
+    label: uploadStandards.signature.label,
   },
   supervisorSignature: {
     minBytes: 1,
-    maxBytes: kb(100) - 1,
-    types: ["image/jpeg", "image/png"],
+    maxBytes: uploadStandards.signature.maxBytes,
+    types: uploadStandards.signature.types,
     accept: "image/jpeg,image/png",
-    label: "JPG or PNG, below 100 KB",
+    label: uploadStandards.signature.label,
   },
   document: {
     minBytes: 1,
-    maxBytes: kb(250) - 1,
-    types: ["application/pdf", "image/jpeg", "image/png"],
+    maxBytes: uploadStandards.documents.maxBytes,
+    types: uploadStandards.documents.types,
     accept: "application/pdf,image/jpeg,image/png",
-    label: "PDF below 250 KB, or JPG or PNG below 100 KB",
+    label: uploadStandards.documents.label,
   },
   resume: {
     minBytes: 1,
-    maxBytes: kb(250) - 1,
+    maxBytes: uploadStandards.documents.maxBytes,
     types: ["application/pdf"],
     accept: "application/pdf",
-    label: "PDF, below 250 KB",
+    label: "PDF, up to 1 MB",
   },
   spreadsheet: {
     minBytes: 1,
@@ -177,6 +201,47 @@ export function isPartTimeMode(value: string) {
   return value.toLowerCase().replaceAll("-", " ").includes("part time");
 }
 export const yesNo = ["Yes", "No"] as const;
+export const nationalities = ["Indian", "Non-Indian"] as const;
+export const communities = [
+  "General/OC",
+  "BC",
+  "BC-Muslim",
+  "MBC/DNC",
+  "SC",
+  "SC-Arunthathiyar",
+  "ST",
+  "EWS",
+  "Other",
+] as const;
+export const communitiesWithName: readonly (typeof communities)[number][] = [
+  "BC",
+  "BC-Muslim",
+  "MBC/DNC",
+  "SC",
+  "SC-Arunthathiyar",
+  "ST",
+  "Other",
+];
+export const netQualifications = ["NET", "SET", "Both", "None"] as const;
+
+export function isNetQualified(value: string) {
+  const answer = value.trim();
+  return answer === "NET" || answer === "SET" || answer === "Both" || answer === "Yes";
+}
+
+export function netIncludesNet(value: string) {
+  const answer = value.trim();
+  return answer === "NET" || answer === "Both" || answer === "Yes";
+}
+
+export function netIncludesSet(value: string) {
+  const answer = value.trim();
+  return answer === "SET" || answer === "Both";
+}
+
+export function communityNeedsName(value: string) {
+  return communitiesWithName.includes(value as (typeof communitiesWithName)[number]);
+}
 export const paymentModes = ["UPI", "Net Banking"] as const;
 export const indexingOptions = [
   "Scopus",

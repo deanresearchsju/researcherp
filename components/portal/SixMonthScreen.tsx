@@ -12,13 +12,16 @@ import {
   DeskPage,
   DeskSection,
   DeskTable,
+  DeskTabs,
+  FormDialog,
   GateBanner,
   ProcessFlow,
   ScholarIdentityHeader,
   StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { SixMonthOfficeEntry } from "@/components/portal/SixMonthOfficeEntry";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -31,6 +34,7 @@ import {
   processFlows,
   programmeNatures,
 } from "@/data/portal-desk";
+import { sixMonthOnlineFrom } from "@/data/doctoral";
 import { university } from "@/lib/constants";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import {
@@ -38,7 +42,7 @@ import {
   decideAccess,
   enrollmentFor,
   periodState,
-  reportPeriods,
+  reportPeriodsFor,
   saveAccess,
   subscribeDoctoral,
 } from "@/lib/doctoral";
@@ -100,10 +104,12 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   );
   const [period, setPeriod] = useState("");
   const [file, setFile] = useState<StoredFile | null>(null);
+  const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [officeTab, setOfficeTab] = useState<"reports" | "paper">("reports");
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
     defaultValues: { progress: "", coursesCompleted: "", nextTargets: "" },
@@ -127,7 +133,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
 
   const enrollment = session ? enrollmentFor(doctoral, session.identifier) : null;
   const batch = doctoral.batches.find((item) => item.id === enrollment?.batchId) ?? null;
-  const periods = batch ? reportPeriods(batch.session, Number(batch.year) || 2026) : [];
+  const periods = session ? reportPeriodsFor(doctoral, session.identifier) : [];
   const duePeriods = periods.filter((item) => periodState(item.due) === "due");
   const current = duePeriods.at(-1) ?? null;
   const ownReports = load.records.filter(
@@ -142,6 +148,9 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   }
 
   function canUpload(label: string) {
+    const due = periods.find((item) => item.label === label)?.due ?? "";
+    // Reports due before online submission began were received on paper.
+    if (due && due < sixMonthOnlineFrom) return false;
     const report = reportFor(label, ownReports);
     if (report?.status === "Returned") return true;
     if (report) return false;
@@ -191,6 +200,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
     setNotice(saved.ok ? "Report submitted for the research office." : saved.message);
     if (saved.ok) {
+      setReporting(false);
       form.reset();
       setFile(null);
       setPapers([]);
@@ -239,7 +249,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
     mode === "admin"
       ? load.records.filter(
           (record) =>
-            (statusFilter === "" || record.status === statusFilter) &&
+            filterMatches(statusFilter, record.status) &&
             textMatches(query, [
               record.scholarName,
               record.payload.period ?? "",
@@ -256,17 +266,31 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
         <ScholarIdentityHeader identifier={session?.identifier ?? ""} />
       ) : null}
       {mode === "scholar" ? (
-        !enrollment || !batch ? (
+        periods.length === 0 ? (
           <GateBanner>
-            The research office has to place you in a course-work batch before reports
-            open.
+            The research office has to place you in a batch before reports open.
           </GateBanner>
         ) : (
-          <form className="space-y-4" onSubmit={form.handleSubmit(upload)} noValidate>
-            <p className="text-sm text-muted-foreground">
-              {batch.name} · {enrollment.studyMode}
-              {current ? ` · Current period ${current.label}` : " · No period is due yet"}
-            </p>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
+              <p className="text-sm text-muted-foreground">
+                {[batch?.name, enrollment?.studyMode].filter(Boolean).join(" · ") ||
+                  "Six-month reports"}
+                {current
+                  ? ` · Current period ${current.label}`
+                  : " · No period is due yet"}
+              </p>
+              <Button
+                type="button"
+                variant="gold"
+                onClick={() => {
+                  setNotice(null);
+                  setReporting(true);
+                }}
+              >
+                Submit report
+              </Button>
+            </div>
             <DeskSection title="Already submitted report">
               <DeskTable
                 headers={["Requested on", "Status", "Remark", ""]}
@@ -334,372 +358,385 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                 );
               })}
             </ul>
-            <DeskSection
-              title="Paper published details"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setAddingPaper((open) => !open)}
+            {reporting ? (
+              <FormDialog
+                title="Six-month report"
+                onClose={() => setReporting(false)}
+                onSubmit={form.handleSubmit(upload)}
+                submitLabel="Upload report"
+                size="lg"
+              >
+                {notice ? (
+                  <p role="alert" className="text-sm text-secondary">
+                    {notice}
+                  </p>
+                ) : null}
+                <DeskSection
+                  title="Paper published details"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setAddingPaper((open) => !open)}
+                    >
+                      Add new
+                    </Button>
+                  }
                 >
-                  Add new
-                </Button>
-              }
-            >
-              {addingPaper ? (
-                <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-2">
-                  <Input
-                    placeholder="Title of paper"
-                    value={paperDraft.title}
-                    onChange={(event) =>
-                      setPaperDraft((current) => ({
-                        ...current,
-                        title: event.target.value,
-                      }))
-                    }
-                  />
-                  <Input
-                    placeholder="Title of journal"
-                    value={paperDraft.journal}
-                    onChange={(event) =>
-                      setPaperDraft((current) => ({
-                        ...current,
-                        journal: event.target.value,
-                      }))
-                    }
-                  />
-                  <Input
-                    placeholder="Volume"
-                    value={paperDraft.volume}
-                    onChange={(event) =>
-                      setPaperDraft((current) => ({
-                        ...current,
-                        volume: event.target.value,
-                      }))
-                    }
-                  />
-                  <Input
-                    placeholder="Issue"
-                    value={paperDraft.issue}
-                    onChange={(event) =>
-                      setPaperDraft((current) => ({
-                        ...current,
-                        issue: event.target.value,
-                      }))
-                    }
-                  />
-                  <Input
-                    placeholder="Indexed in"
-                    value={paperDraft.indexedIn}
-                    onChange={(event) =>
-                      setPaperDraft((current) => ({
-                        ...current,
-                        indexedIn: event.target.value,
-                      }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="gold"
-                    onClick={() => {
-                      if (paperDraft.title.trim().length < 2) return;
-                      setPapers((current) => [...current, paperDraft]);
-                      setPaperDraft({
-                        title: "",
-                        journal: "",
-                        volume: "",
-                        issue: "",
-                        indexedIn: "",
-                      });
-                      setAddingPaper(false);
-                    }}
+                  {addingPaper ? (
+                    <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-2">
+                      <Input
+                        placeholder="Title of paper"
+                        value={paperDraft.title}
+                        onChange={(event) =>
+                          setPaperDraft((current) => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Title of journal"
+                        value={paperDraft.journal}
+                        onChange={(event) =>
+                          setPaperDraft((current) => ({
+                            ...current,
+                            journal: event.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Volume"
+                        value={paperDraft.volume}
+                        onChange={(event) =>
+                          setPaperDraft((current) => ({
+                            ...current,
+                            volume: event.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Issue"
+                        value={paperDraft.issue}
+                        onChange={(event) =>
+                          setPaperDraft((current) => ({
+                            ...current,
+                            issue: event.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        placeholder="Indexed in"
+                        value={paperDraft.indexedIn}
+                        onChange={(event) =>
+                          setPaperDraft((current) => ({
+                            ...current,
+                            indexedIn: event.target.value,
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="gold"
+                        onClick={() => {
+                          if (paperDraft.title.trim().length < 2) return;
+                          setPapers((current) => [...current, paperDraft]);
+                          setPaperDraft({
+                            title: "",
+                            journal: "",
+                            volume: "",
+                            issue: "",
+                            indexedIn: "",
+                          });
+                          setAddingPaper(false);
+                        }}
+                      >
+                        Save paper
+                      </Button>
+                    </div>
+                  ) : null}
+                  <DeskTable
+                    headers={[
+                      "Title of paper",
+                      "Title of journal",
+                      "Volume",
+                      "Issue",
+                      "Indexed in",
+                    ]}
+                    empty={papers.length === 0}
                   >
-                    Save paper
-                  </Button>
-                </div>
-              ) : null}
-              <DeskTable
-                headers={[
-                  "Title of paper",
-                  "Title of journal",
-                  "Volume",
-                  "Issue",
-                  "Indexed in",
-                ]}
-                empty={papers.length === 0}
-              >
-                {papers.map((row, index) => (
-                  <tr key={`${row.title}-${index}`} className="border-t border-border">
-                    <td className="px-4 py-3">{row.title}</td>
-                    <td className="px-4 py-3">{row.journal || "—"}</td>
-                    <td className="px-4 py-3">{row.volume || "—"}</td>
-                    <td className="px-4 py-3">{row.issue || "—"}</td>
-                    <td className="px-4 py-3">{row.indexedIn || "—"}</td>
-                  </tr>
-                ))}
-              </DeskTable>
-            </DeskSection>
-            <DeskSection
-              title="Conference / workshop details"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setConferences((current) => [
-                      ...current,
-                      {
-                        nature: programmeNatures[0],
-                        name: "",
-                        level: conferenceLevels[0],
-                        institute: "",
-                        fromTo: "",
-                      },
-                    ])
-                  }
-                >
-                  Add new
-                </Button>
-              }
-            >
-              <DeskTable
-                headers={[
-                  "Program nature",
-                  "Name of the program",
-                  "Level",
-                  "Organizing institute",
-                  "From & to",
-                ]}
-                empty={conferences.length === 0}
-              >
-                {conferences.map((row, index) => (
-                  <tr key={`conf-${index}`} className="border-t border-border">
-                    <td className="px-4 py-3">{row.nature}</td>
-                    <td className="px-4 py-3">
-                      <Input
-                        value={row.name}
-                        onChange={(event) =>
-                          setConferences((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, name: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3">{row.level}</td>
-                    <td className="px-4 py-3">{row.institute || "—"}</td>
-                    <td className="px-4 py-3">{row.fromTo || "—"}</td>
-                  </tr>
-                ))}
-              </DeskTable>
-            </DeskSection>
-            <DeskSection
-              title="Patent details"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setPatents((current) => [
-                      ...current,
-                      {
-                        number: "",
-                        status: patentStatuses[0],
-                        inventor: "",
-                        title: "",
-                        filedOn: "",
-                      },
-                    ])
-                  }
-                >
-                  Add new
-                </Button>
-              }
-            >
-              <DeskTable
-                headers={[
-                  "Patent application number",
-                  "Status of patent",
-                  "Inventor’s name",
-                  "Title of the patent",
-                  "Patent filed date",
-                ]}
-                empty={patents.length === 0}
-              >
-                {patents.map((row, index) => (
-                  <tr key={`pat-${index}`} className="border-t border-border">
-                    <td className="px-4 py-3">
-                      <Input
-                        value={row.number}
-                        onChange={(event) =>
-                          setPatents((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, number: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3">{row.status}</td>
-                    <td className="px-4 py-3">{row.inventor || "—"}</td>
-                    <td className="px-4 py-3">{row.title || "—"}</td>
-                    <td className="px-4 py-3">{row.filedOn || "—"}</td>
-                  </tr>
-                ))}
-              </DeskTable>
-            </DeskSection>
-            <DeskSection
-              title="Manuscript details"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setManuscripts((current) => [
-                      ...current,
-                      { title: "", authors: "", remarks: "" },
-                    ])
-                  }
-                >
-                  Add new
-                </Button>
-              }
-            >
-              <DeskTable
-                headers={["Title", "Name of the authors", "Remarks"]}
-                empty={manuscripts.length === 0}
-              >
-                {manuscripts.map((row, index) => (
-                  <tr key={`ms-${index}`} className="border-t border-border">
-                    <td className="px-4 py-3">
-                      <Input
-                        value={row.title}
-                        onChange={(event) =>
-                          setManuscripts((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, title: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3">{row.authors || "—"}</td>
-                    <td className="px-4 py-3">{row.remarks || "—"}</td>
-                  </tr>
-                ))}
-              </DeskTable>
-            </DeskSection>
-            <DeskSection
-              title="Other activities details"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setActivities((current) => [
-                      ...current,
-                      { type: "", details: "", date: "", remarks: "" },
-                    ])
-                  }
-                >
-                  Add new
-                </Button>
-              }
-            >
-              <DeskTable
-                headers={["Type", "Details", "Date", "Remarks"]}
-                empty={activities.length === 0}
-              >
-                {activities.map((row, index) => (
-                  <tr key={`act-${index}`} className="border-t border-border">
-                    <td className="px-4 py-3">
-                      <Input
-                        value={row.type}
-                        onChange={(event) =>
-                          setActivities((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, type: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3">{row.details || "—"}</td>
-                    <td className="px-4 py-3">{row.date || "—"}</td>
-                    <td className="px-4 py-3">{row.remarks || "—"}</td>
-                  </tr>
-                ))}
-              </DeskTable>
-            </DeskSection>
-            <div className="grid gap-4 rounded-xl border border-border bg-card p-4">
-              <FormField label="Period" htmlFor="report-period" required>
-                <NativeSelect
-                  id="report-period"
-                  value={period}
-                  onChange={(event) => setPeriod(event.target.value)}
-                >
-                  <option value="">Select</option>
-                  {periods
-                    .filter((item) => canUpload(item.label))
-                    .map((item) => (
-                      <option key={item.label} value={item.label}>
-                        {item.label}
-                      </option>
+                    {papers.map((row, index) => (
+                      <tr
+                        key={`${row.title}-${index}`}
+                        className="border-t border-border"
+                      >
+                        <td className="px-4 py-3">{row.title}</td>
+                        <td className="px-4 py-3">{row.journal || "—"}</td>
+                        <td className="px-4 py-3">{row.volume || "—"}</td>
+                        <td className="px-4 py-3">{row.issue || "—"}</td>
+                        <td className="px-4 py-3">{row.indexedIn || "—"}</td>
+                      </tr>
                     ))}
-                </NativeSelect>
-              </FormField>
-              <FormField
-                label="No. of courses completed"
-                htmlFor="report-courses"
-                error={form.formState.errors.coursesCompleted?.message}
-              >
-                <Input id="report-courses" {...form.register("coursesCompleted")} />
-              </FormField>
-              <FormField
-                label="Work done"
-                htmlFor="report-progress"
-                required
-                error={form.formState.errors.progress?.message}
-              >
-                <Textarea id="report-progress" {...form.register("progress")} />
-              </FormField>
-              <FormField
-                label="Aim and objectives of the work to be done"
-                htmlFor="report-targets"
-                required
-                error={form.formState.errors.nextTargets?.message}
-              >
-                <Textarea id="report-targets" {...form.register("nextTargets")} />
-              </FormField>
-              <FormField label="Report" htmlFor="report-file" required>
-                <FileUpload
-                  id="report-file"
-                  acceptRule="document"
-                  value={file}
-                  onChange={setFile}
-                />
-              </FormField>
-              <div>
-                <Button type="submit" variant="gold">
-                  Upload report
-                </Button>
-              </div>
-            </div>
-          </form>
+                  </DeskTable>
+                </DeskSection>
+                <DeskSection
+                  title="Conference / workshop details"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setConferences((current) => [
+                          ...current,
+                          {
+                            nature: programmeNatures[0],
+                            name: "",
+                            level: conferenceLevels[0],
+                            institute: "",
+                            fromTo: "",
+                          },
+                        ])
+                      }
+                    >
+                      Add new
+                    </Button>
+                  }
+                >
+                  <DeskTable
+                    headers={[
+                      "Program nature",
+                      "Name of the program",
+                      "Level",
+                      "Organizing institute",
+                      "From & to",
+                    ]}
+                    empty={conferences.length === 0}
+                  >
+                    {conferences.map((row, index) => (
+                      <tr key={`conf-${index}`} className="border-t border-border">
+                        <td className="px-4 py-3">{row.nature}</td>
+                        <td className="px-4 py-3">
+                          <Input
+                            value={row.name}
+                            onChange={(event) =>
+                              setConferences((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, name: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-4 py-3">{row.level}</td>
+                        <td className="px-4 py-3">{row.institute || "—"}</td>
+                        <td className="px-4 py-3">{row.fromTo || "—"}</td>
+                      </tr>
+                    ))}
+                  </DeskTable>
+                </DeskSection>
+                <DeskSection
+                  title="Patent details"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setPatents((current) => [
+                          ...current,
+                          {
+                            number: "",
+                            status: patentStatuses[0],
+                            inventor: "",
+                            title: "",
+                            filedOn: "",
+                          },
+                        ])
+                      }
+                    >
+                      Add new
+                    </Button>
+                  }
+                >
+                  <DeskTable
+                    headers={[
+                      "Patent application number",
+                      "Status of patent",
+                      "Inventor’s name",
+                      "Title of the patent",
+                      "Patent filed date",
+                    ]}
+                    empty={patents.length === 0}
+                  >
+                    {patents.map((row, index) => (
+                      <tr key={`pat-${index}`} className="border-t border-border">
+                        <td className="px-4 py-3">
+                          <Input
+                            value={row.number}
+                            onChange={(event) =>
+                              setPatents((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, number: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-4 py-3">{row.status}</td>
+                        <td className="px-4 py-3">{row.inventor || "—"}</td>
+                        <td className="px-4 py-3">{row.title || "—"}</td>
+                        <td className="px-4 py-3">{row.filedOn || "—"}</td>
+                      </tr>
+                    ))}
+                  </DeskTable>
+                </DeskSection>
+                <DeskSection
+                  title="Manuscript details"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setManuscripts((current) => [
+                          ...current,
+                          { title: "", authors: "", remarks: "" },
+                        ])
+                      }
+                    >
+                      Add new
+                    </Button>
+                  }
+                >
+                  <DeskTable
+                    headers={["Title", "Name of the authors", "Remarks"]}
+                    empty={manuscripts.length === 0}
+                  >
+                    {manuscripts.map((row, index) => (
+                      <tr key={`ms-${index}`} className="border-t border-border">
+                        <td className="px-4 py-3">
+                          <Input
+                            value={row.title}
+                            onChange={(event) =>
+                              setManuscripts((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, title: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-4 py-3">{row.authors || "—"}</td>
+                        <td className="px-4 py-3">{row.remarks || "—"}</td>
+                      </tr>
+                    ))}
+                  </DeskTable>
+                </DeskSection>
+                <DeskSection
+                  title="Other activities details"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setActivities((current) => [
+                          ...current,
+                          { type: "", details: "", date: "", remarks: "" },
+                        ])
+                      }
+                    >
+                      Add new
+                    </Button>
+                  }
+                >
+                  <DeskTable
+                    headers={["Type", "Details", "Date", "Remarks"]}
+                    empty={activities.length === 0}
+                  >
+                    {activities.map((row, index) => (
+                      <tr key={`act-${index}`} className="border-t border-border">
+                        <td className="px-4 py-3">
+                          <Input
+                            value={row.type}
+                            onChange={(event) =>
+                              setActivities((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, type: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-4 py-3">{row.details || "—"}</td>
+                        <td className="px-4 py-3">{row.date || "—"}</td>
+                        <td className="px-4 py-3">{row.remarks || "—"}</td>
+                      </tr>
+                    ))}
+                  </DeskTable>
+                </DeskSection>
+                <div className="grid gap-4 rounded-xl border border-border bg-card p-4">
+                  <FormField label="Period" htmlFor="report-period" required>
+                    <NativeSelect
+                      id="report-period"
+                      value={period}
+                      onChange={(event) => setPeriod(event.target.value)}
+                    >
+                      <option value="">Select</option>
+                      {periods
+                        .filter((item) => canUpload(item.label))
+                        .map((item) => (
+                          <option key={item.label} value={item.label}>
+                            {item.label}
+                          </option>
+                        ))}
+                    </NativeSelect>
+                  </FormField>
+                  <FormField
+                    label="No. of courses completed"
+                    htmlFor="report-courses"
+                    error={form.formState.errors.coursesCompleted?.message}
+                  >
+                    <Input id="report-courses" {...form.register("coursesCompleted")} />
+                  </FormField>
+                  <FormField
+                    label="Work done"
+                    htmlFor="report-progress"
+                    required
+                    error={form.formState.errors.progress?.message}
+                  >
+                    <Textarea id="report-progress" {...form.register("progress")} />
+                  </FormField>
+                  <FormField
+                    label="Aim and objectives of the work to be done"
+                    htmlFor="report-targets"
+                    required
+                    error={form.formState.errors.nextTargets?.message}
+                  >
+                    <Textarea id="report-targets" {...form.register("nextTargets")} />
+                  </FormField>
+                  <FormField label="Report" htmlFor="report-file" required>
+                    <FileUpload
+                      id="report-file"
+                      acceptRule="document"
+                      value={file}
+                      onChange={setFile}
+                    />
+                  </FormField>
+                </div>
+              </FormDialog>
+            ) : null}
+          </div>
         )
       ) : (
         <div className="space-y-3">
@@ -748,6 +785,19 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
         </div>
       )}
       {mode === "admin" ? (
+        <DeskTabs
+          tabs={[
+            { id: "reports", label: "Online reports" },
+            { id: "paper", label: "Received before July 2026" },
+          ]}
+          value={officeTab}
+          onChange={(id) => setOfficeTab(id as "reports" | "paper")}
+        />
+      ) : null}
+      {mode === "admin" && officeTab === "paper" ? (
+        <SixMonthOfficeEntry doctoral={doctoral} records={load.records} />
+      ) : null}
+      {mode === "admin" && officeTab === "reports" ? (
         <ListToolbar
           query={query}
           onQuery={setQuery}
@@ -777,7 +827,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
         />
       ) : null}
       {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
-      <ul className="space-y-3">
+      <ul className={mode === "admin" && officeTab === "paper" ? "hidden" : "space-y-3"}>
         {rows.map((record) => (
           <li
             key={record.id}

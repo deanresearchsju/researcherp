@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Container } from "@/components/ui/container";
+import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -9,14 +11,17 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
+  const copy = pageHeroes.terms;
   return (
-    <Container className="max-w-3xl py-16">
-      <h1 className="font-heading text-4xl text-primary">Terms</h1>
-      <p className="mt-4 text-sm leading-7 text-muted-foreground">
-        Use of the research portal follows the terms issued by {university.name}. Fees,
-        eligibility, and milestone rules remain those notified by the{" "}
-        {university.researchOffice}.
-      </p>
-    </Container>
+    <>
+      <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
+      <Container className="max-w-3xl py-8 sm:py-10">
+        <p className="text-sm leading-7 text-muted-foreground">
+          Use of the research portal follows the terms issued by {university.name}. Fees,
+          eligibility, and milestone rules remain those notified by the{" "}
+          {university.researchOffice}.
+        </p>
+      </Container>
+    </>
   );
 }

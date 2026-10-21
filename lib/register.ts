@@ -36,10 +36,45 @@ export type GuideAllotment = {
   supervisorName: string;
 };
 
+/** A supervisor leaving: scholars are transferred first, then the supervisor becomes past. */
+export type SupervisorExit = {
+  key: string;
+  name: string;
+  reason: "Resignation" | "Retirement" | "Other";
+  lastDay: string;
+  startedOn: string;
+  /** Set when every scholar has been transferred and the supervisor moved to past supervisors. */
+  completedOn: string;
+};
+
+/** A scholar who has passed the viva and left the active rolls. */
+export type PassedOutScholar = {
+  key: string;
+  name: string;
+  supervisorName: string;
+  vivaOn: string;
+  movedOn: string;
+  movedBy: string;
+};
+
+/** A fee reminder the office shows on a scholar's home page until the fee year is paid. */
+export type FeeReminder = {
+  key: string;
+  name: string;
+  feeYear: number;
+  message: string;
+  dueOn: string;
+  sentOn: string;
+  sentBy: string;
+};
+
 export type RegisterLoad = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
   standings: SupervisorStanding[];
+  exits: SupervisorExit[];
+  passedOut: PassedOutScholar[];
+  reminders: FeeReminder[];
   source: "database" | "browser";
   updatedAt: string | null;
   detail: string | null;
@@ -82,50 +117,125 @@ function parseQuotas(value: unknown): ApprovedQuota[] {
   });
 }
 
-function readStored(): {
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseExits(value: unknown): SupervisorExit[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.key) || !text(row.name)) return [];
+    const reason = text(row.reason);
+    return [
+      {
+        key: text(row.key),
+        name: text(row.name),
+        reason:
+          reason === "Retirement" || reason === "Other"
+            ? reason
+            : ("Resignation" as const),
+        lastDay: text(row.lastDay),
+        startedOn: text(row.startedOn),
+        completedOn: text(row.completedOn),
+      },
+    ];
+  });
+}
+
+function parseReminders(value: unknown): FeeReminder[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.key) || !text(row.message)) return [];
+    return [
+      {
+        key: text(row.key),
+        name: text(row.name),
+        feeYear: Number(row.feeYear) || 1,
+        message: text(row.message),
+        dueOn: text(row.dueOn),
+        sentOn: text(row.sentOn),
+        sentBy: text(row.sentBy),
+      },
+    ];
+  });
+}
+
+function parsePassedOut(value: unknown): PassedOutScholar[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.key) || !text(row.name)) return [];
+    return [
+      {
+        key: text(row.key),
+        name: text(row.name),
+        supervisorName: text(row.supervisorName),
+        vivaOn: text(row.vivaOn),
+        movedOn: text(row.movedOn),
+        movedBy: text(row.movedBy),
+      },
+    ];
+  });
+}
+
+type StoredRegister = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
   standings: SupervisorStanding[];
-} {
+  exits: SupervisorExit[];
+  passedOut: PassedOutScholar[];
+  reminders: FeeReminder[];
+};
+
+const emptyStored = (): StoredRegister => ({
+  allotments: [],
+  quotas: [],
+  standings: [],
+  exits: [],
+  passedOut: [],
+  reminders: [],
+});
+
+function readStored(): StoredRegister {
   if (typeof window === "undefined") {
-    return { allotments: [], quotas: [], standings: [] };
+    return emptyStored();
   }
   try {
     const parsed: unknown = JSON.parse(
       window.localStorage.getItem(storageKeys.register) ?? "[]",
     );
     if (Array.isArray(parsed)) {
-      return { allotments: parseAllotments(parsed), quotas: [], standings: [] };
+      return { ...emptyStored(), allotments: parseAllotments(parsed) };
     }
     if (!parsed || typeof parsed !== "object") {
-      return { allotments: [], quotas: [], standings: [] };
+      return emptyStored();
     }
-    const record = parsed as {
-      allotments?: unknown;
-      quotas?: unknown;
-      standings?: unknown;
-    };
+    const record = parsed as Record<string, unknown>;
     return {
       allotments: parseAllotments(record.allotments),
       quotas: parseQuotas(record.quotas),
       standings: parseSupervisorStandings(record.standings),
+      exits: parseExits(record.exits),
+      passedOut: parsePassedOut(record.passedOut),
+      reminders: parseReminders(record.reminders),
     };
   } catch {
-    return { allotments: [], quotas: [], standings: [] };
+    return emptyStored();
   }
 }
 
-function writeBrowser(stored: {
-  allotments: RegistrationAllotment[];
-  quotas: ApprovedQuota[];
-  standings: SupervisorStanding[];
-}) {
+function writeBrowser(stored: StoredRegister) {
   window.localStorage.setItem(storageKeys.register, JSON.stringify(stored));
 }
 
 function payloadOf(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as { allotments?: unknown; quotas?: unknown; standings?: unknown })
+    ? (value as Record<string, unknown>)
     : null;
 }
 
@@ -151,6 +261,9 @@ export async function loadRegister(): Promise<RegisterLoad> {
     allotments: parseAllotments(payload?.allotments),
     quotas: parseQuotas(payload?.quotas),
     standings: parseSupervisorStandings(payload?.standings),
+    exits: parseExits(payload?.exits),
+    passedOut: parsePassedOut(payload?.passedOut),
+    reminders: parseReminders(payload?.reminders),
     source: "database",
     updatedAt: data?.updated_at ?? null,
     detail: null,
@@ -160,6 +273,9 @@ export async function loadRegister(): Promise<RegisterLoad> {
 const emptyAllotments: RegistrationAllotment[] = [];
 const emptyQuotas: ApprovedQuota[] = [];
 const emptyStandings: SupervisorStanding[] = [];
+const emptyExits: SupervisorExit[] = [];
+const emptyPassedOut: PassedOutScholar[] = [];
+const emptyReminders: FeeReminder[] = [];
 
 let memory: RegisterLoad | null = null;
 let loading = false;
@@ -197,6 +313,74 @@ export function currentStandings() {
 
 export function currentRegister() {
   return memory;
+}
+
+export function currentExits() {
+  return memory?.exits ?? emptyExits;
+}
+
+export function currentPassedOut() {
+  return memory?.passedOut ?? emptyPassedOut;
+}
+
+export function currentReminders() {
+  return memory?.reminders ?? emptyReminders;
+}
+
+/** Adds or replaces the reminder for each scholar and fee year. */
+export async function saveFeeReminders(entries: readonly FeeReminder[]) {
+  const current = memory ?? (await loadRegister());
+  const reminders = [
+    ...entries,
+    ...current.reminders.filter(
+      (item) =>
+        !entries.some(
+          (entry) => sameKey(entry.key, item.key) && entry.feeYear === item.feeYear,
+        ),
+    ),
+  ];
+  return persistRegister({ ...current, reminders });
+}
+
+export async function clearFeeReminder(key: string, feeYear: number) {
+  const current = memory ?? (await loadRegister());
+  return persistRegister({
+    ...current,
+    reminders: current.reminders.filter(
+      (item) => !(sameKey(item.key, key) && item.feeYear === feeYear),
+    ),
+  });
+}
+
+function sameKey(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+/** The scholar has passed the viva and left the active rolls. */
+export function isPassedOut(identifier: string, name = "") {
+  return (memory?.passedOut ?? []).some(
+    (item) =>
+      (identifier.trim() && sameKey(item.key, identifier)) ||
+      (name.trim() && sameKey(item.name, name)),
+  );
+}
+
+/** Open (not yet completed) exit for this supervisor, by any of its keys or its name. */
+export function exitFor(keys: readonly string[], name: string) {
+  return (
+    (memory?.exits ?? []).find(
+      (item) =>
+        keys.some((key) => key.trim() && sameKey(item.key, key)) ||
+        sameGuide(item.name, name),
+    ) ?? null
+  );
+}
+
+/** Seats freed for a guide by scholars who passed out. */
+export function releasedSeats(guideName: string) {
+  return (memory?.passedOut ?? []).filter((item) =>
+    sameGuide(item.supervisorName, guideName),
+  ).length;
 }
 
 export function registrationOf(
@@ -340,7 +524,7 @@ export function netAllotments(
     const scholar = scholarOfAllotment(item);
     return Boolean(scholar && sameGuide(scholar.guideName, supervisor.name));
   }).length;
-  return added - movedAway;
+  return added - movedAway - releasedSeats(supervisor.name);
 }
 
 export function vacancyBeforeAllotment(
@@ -422,7 +606,7 @@ export const scholarDownloadHeaders = [
   "Quota",
   "Vacancy",
   "Balance",
-  "June 2026 allotment",
+  "July 2026 allotment",
   "Guide active",
   "1st DC",
   "2nd DC",
@@ -489,7 +673,7 @@ export const supervisorDownloadHeaders = [
   "Scholars on register",
   "Quota",
   "Vacancy",
-  "June 2026 allotment",
+  "July 2026 allotment",
   "Balance",
   "Campus",
   "Phone",
@@ -541,10 +725,13 @@ export function scholarsGuidedBy(name: string, identifier: string) {
 }
 
 async function persistRegister(next: RegisterLoad) {
-  const stored = {
+  const stored: StoredRegister = {
     allotments: next.allotments,
     quotas: next.quotas,
     standings: next.standings ?? [],
+    exits: next.exits ?? [],
+    passedOut: next.passedOut ?? [],
+    reminders: next.reminders ?? [],
   };
   const supabase = createSupabase();
   if (supabase && next.source === "database") {
@@ -595,6 +782,61 @@ export async function saveSupervisorStanding(
     ),
   ];
   return persistRegister({ ...current, standings });
+}
+
+/** Standing for any supervisor, including those approved after the register was built. */
+export async function saveStandingByKeys(
+  keys: readonly string[],
+  active: boolean,
+  inactiveKind: "Inactive" | "Resigned" | null,
+) {
+  const current = memory ?? (await loadRegister());
+  const live = keys.filter((key) => key.trim());
+  if (live.length === 0)
+    return { ok: false as const, message: "That supervisor has no key." };
+  const nextStanding: SupervisorStanding = {
+    key: live[0],
+    active,
+    inactiveKind: active ? null : (inactiveKind ?? "Inactive"),
+  };
+  const standings = [
+    nextStanding,
+    ...current.standings.filter((item) => !live.some((key) => sameKey(key, item.key))),
+  ];
+  return persistRegister({ ...current, standings });
+}
+
+export async function saveSupervisorExit(exit: SupervisorExit) {
+  const current = memory ?? (await loadRegister());
+  const exits = [exit, ...current.exits.filter((item) => !sameKey(item.key, exit.key))];
+  return persistRegister({ ...current, exits });
+}
+
+export async function removeSupervisorExit(key: string) {
+  const current = memory ?? (await loadRegister());
+  return persistRegister({
+    ...current,
+    exits: current.exits.filter((item) => !sameKey(item.key, key)),
+  });
+}
+
+export async function savePassedOut(entries: readonly PassedOutScholar[]) {
+  const current = memory ?? (await loadRegister());
+  const passedOut = [
+    ...entries,
+    ...current.passedOut.filter(
+      (item) => !entries.some((entry) => sameKey(entry.key, item.key)),
+    ),
+  ];
+  return persistRegister({ ...current, passedOut });
+}
+
+export async function restorePassedOut(key: string) {
+  const current = memory ?? (await loadRegister());
+  return persistRegister({
+    ...current,
+    passedOut: current.passedOut.filter((item) => !sameKey(item.key, key)),
+  });
 }
 
 export async function saveApprovedQuota(entry: ApprovedQuota) {

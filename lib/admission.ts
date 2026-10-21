@@ -60,7 +60,35 @@ export type AdmissionCase = {
   feeReceiptData: string | null;
   correctionOpen: boolean;
   letterIssued: boolean;
+  /** Reference serial printed on the letter; fixed once issued. */
+  letterNo: number | null;
+  letterIssuedOn: string;
+  /** Scrutiny of the application: eligibility and application fee. */
+  scrutiny: ScrutinyMark;
+  scrutinyNote: string;
+  /** Position on the subject-wise merit list. */
+  meritRank: number | null;
+  /** Position on the subject-wise waiting list; null when not wait-listed. */
+  waitlistRank: number | null;
+  /** Set when a selected candidate did not report or declined; the seat is released. */
+  reporting: ReportingMark;
+  reportingNote: string;
+  reportingOn: string;
+  /** Selected later from the waiting list against a released seat. */
+  fromWaitlist: boolean;
+  /** Admitted in an earlier admission session that has been closed. */
+  sessionClosed: boolean;
+  /** Entrance test centre and hall, and the hall ticket issued for it. */
+  examCampusId: string;
+  examRoom: string;
+  hallTicketNo: string;
+  hallTicketOn: string;
 };
+
+export const scrutinyMarks = ["Eligible", "Not eligible"] as const;
+export type ScrutinyMark = (typeof scrutinyMarks)[number] | "";
+export const reportingMarks = ["Not reported", "Declined"] as const;
+export type ReportingMark = (typeof reportingMarks)[number] | "";
 
 export type EntranceScore = {
   key: string;
@@ -68,18 +96,79 @@ export type EntranceScore = {
   interview: number | null;
 };
 
+export type ExamCampus = { id: string; name: string; address: string };
+
+export type InterviewExpert = { name: string; designation: string; institution: string };
+
+/** The two experts who assess the interview of one department. */
+export type InterviewPanel = {
+  department: string;
+  date: string;
+  experts: [InterviewExpert, InterviewExpert];
+};
+
+export const emptyExpert: InterviewExpert = {
+  name: "",
+  designation: "",
+  institution: "",
+};
+
+export function panelFor(schedule: EntranceSchedule, department: string) {
+  return (
+    schedule.panels.find((item) => sameDepartment(item.department, department)) ?? null
+  );
+}
+
 export type EntranceSchedule = {
   session: string;
   monthYear: string;
   date: string;
+  /** Legacy single venue; campuses replace it. */
   venue: string;
+  reportingTime: string;
+  examTime: string;
+  campuses: ExamCampus[];
+  /** Printed on every hall ticket. Images are data URLs. */
+  superintendentName: string;
+  superintendentSignature: string;
+  deanSignature: string;
+  panels: InterviewPanel[];
 };
+
+export function campusFor(schedule: EntranceSchedule, id: string) {
+  return schedule.campuses.find((item) => item.id === id) ?? null;
+}
+
+/** "14:30" → "2:30 PM". */
+export function clockLabel(value: string) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  const hours = Number(match[1]);
+  const suffix = hours >= 12 ? "PM" : "AM";
+  return `${hours % 12 || 12}:${match[2]} ${suffix}`;
+}
+
+/** Hall ticket number: PHD + yy + mm of the admission session + serial, e.g. PHD2607001. */
+export function hallTicketNumber(schedule: EntranceSchedule, serial: number) {
+  const [year = "", month = ""] = schedule.monthYear.split("-");
+  return `PHD${year.slice(-2)}${month}${String(serial).padStart(3, "0")}`;
+}
+
+/** The serial of a hall ticket number in the current format, or null for any other format. */
+export function hallTicketSerial(schedule: EntranceSchedule, value: string) {
+  const prefix = hallTicketNumber(schedule, 0).slice(0, -3);
+  if (!value.startsWith(prefix)) return null;
+  const serial = Number(value.slice(prefix.length));
+  return Number.isInteger(serial) && serial > 0 ? serial : null;
+}
 
 export type SelectionProgress = {
   current: SelectionStepId;
   completed: SelectionStepId[];
   entrance: EntranceSchedule;
   entranceReady: boolean;
+  /** Minimum total (out of 100) to enter the merit list; null when no minimum is set. */
+  qualifyingTotal: number | null;
 };
 
 export type ArchivedSession = {
@@ -105,9 +194,15 @@ export type AdmissionState = {
 export const defaultSelectionProgress: SelectionProgress = {
   current: "applications",
   completed: [],
-  entrance: { ...emptyEntranceSchedule },
+  entrance: { ...emptyEntranceSchedule, campuses: [], panels: [] },
   entranceReady: false,
+  qualifyingTotal: null,
 };
+
+/** Session and month-year fixed at the start; date and venue fixed at the entrance step. */
+export function sessionIsSet(schedule: EntranceSchedule) {
+  return Boolean(schedule.session.trim() && schedule.monthYear.trim());
+}
 
 export function selectionStepIds() {
   return selectionSteps.map((item) => item.id);
@@ -118,7 +213,8 @@ export function scheduleIsReady(schedule: EntranceSchedule) {
     schedule.session.trim() &&
     schedule.monthYear.trim() &&
     isValidIsoDate(schedule.date) &&
-    schedule.venue.trim(),
+    /^\d{1,2}:\d{2}$/.test(schedule.examTime.trim()) &&
+    schedule.campuses.length > 0,
   );
 }
 
@@ -199,8 +295,10 @@ export function isLiveAdmissionCase(
 }
 
 export function shouldArchiveCase(row: AdmissionCase) {
-  if (row.selected || row.letterIssued || row.verification === "Approved") return false;
-  if (registerScholarForCase(row)) return false;
+  if (row.verification === "Approved" || registerScholarForCase(row)) return false;
+  // A candidate who did not report or declined leaves with the unselected applications.
+  if (row.reporting) return true;
+  if (row.selected || row.letterIssued) return false;
   return true;
 }
 
@@ -235,16 +333,6 @@ export function archivedApplications(session: ArchivedSession) {
   if (session.applications.length > 0) return session.applications;
   return session.cases.map((row) => snapshotApplication(row, []));
 }
-
-const empty: AdmissionState = {
-  cases: [],
-  letter: defaultLetter,
-  entranceScores: [],
-  progress: defaultSelectionProgress,
-  archived: [],
-  updatedAt: null,
-  detail: null,
-};
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -288,6 +376,21 @@ export function blankCase(application: StoredApplication): AdmissionCase {
     feeReceiptData: null,
     correctionOpen: false,
     letterIssued: false,
+    letterNo: null,
+    letterIssuedOn: "",
+    scrutiny: "",
+    scrutinyNote: "",
+    meritRank: null,
+    waitlistRank: null,
+    reporting: "",
+    reportingNote: "",
+    reportingOn: "",
+    fromWaitlist: false,
+    sessionClosed: false,
+    examCampusId: "",
+    examRoom: "",
+    hallTicketNo: "",
+    hallTicketOn: "",
   };
 }
 
@@ -412,11 +515,39 @@ export function totalMarks(row: Pick<AdmissionCase, "written" | "interview">) {
   return row.written + row.interview;
 }
 
+/** Present, marked and not withdrawn: the candidates who can be ranked. */
+export function rankable(row: AdmissionCase) {
+  return (
+    row.shortlisted &&
+    row.attendance === "Present" &&
+    row.written !== null &&
+    row.interview !== null &&
+    !row.reporting
+  );
+}
+
+/** Merit order: total, then the written test, then name. */
+export function meritCompare(a: AdmissionCase, b: AdmissionCase) {
+  return (
+    (totalMarks(b) ?? 0) - (totalMarks(a) ?? 0) ||
+    (b.written ?? 0) - (a.written ?? 0) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+/**
+ * Prepares the subject-wise merit list. The top candidates fill the vacancies; the rest who
+ * qualify go on the waiting list in merit order. Files already admitted keep their seat.
+ */
 export function applyVacancySelection(
   cases: AdmissionCase[],
   vacancies: readonly Vacancy[],
+  qualifyingTotal: number | null = null,
 ) {
-  const chosen = new Set<string>();
+  const outcome = new Map<
+    string,
+    { selected: boolean; meritRank: number | null; waitlistRank: number | null }
+  >();
   const departments = [...new Set(cases.map((item) => item.department))];
   for (const department of departments) {
     const seats = seatsFor(department, vacancies);
@@ -424,27 +555,195 @@ export function applyVacancySelection(
       .filter(
         (item) =>
           item.department === department &&
-          item.shortlisted &&
-          item.attendance === "Present" &&
-          item.written !== null &&
-          item.interview !== null,
+          rankable(item) &&
+          (qualifyingTotal === null || (totalMarks(item) ?? 0) >= qualifyingTotal),
       )
-      .sort(
-        (a, b) =>
-          (totalMarks(b) ?? 0) - (totalMarks(a) ?? 0) || a.name.localeCompare(b.name),
-      );
-    ranked.slice(0, seats).forEach((item) => chosen.add(item.applicationId));
+      .sort(meritCompare);
+    const kept = ranked.filter((item) => admissionFileFrozen(item) && item.selected);
+    let open = Math.max(seats - kept.length, 0);
+    let waiting = 0;
+    ranked.forEach((item, index) => {
+      if (admissionFileFrozen(item)) {
+        outcome.set(item.applicationId, {
+          selected: item.selected,
+          meritRank: index + 1,
+          waitlistRank: null,
+        });
+        return;
+      }
+      if (open > 0) {
+        open -= 1;
+        outcome.set(item.applicationId, {
+          selected: true,
+          meritRank: index + 1,
+          waitlistRank: null,
+        });
+        return;
+      }
+      waiting += 1;
+      outcome.set(item.applicationId, {
+        selected: false,
+        meritRank: index + 1,
+        waitlistRank: waiting,
+      });
+    });
   }
   return cases.map((item) => {
-    if (admissionFileFrozen(item)) return item;
+    if (admissionFileFrozen(item) || item.reporting) return item;
+    const result = outcome.get(item.applicationId) ?? {
+      selected: false,
+      meritRank: null,
+      waitlistRank: null,
+    };
     return {
       ...item,
-      selected: chosen.has(item.applicationId),
-      guideName: chosen.has(item.applicationId) ? item.guideName : "",
-      guideIdentifier: chosen.has(item.applicationId) ? item.guideIdentifier : "",
-      verification: chosen.has(item.applicationId) ? item.verification : "Pending",
+      ...result,
+      fromWaitlist: false,
+      guideName: result.selected ? item.guideName : "",
+      guideIdentifier: result.selected ? item.guideIdentifier : "",
+      verification: result.selected ? item.verification : ("Pending" as const),
     };
   });
+}
+
+/** Wait-listed candidates of a subject, best first. */
+export function waitlistFor(cases: readonly AdmissionCase[], department: string) {
+  return cases
+    .filter(
+      (row) =>
+        row.waitlistRank !== null &&
+        !row.selected &&
+        !row.reporting &&
+        sameDepartment(row.department, department),
+    )
+    .sort((a, b) => (a.waitlistRank ?? 0) - (b.waitlistRank ?? 0));
+}
+
+export function waitlistOrder(cases: readonly AdmissionCase[]) {
+  return cases
+    .filter((row) => row.waitlistRank !== null && !row.selected && !row.reporting)
+    .slice()
+    .sort(
+      (a, b) =>
+        a.department.localeCompare(b.department) ||
+        (a.waitlistRank ?? 0) - (b.waitlistRank ?? 0),
+    );
+}
+
+/**
+ * Releases the seat of a selected candidate who did not report or declined, and, when asked,
+ * offers it to the first candidate on the same subject's waiting list with the same guide.
+ */
+export function releaseSeat(
+  cases: readonly AdmissionCase[],
+  applicationId: string,
+  reason: Exclude<ReportingMark, "">,
+  note: string,
+  on: string,
+  offerNext: boolean,
+) {
+  const leaving = cases.find((row) => row.applicationId === applicationId);
+  if (!leaving) return { cases: [...cases], promoted: null };
+  const next = offerNext ? (waitlistFor(cases, leaving.department)[0] ?? null) : null;
+  const updated = cases.map((row) => {
+    if (row.applicationId === leaving.applicationId) {
+      return {
+        ...row,
+        selected: false,
+        reporting: reason,
+        reportingNote: note,
+        reportingOn: on,
+        guideName: "",
+        guideIdentifier: "",
+        verification: "Pending" as const,
+      };
+    }
+    if (next && row.applicationId === next.applicationId) {
+      return {
+        ...row,
+        selected: true,
+        fromWaitlist: true,
+        waitlistRank: null,
+        guideName: leaving.guideName,
+        guideIdentifier: leaving.guideIdentifier,
+        letterIssued: false,
+        letterNo: null,
+        letterIssuedOn: "",
+      };
+    }
+    return row;
+  });
+  return { cases: updated, promoted: next };
+}
+
+/** The next free letter reference serial. */
+export function nextLetterNo(cases: readonly AdmissionCase[]) {
+  return cases.reduce((max, row) => Math.max(max, row.letterNo ?? 0), 0) + 1;
+}
+
+/** Why the open step cannot be completed yet; null when it can. */
+export function stepCompletionBlock(
+  step: SelectionStepId,
+  cases: readonly AdmissionCase[],
+  progress: SelectionProgress,
+): string | null {
+  const live = cases.filter((row) => !admissionFileFrozen(row) || row.selected);
+  switch (step) {
+    case "applications": {
+      if (!sessionIsSet(progress.entrance)) {
+        return "Set the admission session and month before completing scrutiny.";
+      }
+      const open = live.filter((row) => !row.scrutiny).length;
+      if (live.length === 0) return "There is no application to scrutinise.";
+      return open > 0 ? `${open} application(s) still need the scrutiny decision.` : null;
+    }
+    case "shortlist":
+      return live.some((row) => row.shortlisted)
+        ? null
+        : "Shortlist at least one eligible candidate.";
+    case "entrance": {
+      if (!progress.entranceReady) {
+        return "Save the entrance date, time and at least one campus first.";
+      }
+      const noCampus = live.filter((row) => row.shortlisted && !row.examCampusId).length;
+      if (noCampus > 0) return `Assign a campus to ${noCampus} shortlisted candidate(s).`;
+      const noTicket = live.filter((row) => row.shortlisted && !row.hallTicketNo).length;
+      if (noTicket > 0) return `Generate hall tickets for ${noTicket} candidate(s).`;
+      const open = live.filter((row) => row.shortlisted && !row.attendance).length;
+      return open > 0 ? `Mark attendance for ${open} shortlisted candidate(s).` : null;
+    }
+    case "marks": {
+      const open = live.filter(
+        (row) =>
+          row.shortlisted &&
+          row.attendance === "Present" &&
+          (row.written === null || row.interview === null),
+      ).length;
+      return open > 0 ? `Enter marks for ${open} present candidate(s).` : null;
+    }
+    case "selection":
+      return live.some((row) => row.selected)
+        ? null
+        : "Prepare the merit list so that at least one candidate is selected.";
+    case "provisional": {
+      const open = live.filter((row) => row.selected && !row.guideName).length;
+      return open > 0 ? `Allot a guide to ${open} selected candidate(s).` : null;
+    }
+    case "letter": {
+      const open = live.filter((row) => row.selected && !row.letterIssued).length;
+      return open > 0 ? `Issue the provisional letter to ${open} candidate(s).` : null;
+    }
+    case "certificates": {
+      const open = live.filter(
+        (row) => row.selected && row.verification !== "Approved",
+      ).length;
+      return open > 0
+        ? `${open} selected candidate(s) are neither verified nor marked as not reported.`
+        : null;
+    }
+    case "fees":
+      return null;
+  }
 }
 
 export function attendanceOrder(cases: readonly AdmissionCase[]) {
@@ -481,8 +780,9 @@ export function missingItems(row: AdmissionCase) {
 
 export function verificationBlock(row: AdmissionCase) {
   if (!row.selected) return "Select the candidate before certificate verification.";
+  if (row.reporting) return "This candidate did not report; the seat is released.";
   if (!row.guideName) return "Allot a guide on the provisional list first.";
-  if (!row.feeReceiptData) return "The tuition fee receipt has not been uploaded.";
+  // The tuition fee is paid after the first sign-in, under Fee.
   const open = admissionChecklist.filter((item) => {
     const mark = row.checks[item.id];
     if (item.required) return mark !== "Received";
@@ -518,7 +818,11 @@ function parseCase(value: unknown): AdmissionCase | null {
     gatedAttendance === "Present" ? numberOrNull(row.written, writtenMax) : null;
   const interview =
     gatedAttendance === "Present" ? numberOrNull(row.interview, interviewMax) : null;
-  const selected = row.selected === true && written !== null && interview !== null;
+  const reporting = reportingMarks.find((item) => item === row.reporting) ?? "";
+  const selected =
+    row.selected === true && written !== null && interview !== null && !reporting;
+  const rank = (value: unknown) =>
+    typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
   const checks: AdmissionCase["checks"] = {};
   if (row.checks && typeof row.checks === "object") {
     for (const [key, mark] of Object.entries(row.checks)) {
@@ -561,6 +865,21 @@ function parseCase(value: unknown): AdmissionCase | null {
     feeReceiptData: text(row.feeReceiptData) || null,
     correctionOpen: row.correctionOpen === true,
     letterIssued: row.letterIssued === true || row.verification === "Approved",
+    letterNo: rank(row.letterNo),
+    letterIssuedOn: text(row.letterIssuedOn),
+    scrutiny: scrutinyMarks.find((item) => item === row.scrutiny) ?? "",
+    scrutinyNote: text(row.scrutinyNote),
+    meritRank: rank(row.meritRank),
+    waitlistRank: selected || reporting ? null : rank(row.waitlistRank),
+    reporting,
+    reportingNote: text(row.reportingNote),
+    reportingOn: text(row.reportingOn),
+    fromWaitlist: row.fromWaitlist === true,
+    sessionClosed: row.sessionClosed === true,
+    examCampusId: row.shortlisted === true ? text(row.examCampusId) : "",
+    examRoom: row.shortlisted === true ? text(row.examRoom) : "",
+    hallTicketNo: row.shortlisted === true ? text(row.hallTicketNo) : "",
+    hallTicketOn: row.shortlisted === true ? text(row.hallTicketOn) : "",
   };
 }
 
@@ -592,11 +911,65 @@ function parseSchedule(value: unknown): EntranceSchedule {
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  const venue = text(row.venue);
+  const campuses = Array.isArray(row.campuses)
+    ? row.campuses.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const campus = item as Record<string, unknown>;
+        const id = text(campus.id);
+        const name = text(campus.name);
+        return id && name ? [{ id, name, address: text(campus.address) }] : [];
+      })
+    : [];
   return {
     session: text(row.session),
     monthYear: text(row.monthYear),
     date: text(row.date),
-    venue: text(row.venue),
+    venue,
+    reportingTime: text(row.reportingTime) || emptyEntranceSchedule.reportingTime,
+    examTime: text(row.examTime) || emptyEntranceSchedule.examTime,
+    superintendentName: text(row.superintendentName),
+    superintendentSignature: text(row.superintendentSignature).startsWith("data:image/")
+      ? text(row.superintendentSignature)
+      : "",
+    deanSignature: text(row.deanSignature).startsWith("data:image/")
+      ? text(row.deanSignature)
+      : "",
+    panels: Array.isArray(row.panels)
+      ? row.panels.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const panel = item as Record<string, unknown>;
+          const department = text(panel.department);
+          if (!department) return [];
+          const list = Array.isArray(panel.experts) ? panel.experts : [];
+          const expert = (value: unknown): InterviewExpert => {
+            const entry =
+              value && typeof value === "object"
+                ? (value as Record<string, unknown>)
+                : {};
+            return {
+              name: text(entry.name),
+              designation: text(entry.designation),
+              institution: text(entry.institution),
+            };
+          };
+          return [
+            {
+              department,
+              date: text(panel.date),
+              experts: [expert(list[0]), expert(list[1])] as [
+                InterviewExpert,
+                InterviewExpert,
+              ],
+            },
+          ];
+        })
+      : [],
+    // A venue saved before campuses existed becomes the first campus.
+    campuses:
+      campuses.length > 0 || !venue
+        ? campuses
+        : [{ id: "campus-1", name: venue, address: "" }],
   };
 }
 
@@ -614,11 +987,21 @@ function parseProgress(value: unknown): SelectionProgress {
       })
     : [];
   const entrance = parseSchedule(row.entrance);
+  const qualifying = Number(row.qualifyingTotal);
   return {
     current,
     completed,
     entrance,
     entranceReady: row.entranceReady === true && scheduleIsReady(entrance),
+    qualifyingTotal:
+      row.qualifyingTotal !== null &&
+      row.qualifyingTotal !== undefined &&
+      row.qualifyingTotal !== "" &&
+      Number.isInteger(qualifying) &&
+      qualifying >= 0 &&
+      qualifying <= writtenMax + interviewMax
+        ? qualifying
+        : null,
   };
 }
 
@@ -708,13 +1091,38 @@ function parseStored(value: unknown): {
         return parsed ? [parsed] : [];
       })
     : [];
+  const progress = parseProgress(row.progress);
   return {
-    cases,
+    cases: normalizeHallTickets(cases, progress.entrance),
     letter: parseLetter(row.letter),
     entranceScores,
-    progress: parseProgress(row.progress),
+    progress,
     archived,
   };
+}
+
+/**
+ * Hall tickets issued in an older numbering are renumbered as PHDyymm001 in attendance
+ * order, after the numbers already in the current format.
+ */
+export function normalizeHallTickets(cases: AdmissionCase[], schedule: EntranceSchedule) {
+  if (!sessionIsSet(schedule)) return cases;
+  const stale = attendanceOrder(cases).filter(
+    (row) => row.hallTicketNo && hallTicketSerial(schedule, row.hallTicketNo) === null,
+  );
+  if (stale.length === 0) return cases;
+  let serial =
+    cases.reduce(
+      (max, row) => Math.max(max, hallTicketSerial(schedule, row.hallTicketNo) ?? 0),
+      0,
+    ) + 1;
+  const numbers = new Map(
+    stale.map((row) => [row.applicationId, hallTicketNumber(schedule, serial++)]),
+  );
+  return cases.map((row) => {
+    const next = numbers.get(row.applicationId);
+    return next ? { ...row, hallTicketNo: next } : row;
+  });
 }
 
 let memory: AdmissionState | null = null;
@@ -954,6 +1362,69 @@ export async function archiveUnselected(input: {
   return { ok: true as const, count: moving.length };
 }
 
+/**
+ * Closes the admission session: unselected, wait-listed and not-reported candidates go to the
+ * archive, admitted scholars leave the live desk, and the next session starts at scrutiny.
+ */
+export async function closeAdmissionSession(applications: readonly StoredApplication[]) {
+  const blocked = adminActionBlock();
+  if (blocked) return blocked;
+  const before = memory ?? (await ensureAdmission());
+  const session = before.progress.entrance.session;
+  const year = archiveYearOf(before.progress.entrance);
+  const archived = await archiveUnselected({ session, year, applications });
+  if (!archived.ok && archived.message !== selectionFlowCopy.noneToArchive)
+    return archived;
+  const current = memory ?? before;
+  const keys = archivedKeys(current.archived);
+  const saved = await saveAdmission({
+    cases: current.cases.map((row) =>
+      keys.has(row.applicationId) || keys.has(row.applicationNo)
+        ? row
+        : { ...row, sessionClosed: true, correctionOpen: false },
+    ),
+    letter: current.letter,
+    entranceScores: current.entranceScores,
+    progress: { ...defaultSelectionProgress },
+    archived: current.archived,
+  });
+  if (!saved.ok) return saved;
+  await recordAudit({
+    action: "admission:close-session",
+    subject: archiveSessionId(session, year),
+    detail: `${archiveSessionLabel(session, year)} admission closed`,
+  });
+  return { ok: true as const, archived: archived.ok ? archived.count : 0 };
+}
+
+/** Records on the admission file that the provisional letter was issued from Letters. */
+export async function recordProvisionalLetter(applicationId: string, issuedOn: string) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const current = memory ?? (await ensureAdmission());
+  const row = current.cases.find((item) => item.applicationId === applicationId);
+  if (!row)
+    return {
+      ok: false as const,
+      message: "That candidate is not on the admission file.",
+    };
+  if (row.letterIssued && row.letterNo)
+    return { ok: true as const, letterNo: row.letterNo };
+  const letterNo = row.letterNo ?? nextLetterNo(current.cases);
+  const saved = await saveAdmission({
+    cases: current.cases.map((item) =>
+      item.applicationId === applicationId
+        ? { ...item, letterIssued: true, letterNo, letterIssuedOn: issuedOn }
+        : item,
+    ),
+    letter: current.letter,
+    entranceScores: current.entranceScores,
+    progress: current.progress,
+    archived: current.archived,
+  });
+  return saved.ok ? { ok: true as const, letterNo } : saved;
+}
+
 export function sanitizeMark(value: string, max: number) {
   const trimmed = value.trim();
   if (trimmed === "") return { value: "", error: null };
@@ -1034,15 +1505,28 @@ export async function saveEntrancePage(
   const scores = [...current.entranceScores];
   let cases = current.cases;
   for (const patch of patches) {
-    const error = marksDraftError(patch.written, patch.interview);
-    if (error) return { ok: false as const, message: error };
+    // The written test and the interview are entered in two rounds, so each may be blank.
+    const writtenCheck = sanitizeMark(patch.written, writtenMax);
+    if (writtenCheck.value === null) {
+      return { ok: false as const, message: `Written test: ${writtenCheck.error}` };
+    }
+    const interviewCheck = sanitizeMark(patch.interview, interviewMax);
+    if (interviewCheck.value === null) {
+      return { ok: false as const, message: `Interview: ${interviewCheck.error}` };
+    }
     const written = patch.written.trim() === "" ? null : Number(patch.written);
     const interview = patch.interview.trim() === "" ? null : Number(patch.interview);
+    if (interview !== null && written === null) {
+      return {
+        ok: false as const,
+        message: "Enter the written test mark before the interview mark.",
+      };
+    }
     const nextScore: EntranceScore = { key: patch.key, written, interview };
     const index = scores.findIndex((item) => item.key === patch.key);
     if (index >= 0) scores[index] = nextScore;
     else scores.push(nextScore);
-    if (patch.applicationId && written !== null && interview !== null) {
+    if (patch.applicationId) {
       cases = cases.map((row) =>
         row.applicationId === patch.applicationId && row.attendance === "Present"
           ? { ...row, written, interview }

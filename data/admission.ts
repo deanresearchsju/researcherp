@@ -69,15 +69,15 @@ export const writtenMax = 70;
 export const interviewMax = 30;
 
 export const selectionSteps = [
-  { id: "applications", label: "1. Applications" },
-  { id: "shortlist", label: "2. Shortlist" },
-  { id: "entrance", label: "3. Entrance" },
-  { id: "marks", label: "4. Marks" },
-  { id: "selection", label: "5. Selection" },
-  { id: "provisional", label: "6. Provisional list" },
-  { id: "letter", label: "7. Letter" },
-  { id: "fees", label: "8. Fee receipt" },
-  { id: "certificates", label: "9. Certificates" },
+  { id: "applications", label: "Scrutiny", title: "Scrutiny of applications" },
+  { id: "shortlist", label: "Shortlist", title: "Shortlist against vacancies" },
+  { id: "entrance", label: "Entrance", title: "Entrance test & interview attendance" },
+  { id: "marks", label: "Marks", title: "Entrance and interview marks" },
+  { id: "selection", label: "Merit list", title: "Merit list & waiting list" },
+  { id: "provisional", label: "Guide", title: "Provisional list & guide allotment" },
+  { id: "letter", label: "Letters", title: "Provisional admission letters" },
+  { id: "certificates", label: "Reporting", title: "Reporting & document verification" },
+  { id: "fees", label: "Admission", title: "Fee payment & close admission" },
 ] as const;
 
 export type SelectionStepId = (typeof selectionSteps)[number]["id"];
@@ -87,7 +87,32 @@ export const emptyEntranceSchedule = {
   monthYear: "",
   date: "",
   venue: "",
+  reportingTime: "09:00",
+  examTime: "10:00",
+  superintendentName: "",
+  superintendentSignature: "",
+  deanSignature: "",
 } as const;
+
+export const hallTicketDeanTitle = "Dean, Research and Development";
+
+/** Heads of the 30-mark interview, assessed jointly by the two experts. */
+export const interviewCriteria = [
+  { label: "Research proposal & presentation", max: 10 },
+  { label: "Subject knowledge", max: 10 },
+  { label: "Research aptitude & communication", max: 10 },
+] as const;
+
+export const hallTicketInstructions = [
+  "Bring this hall ticket and an original photo identity card (Aadhaar, passport, voter ID, PAN or driving licence). Candidates without both will not be admitted.",
+  "Report at the examination centre at the reporting time. No candidate is admitted 30 minutes after the test begins.",
+  "Do not leave the hall during the first hour or the last 15 minutes of the test.",
+  "Mobile phones, smart watches, calculators, notes and any electronic device are not allowed in the hall.",
+  "Sign the attendance sheet and this hall ticket in the presence of the invigilator.",
+  "The written test (70 marks) is followed by the interview (30 marks) as scheduled by the research office.",
+  "Any malpractice or impersonation leads to disqualification and further action as per University rules.",
+  "Admission to the test is provisional. Eligibility is subject to verification of original certificates.",
+] as const;
 
 export const selectionFlowCopy = {
   complete: "Complete this step",
@@ -126,7 +151,7 @@ export const selectionFlowCopy = {
   marksEmpty: "No shortlisted candidate is on the live admission file.",
 } as const;
 
-export const archiveSessionOptions = ["January", "June", "July"] as const;
+export const archiveSessionOptions = ["January", "July"] as const;
 export const archiveYearOptions = ["2025", "2026"] as const;
 
 export const admissionArchiveCopy = {
@@ -210,7 +235,11 @@ export const admissionChecklist = [
   },
   { id: "transfer", title: "Transfer or migration certificate", required: false },
   { id: "proposal", title: "Research proposal", required: false },
-  { id: "fee", title: "Fee payment receipt", required: true },
+  {
+    id: "fee",
+    title: "Fee payment receipt, if paid before reporting (otherwise paid after sign-in)",
+    required: false,
+  },
 ] as const;
 
 export type ChecklistId = (typeof admissionChecklist)[number]["id"];

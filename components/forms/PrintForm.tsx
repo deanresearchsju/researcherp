@@ -48,7 +48,7 @@ export function PrintLetterhead({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <Logo className="h-10 w-auto" alt={university.name} />
+        <Logo className="h-16 w-auto" alt={university.name} />
         <p className="mt-1 text-[10px] tracking-wide text-muted-foreground uppercase">
           {university.unit}
         </p>

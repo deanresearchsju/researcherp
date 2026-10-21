@@ -12,9 +12,27 @@ export const applicationReviewCopy = {
   payment: "Application fee",
   certificates: "Certificates and enclosures",
   publications: "Publications",
-  noFile: "File name is stored. The file itself is not in this record.",
+  noFile:
+    "Not stored with this application (submitted before uploads were saved). Upload the copy received from the candidate.",
   photo: "Photograph",
   signature: "Signature",
+  downloadPdf: "Download PDF",
+  download: "Download",
+  downloadZip: "Download ZIP",
+  downloadingPdf: "Preparing PDF…",
+  downloadFailed: "The PDF could not be prepared. Try again.",
+  needSelection: "Select at least one application.",
+  selectAll: "Select all",
+  clearSelection: "Clear selection",
+  moveNext: "Move to next stage",
+  bulkApprove: "Approve",
+  bulkReject: "Reject",
+  bulkUpdated: "The selected applications were updated.",
+  bulkNone: "None of the selected applications can take that step.",
+  bulkPartial: "Some selected applications could not be updated.",
+  bulkRemarks: "Comments for this decision",
+  bulkQuota: "Approved quota",
+  bulkApply: "Apply to selected",
   saveChanges: "Save changes",
   saved: "The application details were updated.",
   editHint: "Change any detail that needs correction, then save. Close when finished.",
@@ -28,7 +46,9 @@ export const scholarApplicationEditFields = [
   { key: "dateOfBirth", label: "Date of birth" },
   { key: "gender", label: "Gender" },
   { key: "nationality", label: "Nationality" },
+  { key: "country", label: "Country" },
   { key: "community", label: "Community" },
+  { key: "communityName", label: "Sub-caste / Community name" },
   { key: "bloodGroup", label: "Blood group" },
   { key: "maritalStatus", label: "Marital status" },
   { key: "fatherName", label: "Father's name" },
@@ -37,7 +57,14 @@ export const scholarApplicationEditFields = [
   { key: "parentEmail", label: "Parent email" },
   { key: "studyMode", label: "Study mode" },
   { key: "school", label: "School" },
-  { key: "specialization", label: "Specialisation" },
+  { key: "specialization", label: "Subject" },
+  { key: "netQualified", label: "Qualified in NET / SET / SLET" },
+  { key: "netRoll", label: "NET certificate no." },
+  { key: "netYear", label: "NET year of passing" },
+  { key: "netAgency", label: "NET agency name" },
+  { key: "setRoll", label: "SET / SLET certificate no." },
+  { key: "setYear", label: "SET / SLET year of passing" },
+  { key: "setAgency", label: "SET / SLET agency name" },
   { key: "programme", label: "Programme" },
   { key: "session", label: "Admission session" },
   { key: "year", label: "Admission year" },
@@ -46,8 +73,7 @@ export const scholarApplicationEditFields = [
   { key: "communication", label: "Communication address", multiline: true },
   { key: "permanent", label: "Permanent address", multiline: true },
   { key: "experience", label: "Experience", multiline: true },
-  { key: "researchArea", label: "Proposed research area", multiline: true },
-  { key: "outline", label: "Outline", multiline: true },
+  { key: "researchArea", label: "Research area", multiline: true },
 ] as const;
 
 export const supervisorApplicationEditFields = [
@@ -78,7 +104,7 @@ export const supervisorApplicationEditFields = [
 
 export const supervisorOfficeCopy = {
   activeTab: "Active Supervisors List",
-  inactiveTab: "Inactive / Resigned",
+  inactiveTab: "Past / inactive supervisors",
   markInactive: "Mark inactive",
   markResigned: "Mark resigned",
   restore: "Restore to active",
@@ -90,7 +116,8 @@ export const supervisorOfficeCopy = {
 } as const;
 
 export const loginGateCopy = {
-  scholar: "Portal sign-in opens after the provisional admission letter is printed.",
+  scholar:
+    "Portal sign-in opens after your documents are submitted and verified by the research office.",
   supervisor:
     "Portal sign-in opens after the research office approves the recognition application.",
   supervisorInactive: "This supervisor record is inactive. Sign-in is closed.",

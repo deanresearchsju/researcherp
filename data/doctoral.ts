@@ -96,3 +96,17 @@ export const vivaOutcomes = ["Passed", "Failed"] as const;
 export const completionKinds = ["Provisional", "Degree"] as const;
 
 export const reportTargets = { "Full-Time": 6, "Part-Time": 8 } as const;
+
+/**
+ * Batches whose doctoral committees met before the ERP. The office marks these as held with the
+ * meeting date; scholars do not upload. Later batches upload the report, the guide recommends
+ * it and the Dean approves.
+ */
+export const dcOfficeEntryBatchIds: readonly string[] = [
+  "2025-january",
+  "2025-june",
+  "2026-january",
+];
+
+/** Six-month reports due before this date were received on paper; the office records them. */
+export const sixMonthOnlineFrom = "2026-07-01";

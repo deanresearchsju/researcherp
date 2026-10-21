@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
@@ -10,130 +10,81 @@ import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
 import {
   DeskPage,
+  FormDialog,
   GateBanner,
-  ProcessFlow,
   ScholarIdentityHeader,
+  StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
-import { PrintActions, PrintPages } from "@/components/forms/PrintForm";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
-import { Badge } from "@/components/ui/badge";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { thesisChecklist } from "@/data/doctoral";
-import { processFlows } from "@/data/portal-desk";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
   currentDoctoral,
   decideThesis,
-  latestCommittee,
-  latestPlagiarism,
   latestSynopsis,
+  plagiarismIssued,
   saveThesis,
   subscribeDoctoral,
-  thesisDeadline,
-  type ThesisEvaluator,
+  thesisBlocked,
+  thesisOpensOn,
   type ThesisSubmission,
 } from "@/lib/doctoral";
-import { referenceDate } from "@/lib/constants";
+import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { loadEvaluations } from "@/lib/thesis-evaluation";
 import {
-  currentPanels,
-  savePanel,
-  subscribePanels,
-  type ThesisPanel,
-} from "@/lib/thesis-panels";
+  panelComplete,
+  scholarKeyOf,
+  type EvaluationRecord,
+} from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
-
-const person = z.object({
-  name: z.string().trim().min(2, "Enter the name."),
-  institution: z.string().trim().min(2, "Enter the institution."),
-  email: z.string().trim().email("Enter an email address."),
-});
+import { researchTitleOf } from "@/lib/research-title";
+import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Enter the title."),
   domain: z.string().trim().min(2, "Enter the domain."),
-  local: z.tuple([person, person, person]),
-  indian: z.tuple([person, person, person]),
-  foreign: z.tuple([person, person, person]),
 });
 
 type Values = z.infer<typeof schema>;
 
-const blank = { name: "", institution: "", email: "" };
-
-function idleSubscribe() {
-  return () => undefined;
-}
-
-function idlePanels(): ThesisPanel[] | null {
-  return null;
-}
-
-function panelFor(panels: ThesisPanel[] | null, thesisId: string) {
-  return panels?.find((item) => item.thesisId === thesisId) ?? null;
-}
-
-export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
-  const ready = useClientReady();
-  const session = usePortalSession();
+function ScholarThesis({ identifier, name }: { identifier: string; name: string }) {
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const panels = useSyncExternalStore(
-    mode === "admin" ? subscribePanels : idleSubscribe,
-    mode === "admin" ? currentPanels : idlePanels,
+  const titleChanges = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("title_change", onChange),
+    () => currentScholarRecords("title_change"),
     () => null,
   );
-  const [checks, setChecks] = useState<string[]>([]);
   const [file, setFile] = useState<StoredFile | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [sheet, setSheet] = useState<ThesisSubmission | null>(null);
-  const [selection, setSelection] = useState<Record<string, ThesisPanel>>({});
-  const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
-    defaultValues: {
-      title: "",
-      domain: "",
-      local: [blank, blank, blank],
-      indian: [blank, blank, blank],
-      foreign: [blank, blank, blank],
-    },
+    defaultValues: { title: "", domain: "" },
   });
+  if (!doctoral) return <p className="text-sm text-muted-foreground">Loading thesis…</p>;
 
-  if (!ready || !doctoral || (mode === "admin" && !panels)) {
-    return <p className="text-sm text-muted-foreground">Loading thesis…</p>;
-  }
-
-  const identifier = session?.identifier ?? "";
-  const fourth = latestCommittee(doctoral, "fourth", identifier);
   const synopsis = latestSynopsis(doctoral, identifier);
-  const deadline =
-    synopsis?.status === "Approved" ? thesisDeadline(synopsis.decidedOn) : "";
-  const open = fourth?.status === "Approved" && deadline && referenceDate <= deadline;
+  const opens = synopsis?.status === "Approved" ? thesisOpensOn(synopsis) : "";
   const own =
-    doctoral.theses.find((item) => item.scholarIdentifier === identifier) ?? null;
-  const queue =
-    mode === "admin"
-      ? doctoral.theses.filter(
-          (thesis) =>
-            (statusFilter === "" || thesis.status === statusFilter) &&
-            textMatches(query, [
-              thesis.scholarName,
-              thesis.title,
-              thesis.domain,
-              thesis.status,
-            ]),
-        )
-      : [];
+    doctoral.theses
+      .filter((item) => item.scholarIdentifier === identifier)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+  const blocked = thesisBlocked(doctoral, identifier);
+  const lockedTitle = researchTitleOf(
+    doctoral,
+    identifier,
+    titleChanges?.records ?? [],
+  ).title;
 
   async function upload(values: Values) {
-    if (!session || !open) return;
-    if (checks.length !== thesisChecklist.length) {
-      setNotice("Complete the checklist.");
+    const certificate = plagiarismIssued(doctoral!, identifier, "thesis");
+    if (!certificate) {
+      setNotice("The research office has to issue the plagiarism certificate first.");
       return;
     }
     const problem = fileError(file?.file ?? null, "document", true);
@@ -143,388 +94,358 @@ export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
     }
     const data = await fileToDataUrl(file.file).catch(() => "");
     const saved = await saveThesis({
-      scholarIdentifier: session.identifier,
-      scholarName: session.name,
-      title: values.title,
+      scholarIdentifier: identifier,
+      scholarName: name,
+      title: lockedTitle || values.title,
       domain: values.domain,
-      checks,
+      checks: certificate.checks.length ? certificate.checks : [...thesisChecklist],
       fileName: file.file.name,
       fileData: data || null,
-      local: values.local,
-      indian: values.indian,
-      foreign: values.foreign,
+      local: [],
+      indian: [],
+      foreign: [],
     });
-    setNotice(
-      saved.ok
-        ? "Thesis submitted. The research office will choose the examiners."
-        : saved.message,
+    setNotice(saved.ok ? "Thesis submitted to the research office." : saved.message);
+    if (saved.ok) {
+      setSubmitting(false);
+      setFile(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <ScholarIdentityHeader identifier={identifier} />
+      {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
+      {own && own.status !== "Rejected" ? (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm shadow-card">
+          <div>
+            <p className="font-semibold text-primary">{own.title}</p>
+            <p className="text-muted-foreground">{own.domain}</p>
+            <div className="mt-2">
+              <StatusPill status={own.status === "Approved" ? "Approved" : "Submitted"} />
+            </div>
+          </div>
+          <ViewFilesButton
+            fileName={own.fileName}
+            data={own.fileData}
+            onMissing={setNotice}
+          />
+        </div>
+      ) : blocked ? (
+        <GateBanner tone="danger">{blocked}</GateBanner>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
+          <p className="text-sm text-muted-foreground">
+            {own?.status === "Rejected"
+              ? `Returned: ${own.remarks}. Submit the corrected thesis.`
+              : `Open since ${opens ? formatIsoDate(opens) : formatIsoDate(clientToday())}.`}
+          </p>
+          <Button
+            type="button"
+            variant="gold"
+            onClick={() => {
+              setNotice(null);
+              if (lockedTitle) form.setValue("title", lockedTitle);
+              setSubmitting(true);
+            }}
+          >
+            Submit thesis
+          </Button>
+        </div>
+      )}
+      {submitting ? (
+        <FormDialog
+          title="Submit thesis"
+          onClose={() => setSubmitting(false)}
+          onSubmit={form.handleSubmit(upload)}
+          submitLabel="Submit thesis"
+        >
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          <FormField
+            label="Title"
+            htmlFor="thesis-title"
+            required
+            error={form.formState.errors.title?.message}
+          >
+            <Input
+              id="thesis-title"
+              readOnly={Boolean(lockedTitle)}
+              className={lockedTitle ? "bg-muted" : undefined}
+              {...form.register("title")}
+            />
+            {lockedTitle ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Locked research title from the second doctoral committee.
+              </p>
+            ) : null}
+          </FormField>
+          <FormField
+            label="Domain"
+            htmlFor="thesis-domain"
+            required
+            error={form.formState.errors.domain?.message}
+          >
+            <Input id="thesis-domain" {...form.register("domain")} />
+          </FormField>
+          <FormField label="Thesis" htmlFor="thesis-file" required>
+            <FileUpload
+              id="thesis-file"
+              acceptRule="document"
+              value={file}
+              onChange={setFile}
+            />
+          </FormField>
+        </FormDialog>
+      ) : null}
+    </div>
+  );
+}
+
+function OfficeThesis() {
+  const session = usePortalSession();
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  const [panels, setPanels] = useState<EvaluationRecord[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [returning, setReturning] = useState<ThesisSubmission | null>(null);
+  const [remarks, setRemarks] = useState("");
+  const canDecide = session?.role === "dean" || session?.role === "admin";
+
+  useEffect(() => {
+    if (!canDecide) return;
+    let live = true;
+    void loadEvaluations().then((load) => {
+      if (live) setPanels(load.ok && load.role === "office" ? load.records : []);
+    });
+    return () => {
+      live = false;
+    };
+  }, [canDecide]);
+
+  if (!doctoral) return <p className="text-sm text-muted-foreground">Loading thesis…</p>;
+
+  const queue = doctoral.theses.filter(
+    (thesis) =>
+      filterMatches(statusFilter, thesis.status) &&
+      textMatches(query, [
+        thesis.scholarName,
+        thesis.title,
+        thesis.domain,
+        thesis.status,
+      ]),
+  );
+
+  function readiness(thesis: ThesisSubmission) {
+    if (!plagiarismIssued(doctoral!, thesis.scholarIdentifier, "thesis")) {
+      return "Thesis plagiarism certificate not issued.";
+    }
+    if (!canDecide) return "Only the Dean or the administrator accepts the thesis.";
+    const panel = panels?.find(
+      (item) => item.scholarKey === scholarKeyOf(thesis.scholarIdentifier),
     );
-  }
-
-  function chosen(thesis: ThesisSubmission, group: "local" | "indian" | "foreign") {
-    const current = selection[thesis.id] ?? panelFor(panels, thesis.id);
-    const key =
-      group === "local"
-        ? "selectedLocal"
-        : group === "indian"
-          ? "selectedIndian"
-          : "selectedForeign";
-    return current?.[key] ?? "";
-  }
-
-  function choose(
-    thesis: ThesisSubmission,
-    group: "local" | "indian" | "foreign",
-    name: string,
-  ) {
-    const current = selection[thesis.id] ??
-      panelFor(panels, thesis.id) ?? {
-        thesisId: thesis.id,
-        selectedLocal: "",
-        selectedIndian: "",
-        selectedForeign: "",
-      };
-    const key =
-      group === "local"
-        ? "selectedLocal"
-        : group === "indian"
-          ? "selectedIndian"
-          : "selectedForeign";
-    setSelection((existing) => ({
-      ...existing,
-      [thesis.id]: { ...current, [key]: name },
-    }));
-  }
-
-  async function seal(thesis: ThesisSubmission) {
-    const panel = selection[thesis.id] ?? panelFor(panels, thesis.id);
-    if (!panel?.selectedLocal || !panel.selectedIndian || !panel.selectedForeign) {
-      setNotice("Select one local, one Indian, and one foreign evaluator.");
-      return;
+    if (!panel || !panelComplete(panel)) {
+      return "One Indian, one foreign and one local evaluator have to accept first.";
     }
-    const panelSaved = await savePanel(panel);
-    if (!panelSaved.ok) {
-      setNotice(panelSaved.message);
-      return;
-    }
+    return null;
+  }
+
+  async function accept(thesis: ThesisSubmission) {
     const saved = await decideThesis(thesis.id, {
       status: "Approved",
       remarks: "",
-      decidedOn: new Date().toISOString().slice(0, 10),
+      decidedOn: clientToday(),
     });
-    if (saved.ok) setSheet(thesis);
     setNotice(
-      saved.ok
-        ? "Examiners recorded. Print the confidential sheet from this screen only."
-        : saved.message,
+      saved.ok ? `${thesis.scholarName}'s thesis is sent for evaluation.` : saved.message,
     );
   }
 
-  async function rejectThesis(thesis: ThesisSubmission) {
-    const note = (remarks[thesis.id] ?? "").trim();
-    if (note.length < 2) {
-      setNotice("Enter the remarks before rejecting the thesis.");
+  async function sendBack(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!returning) return;
+    if (remarks.trim().length < 2) {
+      setNotice("Enter the remarks before returning the thesis.");
       return;
     }
-    const saved = await decideThesis(thesis.id, {
+    const saved = await decideThesis(returning.id, {
       status: "Rejected",
-      remarks: note,
-      decidedOn: new Date().toISOString().slice(0, 10),
+      remarks: remarks.trim(),
+      decidedOn: clientToday(),
     });
     setNotice(saved.ok ? "Thesis returned with remarks." : saved.message);
+    if (saved.ok) {
+      setReturning(null);
+      setRemarks("");
+    }
   }
 
-  const groups = [
-    ["local", "Local"],
-    ["indian", "Indian"],
-    ["foreign", "Foreign"],
-  ] as const;
-
   return (
-    <DeskPage title="Thesis">
-      <ProcessFlow>{processFlows.thesis}</ProcessFlow>
-      {mode === "scholar" ? <ScholarIdentityHeader identifier={identifier} /> : null}
-      {mode === "scholar" && !open && !own ? (
-        <GateBanner tone="danger">
-          The thesis section opens after the fourth doctoral committee is approved.
-        </GateBanner>
+    <div className="space-y-4">
+      {notice ? (
+        <p role="status" className="text-sm font-medium text-secondary">
+          {notice}
+        </p>
       ) : null}
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "status",
+            label: "Status",
+            value: statusFilter,
+            options: ["Submitted", "Approved", "Rejected"].map((item) => ({
+              value: item,
+              label: item,
+            })),
+            onChange: setStatusFilter,
+          },
+        ]}
+        shown={queue.length}
+        total={doctoral.theses.length}
+        filename="theses.csv"
+        headers={["scholar", "title", "domain", "status"]}
+        rows={queue.map((thesis) => [
+          thesis.scholarName,
+          thesis.title,
+          thesis.domain,
+          thesis.status,
+        ])}
+      />
+      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
+        <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
+          <thead className="bg-muted text-primary">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Scholar</th>
+              <th className="px-4 py-3 font-semibold">Title · Domain</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {queue.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                  No thesis submitted yet.
+                </td>
+              </tr>
+            ) : (
+              queue.map((thesis) => {
+                const waiting = thesis.status === "Submitted" ? readiness(thesis) : null;
+                return (
+                  <tr key={thesis.id} className="border-t border-border align-top">
+                    <td className="px-4 py-3 font-semibold text-primary">
+                      {thesis.scholarName}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p>{thesis.title}</p>
+                      <p className="text-muted-foreground">{thesis.domain}</p>
+                      {thesis.remarks ? (
+                        <p className="text-muted-foreground">{thesis.remarks}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill
+                        status={
+                          thesis.status === "Approved"
+                            ? "Approved"
+                            : thesis.status === "Rejected"
+                              ? "Returned"
+                              : "Submitted"
+                        }
+                      />
+                      {waiting ? (
+                        <p className="mt-1 text-xs text-muted-foreground">{waiting}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <ViewFilesButton
+                          fileName={thesis.fileName}
+                          data={thesis.fileData}
+                          onMissing={setNotice}
+                        />
+                        {thesis.status === "Submitted" ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="gold"
+                              disabled={Boolean(waiting)}
+                              onClick={() => void accept(thesis)}
+                            >
+                              Send for evaluation
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setNotice(null);
+                                setRemarks("");
+                                setReturning(thesis);
+                              }}
+                            >
+                              Return
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      {returning ? (
+        <FormDialog
+          title={`Return thesis · ${returning.scholarName}`}
+          onClose={() => setReturning(null)}
+          onSubmit={(event) => void sendBack(event)}
+          submitLabel="Return thesis"
+          size="sm"
+        >
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          <FormField label="Remarks" htmlFor="thesis-remarks" required>
+            <Textarea
+              id="thesis-remarks"
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+            />
+          </FormField>
+        </FormDialog>
+      ) : null}
+    </div>
+  );
+}
+
+export function ThesisScreen({ mode }: { mode: "admin" | "scholar" }) {
+  const ready = useClientReady();
+  const session = usePortalSession();
+  if (!ready) return <p className="text-sm text-muted-foreground">Loading thesis…</p>;
+  return (
+    <DeskPage kicker="Doctoral progress" title="Thesis">
       {mode === "scholar" ? (
-        own && own.status !== "Rejected" ? (
-          <div className="rounded-xl border border-border bg-card p-4 text-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold text-primary">{own.title}</p>
-                <p className="text-muted-foreground">{own.domain}</p>
-                <p className="mt-2">
-                  {own.status}
-                  {deadline ? ` · Submit by ${deadline}` : ""}
-                </p>
-              </div>
-              <ViewFilesButton
-                fileName={own.fileName}
-                data={own.fileData}
-                onMissing={setNotice}
-              />
-            </div>
-            {latestPlagiarism(doctoral, identifier)?.status !== "Approved" ? (
-              <p className="mt-2 text-muted-foreground">
-                Upload the plagiarism certificate. Examiners cannot be recorded until it
-                is approved.
-              </p>
-            ) : null}
-          </div>
-        ) : !open ? (
-          <p className="rounded-xl border border-border bg-card p-4 text-sm">
-            {fourth?.status === "Approved"
-              ? `The thesis window closed on ${deadline}.`
-              : "The fourth doctoral committee has to be approved before the thesis opens."}
-          </p>
-        ) : (
-          <form
-            className="space-y-4 rounded-xl border border-border bg-card p-4"
-            onSubmit={form.handleSubmit(upload)}
-            noValidate
-          >
-            <p className="text-sm text-muted-foreground">Submit by {deadline}.</p>
-            <FormField
-              label="Title"
-              htmlFor="thesis-title"
-              required
-              error={form.formState.errors.title?.message}
-            >
-              <Input id="thesis-title" {...form.register("title")} />
-            </FormField>
-            <FormField
-              label="Domain"
-              htmlFor="thesis-domain"
-              required
-              error={form.formState.errors.domain?.message}
-            >
-              <Input id="thesis-domain" {...form.register("domain")} />
-            </FormField>
-            {thesisChecklist.map((item) => (
-              <label key={item} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={checks.includes(item)}
-                  onChange={(event) =>
-                    setChecks((current) =>
-                      event.target.checked
-                        ? [...current, item]
-                        : current.filter((entry) => entry !== item),
-                    )
-                  }
-                />
-                {item}
-              </label>
-            ))}
-            {groups.map(([key, label]) => (
-              <fieldset
-                key={key}
-                className="space-y-3 rounded-xl border border-border p-3"
-              >
-                <legend className="px-1 text-sm font-semibold text-primary">
-                  Three {label.toLowerCase()} evaluators
-                </legend>
-                {([0, 1, 2] as const).map((index) => (
-                  <div key={index} className="grid gap-3 sm:grid-cols-3">
-                    <Input
-                      aria-label={`${label} ${index + 1} name`}
-                      {...form.register(`${key}.${index}.name`)}
-                      placeholder="Name"
-                    />
-                    <Input
-                      aria-label={`${label} ${index + 1} institution`}
-                      {...form.register(`${key}.${index}.institution`)}
-                      placeholder="Institution"
-                    />
-                    <Input
-                      aria-label={`${label} ${index + 1} email`}
-                      {...form.register(`${key}.${index}.email`)}
-                      placeholder="Email"
-                    />
-                  </div>
-                ))}
-              </fieldset>
-            ))}
-            <FormField label="Thesis" htmlFor="thesis-file" required>
-              <FileUpload
-                id="thesis-file"
-                acceptRule="document"
-                value={file}
-                onChange={setFile}
-              />
-            </FormField>
-            <Button type="submit" variant="gold">
-              Submit thesis
-            </Button>
-          </form>
-        )
+        <ScholarThesis
+          identifier={session?.identifier ?? ""}
+          name={session?.name ?? ""}
+        />
       ) : (
-        <div className="space-y-4">
-          <ListToolbar
-            query={query}
-            onQuery={setQuery}
-            filters={[
-              {
-                id: "status",
-                label: "Status",
-                value: statusFilter,
-                options: ["Submitted", "Approved", "Rejected"].map((item) => ({
-                  value: item,
-                  label: item,
-                })),
-                onChange: setStatusFilter,
-              },
-            ]}
-            shown={queue.length}
-            total={doctoral.theses.length}
-            filename="theses.csv"
-            headers={["scholar", "title", "domain", "status"]}
-            rows={queue.map((thesis) => [
-              thesis.scholarName,
-              thesis.title,
-              thesis.domain,
-              thesis.status,
-            ])}
-          />
-          <ul className="space-y-4">
-            {queue.map((thesis) => (
-              <li
-                key={thesis.id}
-                className="space-y-3 rounded-xl border border-border bg-card p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-primary">{thesis.scholarName}</p>
-                    <p className="text-sm">{thesis.title}</p>
-                    <p className="text-sm text-muted-foreground">{thesis.domain}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ViewFilesButton
-                      fileName={thesis.fileName}
-                      data={thesis.fileData}
-                      onMissing={setNotice}
-                    />
-                    <Badge variant={thesis.status === "Approved" ? "gold" : "purple"}>
-                      {thesis.status}
-                    </Badge>
-                  </div>
-                </div>
-                {thesis.remarks ? (
-                  <p className="text-sm text-muted-foreground">{thesis.remarks}</p>
-                ) : null}
-                {thesis.status === "Submitted" ? (
-                  <>
-                    {latestPlagiarism(doctoral, thesis.scholarIdentifier)?.status !==
-                    "Approved" ? (
-                      <p className="text-sm text-muted-foreground">
-                        The plagiarism certificate has to be approved before examiners can
-                        be recorded.
-                      </p>
-                    ) : null}
-                    {groups.map(([key, label]) => (
-                      <fieldset key={key}>
-                        <legend className="text-sm font-semibold text-primary">
-                          {label}
-                        </legend>
-                        {thesis[key].map((person: ThesisEvaluator) => (
-                          <label
-                            key={person.email}
-                            className="mt-1 flex items-center gap-2 text-sm"
-                          >
-                            <input
-                              type="radio"
-                              name={`${thesis.id}-${key}`}
-                              checked={chosen(thesis, key) === person.name}
-                              onChange={() => choose(thesis, key, person.name)}
-                            />
-                            {person.name} · {person.institution}
-                          </label>
-                        ))}
-                      </fieldset>
-                    ))}
-                    <Textarea
-                      aria-label="Remarks"
-                      value={remarks[thesis.id] ?? ""}
-                      onChange={(event) =>
-                        setRemarks((current) => ({
-                          ...current,
-                          [thesis.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="gold"
-                        onClick={() => void seal(thesis)}
-                      >
-                        Record examiners and open the sheet
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="maroon"
-                        onClick={() => void rejectThesis(thesis)}
-                      >
-                        Return
-                      </Button>
-                    </div>
-                  </>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <OfficeThesis />
       )}
-      {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
-      {mode === "admin" && sheet ? (
-        <>
-          <PrintActions>
-            <p className="text-xs font-semibold tracking-wide text-secondary uppercase">
-              Confidential
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              This sheet stays on the research office screen. Scholars and supervisors do
-              not see the selected examiners.
-            </p>
-            <Button
-              type="button"
-              className="mt-4"
-              variant="gold"
-              onClick={() => window.print()}
-            >
-              Download examiner PDF
-            </Button>
-          </PrintActions>
-          <PrintPages>
-            <section className="pdf-page flex min-h-[277mm] flex-col rounded-xl border border-border bg-white p-10 text-sm text-foreground">
-              <p className="text-xs font-semibold tracking-wide text-secondary">
-                Confidential · research office only
-              </p>
-              <h2 className="mt-4 font-serif text-3xl text-primary">Thesis examiners</h2>
-              <p className="mt-6">Scholar: {sheet.scholarName}</p>
-              <p>Title: {sheet.title}</p>
-              <p>Domain: {sheet.domain}</p>
-              <ul className="mt-4 space-y-1">
-                <li>
-                  Local:{" "}
-                  {(selection[sheet.id] ?? panelFor(panels, sheet.id))?.selectedLocal}
-                </li>
-                <li>
-                  Indian:{" "}
-                  {(selection[sheet.id] ?? panelFor(panels, sheet.id))?.selectedIndian}
-                </li>
-                <li>
-                  Foreign:{" "}
-                  {(selection[sheet.id] ?? panelFor(panels, sheet.id))?.selectedForeign}
-                </li>
-              </ul>
-            </section>
-          </PrintPages>
-        </>
-      ) : null}
     </DeskPage>
   );
 }

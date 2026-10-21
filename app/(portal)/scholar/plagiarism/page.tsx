@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { PlagiarismScreen } from "@/components/portal/LifecycleScreens";
+import { PlagiarismScreen } from "@/components/portal/PlagiarismScreen";
 
 export const metadata: Metadata = {
   title: "Plagiarism",

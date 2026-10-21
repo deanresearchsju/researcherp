@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
+import { DeskModal, FormDialog, PageTitle } from "@/components/portal/Desk";
+import { Badge } from "@/components/ui/badge";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { ProfilePhotoChange } from "@/components/portal/ProfileCard";
@@ -12,16 +14,23 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { menuRightsCopy, portalGroups } from "@/data/portal";
+import { menuRightsCopy, officeWorkHrefs, portalGroups } from "@/data/portal";
 import { roleProfiles } from "@/data/roles";
 import {
+  actionsForMenu,
   defaultMenuHrefs,
+  isOfficeRole,
   isPrincipalAdmin,
+  menuActionCopy,
+  menuActionKey,
   menuHrefs,
   menuLabels,
+  parseMenuActionKey,
   storedMenus,
+  type MenuActionKind,
 } from "@/lib/access";
 import { activateRegisterAccounts, type ActivationReport } from "@/lib/register-access";
+import { cn } from "@/lib/utils";
 import {
   createPortalUser,
   removePortalUser,
@@ -79,9 +88,11 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   const [detail, setDetail] = useState(initial.detail);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
+  const [roleTab, setRoleTab] = useState<"all" | (typeof accessRoles)[number]>("all");
+  const [rightsOf, setRightsOf] = useState<PortalUser | null>(null);
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
@@ -98,6 +109,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   );
   const [editMenus, setEditMenus] = useState<string[]>([]);
   const [issued, setIssued] = useState<ActivationReport["issued"]>([]);
+  const editingUser = users.find((user) => user.id === editingId) ?? null;
   if (createRole !== menuRole) {
     setMenuRole(createRole);
     setSelectedMenus(defaultMenuHrefs(createRole));
@@ -105,19 +117,40 @@ export function UserManager({ initial }: { initial: UserLoad }) {
 
   function toggleMenu(current: string[], href: string, checked: boolean) {
     if (href.endsWith("/dashboard")) return current;
-    return checked ? [...current, href] : current.filter((item) => item !== href);
+    if (checked) return current.includes(href) ? current : [...current, href];
+    return current.filter((item) => item !== href && !item.startsWith(`${href}#`));
   }
 
   function toggleGroup(current: string[], hrefs: readonly string[], checked: boolean) {
     const extra = hrefs.filter((href) => !href.endsWith("/dashboard"));
-    const without = current.filter((href) => !extra.includes(href));
+    const without = current.filter(
+      (item) =>
+        !extra.includes(item) && extra.every((href) => !item.startsWith(`${href}#`)),
+    );
     return checked ? [...without, ...extra] : without;
+  }
+
+  function toggleAction(
+    current: string[],
+    href: string,
+    action: MenuActionKind,
+    checked: boolean,
+  ) {
+    const key = menuActionKey(href, action);
+    if (checked) {
+      const withPage =
+        href.endsWith("/dashboard") || current.includes(href)
+          ? current
+          : [...current, href];
+      return withPage.includes(key) ? withPage : [...withPage, key];
+    }
+    return current.filter((item) => item !== key);
   }
 
   function beginEdit(user: PortalUser) {
     setEditingId(user.id);
     form.reset({ name: user.name, password: "" });
-    setEditMenus(user.menus ?? menuHrefs(user.role));
+    setEditMenus(user.menus ?? defaultMenuHrefs(user.role));
   }
 
   function cancelEdit() {
@@ -170,6 +203,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
     }
     setUsers((list) => [...list, saved.user]);
     createForm.reset({ role: "scholar", name: "", identifier: "", password: "" });
+    setCreating(false);
     setNotice(
       `${saved.user.name} can sign in as ${roleProfiles[saved.user.role].label} with ${saved.user.identifier}. They choose a new password the first time they sign in.`,
     );
@@ -203,30 +237,40 @@ export function UserManager({ initial }: { initial: UserLoad }) {
     setNotice(activationNotice(report));
   }
 
+  const listed = users.filter(
+    (user) =>
+      (roleTab === "all" || user.role === roleTab) &&
+      textMatches(query, [user.name, user.identifier, user.role]),
+  );
+
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Users</h1>
-      <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-card">
-        <h2 className="font-semibold text-primary">Register sign-in</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Scholar and supervisor sign-in uses the mail id on the register. The office
-          issues a first password. The first visit asks for a new password, then for any
-          personal details that are still blank. Existing sign-ins keep the password they
-          already have. A person with no mail id on the register stays inactive.
-        </p>
-        <Button
-          type="button"
-          variant="gold"
-          className="mt-4"
-          disabled={busy}
-          onClick={() => void activateScholars()}
-        >
-          Activate register sign-in
-        </Button>
-      </section>
+      <PageTitle
+        kicker="Administration"
+        title="Users"
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void activateScholars()}
+            >
+              Activate register sign-in
+            </Button>
+            <Button
+              type="button"
+              variant="gold"
+              onClick={() => {
+                setNotice(null);
+                setCreating(true);
+              }}
+            >
+              Create user
+            </Button>
+          </>
+        }
+      />
       {notice ? (
         <p role="status" className="mt-4 max-w-2xl text-sm leading-6 text-secondary">
           {notice}
@@ -252,234 +296,270 @@ export function UserManager({ initial }: { initial: UserLoad }) {
         </p>
       ) : null}
 
+      <div className="mt-6 flex flex-wrap gap-2" role="tablist" aria-label="Access">
+        {(["all", ...tabOrder] as const).map((tab) => {
+          const count =
+            tab === "all"
+              ? users.length
+              : users.filter((user) => user.role === tab).length;
+          const active = roleTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-readonly-allow
+              onClick={() => setRoleTab(tab)}
+              className={cn(
+                "inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition",
+                active
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-primary",
+              )}
+            >
+              {tab === "all" ? "All users" : tabLabels[tab]}
+              <span
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-xs",
+                  active ? "bg-card/20" : "bg-muted text-primary",
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <ListToolbar
         query={query}
         onQuery={setQuery}
-        filters={[
-          {
-            id: "role",
-            label: "Access",
-            value: roleFilter,
-            options: accessRoles.map((role) => ({
-              value: role,
-              label: roleProfiles[role].label,
-            })),
-            onChange: setRoleFilter,
-          },
-        ]}
-        shown={
-          users.filter(
-            (user) =>
-              (roleFilter === "" || user.role === roleFilter) &&
-              textMatches(query, [user.name, user.identifier, user.role]),
-          ).length
-        }
+        filters={[]}
+        shown={listed.length}
         total={users.length}
         filename="users.csv"
-        headers={["role", "name", "identifier"]}
-        rows={users
-          .filter(
-            (user) =>
-              (roleFilter === "" || user.role === roleFilter) &&
-              textMatches(query, [user.name, user.identifier, user.role]),
-          )
-          .map((user) => [user.role, user.name, user.identifier])}
+        title={`Users · ${roleTab === "all" ? "all" : tabLabels[roleTab]}`}
+        headers={["Access", "Name", "Sign-in", "Rights"]}
+        rows={listed.map((user) => [
+          roleProfiles[user.role].label,
+          user.name,
+          user.identifier,
+          rightsSummary(user),
+        ])}
       />
 
-      <form
-        className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
-        onSubmit={createForm.handleSubmit(onCreate)}
-        noValidate
-      >
-        <h2 className="font-semibold text-primary sm:col-span-2">Create user</h2>
-        <FormField
-          label="Access"
-          htmlFor="createRole"
-          required
-          error={createForm.formState.errors.role?.message}
+      {creating ? (
+        <FormDialog
+          title="Create user"
+          onClose={() => setCreating(false)}
+          onSubmit={createForm.handleSubmit(onCreate)}
+          busy={busy}
+          submitLabel="Give access"
+          size="lg"
         >
-          <NativeSelect id="createRole" {...createForm.register("role")}>
-            {accessRoles.map((role) => (
-              <option key={role} value={role}>
-                {roleProfiles[role].label}
-              </option>
-            ))}
-          </NativeSelect>
-        </FormField>
-        <FormField
-          label="Name"
-          htmlFor="createName"
-          required
-          error={createForm.formState.errors.name?.message}
-        >
-          <Input id="createName" {...createForm.register("name")} />
-        </FormField>
-        <FormField
-          label="Sign-in id"
-          htmlFor="createIdentifier"
-          required
-          error={createForm.formState.errors.identifier?.message}
-        >
-          <Input id="createIdentifier" {...createForm.register("identifier")} />
-        </FormField>
-        <FormField
-          label="Password"
-          htmlFor="createPassword"
-          required
-          error={createForm.formState.errors.password?.message}
-        >
-          <Input
-            id="createPassword"
-            type="password"
-            autoComplete="new-password"
-            {...createForm.register("password")}
-          />
-        </FormField>
-        <MenuPicker
-          role={createRole}
-          selected={selectedMenus}
-          onToggle={(href, checked) =>
-            setSelectedMenus((current) => toggleMenu(current, href, checked))
-          }
-          onToggleGroup={(hrefs, checked) =>
-            setSelectedMenus((current) => toggleGroup(current, hrefs, checked))
-          }
-          onSelectAll={() => setSelectedMenus(menuHrefs(createRole))}
-          onClear={() =>
-            setSelectedMenus(
-              menuHrefs(createRole).filter((href) => href.endsWith("/dashboard")),
-            )
-          }
-        />
-        <div className="sm:col-span-2">
-          <Button type="submit" variant="gold" disabled={busy}>
-            Give access
-          </Button>
-        </div>
-      </form>
-
-      {editingId ? (
-        <form
-          className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
-          onSubmit={form.handleSubmit(onSubmit)}
-          noValidate
-        >
-          <h2 className="font-semibold text-primary sm:col-span-2">Reset user</h2>
-          <FormField
-            label="Name"
-            htmlFor="userName"
-            required
-            error={form.formState.errors.name?.message}
-          >
-            <Input id="userName" {...form.register("name")} />
-          </FormField>
-          <FormField
-            label="Password"
-            htmlFor="userPassword"
-            error={form.formState.errors.password?.message}
-          >
-            <Input
-              id="userPassword"
-              type="password"
-              autoComplete="new-password"
-              placeholder="Leave blank to keep the current password"
-              {...form.register("password")}
-            />
-          </FormField>
-          {editingId &&
-          !isPrincipalAdmin(
-            users.find((user) => user.id === editingId) ?? {
-              role: "scholar",
-              identifier: "",
-            },
-          ) ? (
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Access"
+              htmlFor="createRole"
+              required
+              error={createForm.formState.errors.role?.message}
+            >
+              <NativeSelect id="createRole" {...createForm.register("role")}>
+                {accessRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {roleProfiles[role].label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </FormField>
+            <FormField
+              label="Name"
+              htmlFor="createName"
+              required
+              error={createForm.formState.errors.name?.message}
+            >
+              <Input id="createName" {...createForm.register("name")} />
+            </FormField>
+            <FormField
+              label="Sign-in id"
+              htmlFor="createIdentifier"
+              required
+              error={createForm.formState.errors.identifier?.message}
+            >
+              <Input id="createIdentifier" {...createForm.register("identifier")} />
+            </FormField>
+            <FormField
+              label="Password"
+              htmlFor="createPassword"
+              required
+              error={createForm.formState.errors.password?.message}
+            >
+              <Input
+                id="createPassword"
+                type="password"
+                autoComplete="new-password"
+                {...createForm.register("password")}
+              />
+            </FormField>
             <MenuPicker
-              role={users.find((user) => user.id === editingId)?.role ?? "scholar"}
-              selected={editMenus}
+              role={createRole}
+              selected={selectedMenus}
               onToggle={(href, checked) =>
-                setEditMenus((current) => toggleMenu(current, href, checked))
+                setSelectedMenus((current) => toggleMenu(current, href, checked))
               }
               onToggleGroup={(hrefs, checked) =>
-                setEditMenus((current) => toggleGroup(current, hrefs, checked))
+                setSelectedMenus((current) => toggleGroup(current, hrefs, checked))
               }
-              onSelectAll={() =>
-                setEditMenus(
-                  menuHrefs(
-                    users.find((user) => user.id === editingId)?.role ?? "scholar",
-                  ),
+              onToggleAction={(href, action, checked) =>
+                setSelectedMenus((current) =>
+                  toggleAction(current, href, action, checked),
                 )
               }
+              onSelectAll={() => setSelectedMenus(menuHrefs(createRole))}
               onClear={() =>
-                setEditMenus(
-                  menuHrefs(
-                    users.find((user) => user.id === editingId)?.role ?? "scholar",
-                  ).filter((href) => href.endsWith("/dashboard")),
+                setSelectedMenus(
+                  menuHrefs(createRole).filter((href) => href.endsWith("/dashboard")),
                 )
               }
             />
-          ) : (
-            <p className="text-sm text-muted-foreground sm:col-span-2">
-              This sign-in keeps every menu.
-            </p>
-          )}
-          <div className="flex gap-2 sm:col-span-2">
-            <Button type="submit" variant="gold" disabled={busy}>
-              Save user
-            </Button>
-            <Button type="button" variant="outline" onClick={cancelEdit}>
-              Cancel
-            </Button>
           </div>
-        </form>
+        </FormDialog>
+      ) : null}
+
+      {editingUser ? (
+        <FormDialog
+          title={`Edit · ${editingUser.name}`}
+          onClose={cancelEdit}
+          onSubmit={form.handleSubmit(onSubmit)}
+          busy={busy}
+          submitLabel="Save user"
+          size="lg"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Name"
+              htmlFor="userName"
+              required
+              error={form.formState.errors.name?.message}
+            >
+              <Input id="userName" {...form.register("name")} />
+            </FormField>
+            <FormField
+              label="Password"
+              htmlFor="userPassword"
+              error={form.formState.errors.password?.message}
+            >
+              <Input
+                id="userPassword"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Leave blank to keep the current password"
+                {...form.register("password")}
+              />
+            </FormField>
+            {!isPrincipalAdmin(editingUser) ? (
+              <MenuPicker
+                role={editingUser.role}
+                selected={editMenus}
+                onToggle={(href, checked) =>
+                  setEditMenus((current) => toggleMenu(current, href, checked))
+                }
+                onToggleGroup={(hrefs, checked) =>
+                  setEditMenus((current) => toggleGroup(current, hrefs, checked))
+                }
+                onToggleAction={(href, action, checked) =>
+                  setEditMenus((current) => toggleAction(current, href, action, checked))
+                }
+                onSelectAll={() => setEditMenus(menuHrefs(editingUser.role))}
+                onClear={() =>
+                  setEditMenus(
+                    menuHrefs(editingUser.role).filter((href) =>
+                      href.endsWith("/dashboard"),
+                    ),
+                  )
+                }
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground sm:col-span-2">
+                This sign-in keeps every menu.
+              </p>
+            )}
+          </div>
+        </FormDialog>
       ) : null}
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-        <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
-          <thead className="bg-muted text-primary">
+        <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
+          <thead className="bg-muted text-xs tracking-wide text-primary uppercase">
             <tr>
+              <th className="px-4 py-3 font-semibold">User</th>
               <th className="px-4 py-3 font-semibold">Access</th>
-              <th className="px-4 py-3 font-semibold">Name</th>
-              <th className="px-4 py-3 font-semibold">Sign-in</th>
-              <th className="px-4 py-3 font-semibold">Menus</th>
+              <th className="px-4 py-3 font-semibold">Rights</th>
               <th className="px-4 py-3 font-semibold">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {users
-              .filter(
-                (user) =>
-                  (roleFilter === "" || user.role === roleFilter) &&
-                  textMatches(query, [user.name, user.identifier, user.role]),
-              )
-              .map((user) => (
-                <tr key={user.id} className="border-t border-border">
-                  <td className="px-4 py-3">{roleProfiles[user.role].label}</td>
-                  <td className="px-4 py-3 font-medium text-primary">
-                    {user.role === "scholar" || user.role === "supervisor" ? (
-                      <PersonNameLink
-                        role={user.role}
-                        name={user.name}
-                        identifier={user.identifier}
-                      />
+            {listed.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                  No user matches.
+                </td>
+              </tr>
+            ) : (
+              listed.map((user) => (
+                <tr key={user.id} className="border-t border-border align-middle">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-primary">
+                      {user.role === "scholar" || user.role === "supervisor" ? (
+                        <PersonNameLink
+                          role={user.role}
+                          name={user.name}
+                          identifier={user.identifier}
+                        />
+                      ) : (
+                        user.name
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{user.identifier}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={isOfficeRole(user.role) ? "purple" : "outline"}>
+                      {roleProfiles[user.role].label}
+                    </Badge>
+                    {user.mustReset ? (
+                      <p className="mt-1 text-xs text-secondary">
+                        Must set a new password
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    {isPrincipalAdmin(user) ? (
+                      <Badge variant="gold">Full access</Badge>
                     ) : (
-                      user.name
+                      <button
+                        type="button"
+                        data-readonly-allow
+                        className="text-left text-xs text-muted-foreground hover:text-primary"
+                        onClick={() => setRightsOf(user)}
+                      >
+                        <span className="font-semibold text-primary">
+                          {rightsSummary(user)}
+                        </span>
+                        <span className="ml-1 underline-offset-2 hover:underline">
+                          View
+                        </span>
+                      </button>
                     )}
                   </td>
-                  <td className="px-4 py-3">{user.identifier}</td>
                   <td className="px-4 py-3">
-                    {(() => {
-                      if (user.menus === null || isPrincipalAdmin(user)) {
-                        return menuRightsCopy.allMenus;
-                      }
-                      const labels = menuLabels(user.role, user.menus);
-                      return labels && labels.length > 0
-                        ? labels.join(", ")
-                        : menuRightsCopy.dashboardOnly;
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       {user.role === "scholar" || user.role === "supervisor" ? (
                         <ProfilePhotoChange
@@ -491,9 +571,13 @@ export function UserManager({ initial }: { initial: UserLoad }) {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => beginEdit(user)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          beginEdit(user);
+                        }}
                       >
-                        Reset
+                        Edit
                       </Button>
                       <Button
                         type="button"
@@ -507,10 +591,74 @@ export function UserManager({ initial }: { initial: UserLoad }) {
                     </div>
                   </td>
                 </tr>
-              ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      {rightsOf ? (
+        <DeskModal
+          title={`Rights · ${rightsOf.name}`}
+          onClose={() => setRightsOf(null)}
+          size="md"
+        >
+          <RightsView user={rightsOf} />
+        </DeskModal>
+      ) : null}
+    </div>
+  );
+}
+
+const tabOrder = ["scholar", "supervisor", "staff", "dean", "admin"] as const;
+const tabLabels: Record<(typeof tabOrder)[number], string> = {
+  scholar: "Scholars",
+  supervisor: "Supervisors",
+  staff: "Staff",
+  dean: "Dean",
+  admin: "Administrators",
+};
+
+/** "12 menus · 30 rights" style summary for the users table. */
+function rightsSummary(user: PortalUser) {
+  if (isPrincipalAdmin(user)) return "Full access";
+  const menus = user.menus ?? defaultMenuHrefs(user.role);
+  const pages = menus.filter(
+    (item) => !item.includes("#") && !item.endsWith("/dashboard"),
+  );
+  const actions = menus.filter((item) => parseMenuActionKey(item) !== null);
+  if (pages.length === 0) return "Dashboard only";
+  if (!isOfficeRole(user.role)) return `${pages.length} menus`;
+  return `${pages.length} menus · ${actions.length} rights`;
+}
+
+function RightsView({ user }: { user: PortalUser }) {
+  const labels = menuLabels(user.role, user.menus ?? defaultMenuHrefs(user.role)) ?? [];
+  const pages = labels.filter((label) => !label.includes(" · "));
+  return (
+    <div className="space-y-3">
+      {pages.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{menuRightsCopy.dashboardOnly}</p>
+      ) : (
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {pages.map((page) => {
+            const actions = labels
+              .filter((label) => label.startsWith(`${page} · `))
+              .map((label) => label.slice(page.length + 3));
+            return (
+              <li
+                key={page}
+                className="rounded-lg border border-border px-3 py-2 text-sm"
+              >
+                <p className="font-semibold text-primary">{page}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {actions.length ? actions.join(" · ") : "Open only"}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -520,6 +668,7 @@ function MenuPicker({
   selected,
   onToggle,
   onToggleGroup,
+  onToggleAction,
   onSelectAll,
   onClear,
 }: {
@@ -527,71 +676,166 @@ function MenuPicker({
   selected: readonly string[];
   onToggle: (href: string, checked: boolean) => void;
   onToggleGroup: (hrefs: readonly string[], checked: boolean) => void;
+  onToggleAction: (href: string, action: MenuActionKind, checked: boolean) => void;
   onSelectAll: () => void;
   onClear: () => void;
 }) {
+  const office = isOfficeRole(role);
+  const columns: MenuActionKind[] = office ? ["edit", "approve", "export", "upload"] : [];
+
+  function grantColumn(
+    hrefs: readonly string[],
+    action: MenuActionKind,
+    checked: boolean,
+  ) {
+    for (const href of hrefs) {
+      if (actionsForMenu(href, role).includes(action))
+        onToggleAction(href, action, checked);
+    }
+  }
+
   return (
     <fieldset className="sm:col-span-2">
       <legend className="text-sm font-semibold text-primary">
         {menuRightsCopy.title} · {roleProfiles[role].label}
       </legend>
-      <p className="mt-2 text-sm text-muted-foreground">{menuRightsCopy.hint}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onSelectAll}>
-          {menuRightsCopy.selectAll}
+          {office ? "Open every menu" : menuRightsCopy.selectAll}
         </Button>
+        {office ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const hrefs = menuHrefs(role).filter(
+                (href) => !href.endsWith("/dashboard"),
+              );
+              onToggleGroup(hrefs, true);
+              for (const action of columns) grantColumn(hrefs, action, true);
+            }}
+          >
+            Full rights on every menu
+          </Button>
+        ) : null}
         <Button type="button" size="sm" variant="outline" onClick={onClear}>
           {menuRightsCopy.clear}
         </Button>
+        {office ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => onToggleGroup(officeWorkHrefs, true)}
+          >
+            {menuRightsCopy.grantWork}
+          </Button>
+        ) : null}
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {portalGroups[role].map((group) => {
-          const extra = group.items.filter((item) => !item.href.endsWith("/dashboard"));
-          const groupOn =
-            extra.length > 0 && extra.every((item) => selected.includes(item.href));
-          return (
-            <div
-              key={group.heading || group.items[0]?.href}
-              className="rounded-xl border border-border p-3"
-            >
-              {group.heading ? (
-                <label className="flex items-center gap-2 text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                  {extra.length > 0 ? (
-                    <input
-                      type="checkbox"
-                      checked={groupOn}
-                      onChange={(event) =>
-                        onToggleGroup(
-                          extra.map((item) => item.href),
-                          event.target.checked,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {group.heading}
-                </label>
-              ) : null}
-              <ul className={group.heading ? "mt-2 space-y-1" : "space-y-1"}>
+      <div className="mt-4 overflow-hidden rounded-xl border border-border">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-muted text-xs text-primary">
+            <tr>
+              <th className="px-3 py-2 font-semibold">Menu</th>
+              <th className="w-16 px-2 py-2 text-center font-semibold">Open</th>
+              {columns.map((action) => (
+                <th key={action} className="w-24 px-2 py-2 text-center font-semibold">
+                  {menuActionCopy[action]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          {portalGroups[role].map((group) => {
+            const extra = group.items.filter((item) => !item.href.endsWith("/dashboard"));
+            const hrefs = extra.map((item) => item.href);
+            const groupOn =
+              extra.length > 0 && hrefs.every((href) => selected.includes(href));
+            return (
+              <tbody
+                key={group.heading || group.items[0]?.href}
+                className="border-t border-border"
+              >
+                {group.heading && extra.length > 0 ? (
+                  <tr className="bg-muted/40">
+                    <th className="px-3 py-1.5 text-[0.68rem] font-bold tracking-[0.14em] text-secondary uppercase">
+                      {group.heading}
+                    </th>
+                    <td className="px-2 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`Open every ${group.heading} menu`}
+                        checked={groupOn}
+                        onChange={(event) => onToggleGroup(hrefs, event.target.checked)}
+                      />
+                    </td>
+                    {columns.map((action) => {
+                      const able = hrefs.filter((href) =>
+                        actionsForMenu(href, role).includes(action),
+                      );
+                      const on =
+                        able.length > 0 &&
+                        able.every((href) =>
+                          selected.includes(menuActionKey(href, action)),
+                        );
+                      return (
+                        <td key={action} className="px-2 py-1.5 text-center">
+                          {able.length > 0 ? (
+                            <input
+                              type="checkbox"
+                              aria-label={`${menuActionCopy[action]} on every ${group.heading} menu`}
+                              checked={on}
+                              onChange={(event) =>
+                                grantColumn(able, action, event.target.checked)
+                              }
+                            />
+                          ) : null}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ) : null}
                 {group.items.map((item) => {
                   const dashboard = item.href.endsWith("/dashboard");
+                  const pageOn = dashboard || selected.includes(item.href);
+                  const available = actionsForMenu(item.href, role);
                   return (
-                    <li key={item.href}>
-                      <label className="flex items-center gap-2 text-sm">
+                    <tr key={item.href} className="border-t border-border/60">
+                      <td className="px-3 py-1.5 pl-5">{item.label}</td>
+                      <td className="px-2 py-1.5 text-center">
                         <input
                           type="checkbox"
-                          checked={dashboard || selected.includes(item.href)}
+                          aria-label={`Open ${item.label}`}
+                          checked={pageOn}
                           disabled={dashboard}
                           onChange={(event) => onToggle(item.href, event.target.checked)}
                         />
-                        {item.label}
-                      </label>
-                    </li>
+                      </td>
+                      {columns.map((action) => (
+                        <td key={action} className="px-2 py-1.5 text-center">
+                          {available.includes(action) ? (
+                            <input
+                              type="checkbox"
+                              aria-label={`${menuActionCopy[action]} · ${item.label}`}
+                              checked={selected.includes(
+                                menuActionKey(item.href, action),
+                              )}
+                              onChange={(event) =>
+                                onToggleAction(item.href, action, event.target.checked)
+                              }
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
                   );
                 })}
-              </ul>
-            </div>
-          );
-        })}
+              </tbody>
+            );
+          })}
+        </table>
       </div>
     </fieldset>
   );

@@ -12,11 +12,6 @@ export type AuditEntry = {
   detail: string;
 };
 
-export type InboxNotice = Notice & {
-  role: Role;
-  identifier: string;
-};
-
 function actorFromBrowser() {
   if (typeof window === "undefined") {
     return { role: "unknown", identifier: "unknown" };
@@ -44,27 +39,6 @@ function readLocal<T>(key: string, fallback: T) {
   } catch {
     return fallback;
   }
-}
-
-const inboxListeners = new Set<() => void>();
-let inboxMemory: InboxNotice[] | null = null;
-
-function publishInbox(next: InboxNotice[]) {
-  inboxMemory = next;
-  inboxListeners.forEach((listener) => listener());
-}
-
-export function currentInbox() {
-  return inboxMemory;
-}
-
-export function subscribeInbox(onChange: () => void) {
-  inboxListeners.add(onChange);
-  if (inboxMemory === null) {
-    inboxMemory = readLocal<InboxNotice[]>(storageKeys.inbox, []);
-    onChange();
-  }
-  return () => inboxListeners.delete(onChange);
 }
 
 export async function recordAudit(input: {
@@ -103,40 +77,113 @@ export async function recordAudit(input: {
   }
 }
 
-export async function pushNotice(input: {
-  role: Role;
-  identifier: string;
-  title: string;
-  detail: string;
-}) {
-  const notice: InboxNotice = {
-    id: crypto.randomUUID(),
-    role: input.role,
-    identifier: input.identifier,
-    title: input.title,
-    detail: input.detail,
-    time: new Date().toISOString().slice(0, 10),
-  };
-  const supabase = createSupabase();
-  if (supabase) {
-    await supabase.from("portal_notices").insert({
-      role: notice.role,
-      identifier: notice.identifier,
-      title: notice.title,
-      detail: notice.detail,
-    });
-  }
-  if (typeof window !== "undefined") {
-    const stored = readLocal<InboxNotice[]>(storageKeys.inbox, []);
-    const next = [notice, ...stored].slice(0, 50);
-    window.localStorage.setItem(storageKeys.inbox, JSON.stringify(next));
-    publishInbox(next);
+export type InboxNotice = Notice & {
+  /** Page the notice is about; opening it clears the notice. */
+  href: string;
+};
+
+/** Role value for notices meant for the whole research office (admin, Dean and staff). */
+export const officeNoticeRole = "office";
+
+const inboxListeners = new Set<() => void>();
+let inboxMemory: InboxNotice[] | null = null;
+let inboxTimer: number | null = null;
+let inboxLoading = false;
+const pendingReads = new Set<string>();
+
+function publishInbox(next: InboxNotice[]) {
+  inboxMemory = next;
+  inboxListeners.forEach((listener) => listener());
+}
+
+export function currentInbox() {
+  return inboxMemory;
+}
+
+/** Loads the signed-in person's unread notices from the server. */
+export async function refreshInbox() {
+  if (typeof window === "undefined" || inboxLoading) return;
+  inboxLoading = true;
+  try {
+    const response = await fetch("/api/notices", { cache: "no-store" });
+    const data = (await response.json().catch(() => null)) as {
+      notices?: { id: string; title: string; detail: string; href: string; at: string }[];
+    } | null;
+    const notices = (data?.notices ?? [])
+      .filter((item) => !pendingReads.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        detail: item.detail,
+        href: item.href ?? "",
+        time: item.at,
+      }));
+    publishInbox(notices);
+  } catch {
+    if (inboxMemory === null) publishInbox([]);
+  } finally {
+    inboxLoading = false;
   }
 }
 
-export function noticesFor(role: Role, identifier: string, items: InboxNotice[]) {
-  const key = identifier.trim().toLowerCase();
-  return items.filter(
-    (item) => item.role === role && item.identifier.trim().toLowerCase() === key,
-  );
+export function subscribeInbox(onChange: () => void) {
+  inboxListeners.add(onChange);
+  if (typeof window !== "undefined" && inboxTimer === null) {
+    void refreshInbox();
+    inboxTimer = window.setInterval(() => void refreshInbox(), 60_000);
+    window.addEventListener("focus", () => void refreshInbox());
+  }
+  return () => {
+    inboxListeners.delete(onChange);
+  };
+}
+
+/** Clears notices once opened; they stay cleared on every device. */
+export async function markNoticesRead(ids: readonly string[]) {
+  const fresh = ids.filter((id) => !pendingReads.has(id));
+  if (fresh.length === 0) return;
+  fresh.forEach((id) => pendingReads.add(id));
+  publishInbox((inboxMemory ?? []).filter((item) => !fresh.includes(item.id)));
+  await fetch("/api/notices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "read", ids: fresh }),
+  }).catch(() => null);
+}
+
+type NoticeInput = {
+  role: Role | typeof officeNoticeRole;
+  identifier: string;
+  title: string;
+  detail: string;
+  href?: string;
+};
+
+async function sendNotices(notices: readonly NoticeInput[]) {
+  if (typeof window === "undefined" || notices.length === 0) return;
+  await fetch("/api/notices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "push", notices }),
+  }).catch(() => null);
+}
+
+/** Sends a notice to one person (scholar, supervisor or office account). */
+export async function pushNotice(input: NoticeInput) {
+  if (!input.identifier.trim()) return;
+  await sendNotices([input]);
+}
+
+/** Sends a notice to the whole research office: every admin, Dean and staff sign-in. */
+export async function notifyOffice(input: {
+  title: string;
+  detail: string;
+  href?: string;
+}) {
+  await sendNotices([{ role: officeNoticeRole, identifier: "*", ...input }]);
+}
+
+/** Notices are already scoped to the signed-in person by the server. */
+export function noticesFor(_role: Role, _identifier: string, items: InboxNotice[]) {
+  return items;
 }

@@ -21,6 +21,11 @@ export const viewFilesLabel = "View files";
 
 export const missingFileCopy = "That file is not stored with the record.";
 
+export const filePreviewCopy = {
+  close: "Close",
+  unavailable: "This file cannot be shown in the browser.",
+} as const;
+
 export const resultGradeKey = [
   { grade: "Pass", range: "Published pass", result: "PASS" },
   { grade: "RA", range: "Re-appearance", result: "RA" },

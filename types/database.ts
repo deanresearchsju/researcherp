@@ -13,6 +13,7 @@ export type Database = {
           department: string;
           research_area: string;
           vacancy_count: number;
+          school: string;
           created_at: string;
           updated_at: string;
         };
@@ -24,6 +25,7 @@ export type Database = {
           department: string;
           research_area: string;
           vacancy_count: number;
+          school?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -34,6 +36,7 @@ export type Database = {
           department?: string;
           research_area?: string;
           vacancy_count?: number;
+          school?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -78,6 +81,8 @@ export type Database = {
           step: number;
           payload: Json;
           token: string;
+          follow_note: string;
+          followed_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -87,6 +92,8 @@ export type Database = {
           step?: number;
           payload: Json;
           token: string;
+          follow_note?: string;
+          followed_at?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -95,6 +102,8 @@ export type Database = {
           step?: number;
           payload?: Json;
           token?: string;
+          follow_note?: string;
+          followed_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -290,6 +299,9 @@ export type Database = {
           agenda?: string;
           attendance?: string;
           minutes?: string;
+          reason?: string;
+          decided_on?: string;
+          decided_by?: string;
           created_at: string;
           updated_at: string;
         };
@@ -308,6 +320,9 @@ export type Database = {
           agenda?: string;
           attendance?: string;
           minutes?: string;
+          reason?: string;
+          decided_on?: string;
+          decided_by?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -320,6 +335,9 @@ export type Database = {
           agenda?: string;
           attendance?: string;
           minutes?: string;
+          reason?: string;
+          decided_on?: string;
+          decided_by?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -360,6 +378,34 @@ export type Database = {
         Update: { payload?: Json; updated_at?: string };
         Relationships: [];
       };
+      thesis_evaluation: {
+        Row: {
+          scholar_key: string;
+          scholar_identifier: string;
+          scholar_name: string;
+          supervisor_identifier: string;
+          supervisor_name: string;
+          payload: Json;
+          updated_at: string;
+        };
+        Insert: {
+          scholar_key: string;
+          scholar_identifier: string;
+          scholar_name?: string;
+          supervisor_identifier?: string;
+          supervisor_name?: string;
+          payload?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          scholar_name?: string;
+          supervisor_identifier?: string;
+          supervisor_name?: string;
+          payload?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       thesis_panels: {
         Row: { id: string; payload: Json; updated_at: string };
         Insert: { id: string; payload: Json; updated_at?: string };
@@ -398,6 +444,8 @@ export type Database = {
           identifier: string;
           title: string;
           detail: string;
+          href: string;
+          read_by: string[];
         };
         Insert: {
           id?: string;
@@ -406,10 +454,42 @@ export type Database = {
           identifier: string;
           title: string;
           detail?: string;
+          href?: string;
+          read_by?: string[];
         };
         Update: {
           title?: string;
           detail?: string;
+          href?: string;
+          read_by?: string[];
+        };
+        Relationships: [];
+      };
+      helpdesk_messages: {
+        Row: {
+          id: string;
+          name: string;
+          email: string;
+          phone: string;
+          subject: string;
+          message: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          email: string;
+          phone: string;
+          subject: string;
+          message: string;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+          email?: string;
+          phone?: string;
+          subject?: string;
+          message?: string;
         };
         Relationships: [];
       };
@@ -453,6 +533,18 @@ export type Database = {
         Args: { p_kind: string; p_year: string; p_code: string };
         Returns: string;
       };
+      submit_phd_application: {
+        Args: {
+          p_date_of_birth: string;
+          p_applicant_name: string;
+          p_email: string;
+          p_study_mode: string;
+          p_year: string;
+          p_code: string;
+          p_payload: Json;
+        };
+        Returns: string;
+      };
       upsert_phd_draft: {
         Args: {
           p_token: string;
@@ -470,6 +562,27 @@ export type Database = {
       };
       delete_phd_draft: {
         Args: { p_token: string };
+        Returns: undefined;
+      };
+      list_phd_drafts: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          mobile: string;
+          email: string;
+          department: string;
+          step: number;
+          payload: Json;
+          updated_at: string;
+          follow_note: string;
+          followed_at: string | null;
+        }[];
+      };
+      update_phd_draft_follow: {
+        Args: { p_mobile: string; p_note: string; p_followed: boolean };
+        Returns: undefined;
+      };
+      delete_phd_draft_office: {
+        Args: { p_mobile: string };
         Returns: undefined;
       };
       save_json_blob: {

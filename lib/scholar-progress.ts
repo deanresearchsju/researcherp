@@ -1,12 +1,19 @@
+import { archivedKeys, currentAdmission, ensureAdmission } from "@/lib/admission";
 import {
   admissionSessions,
   admissionYear,
   programmeName,
   storageKeys,
 } from "@/lib/constants";
+import { matchesOpenPhdSession } from "@/lib/office";
 import { createSupabase } from "@/lib/supabase/client";
-import { toJson } from "@/lib/records";
-import { emptyAddress, emptyEducation, type ScholarFormValues } from "@/lib/validation";
+import { lookupPhdApplication, toJson } from "@/lib/records";
+import {
+  emptyAddress,
+  emptyEducation,
+  emptyExperience,
+  type ScholarFormValues,
+} from "@/lib/validation";
 import type { Json } from "@/types/database";
 
 export type PhdReceipt = {
@@ -35,7 +42,9 @@ export function blankScholar(): ScholarFormValues {
     dateOfBirth: "",
     gender: "",
     nationality: "Indian",
+    country: "",
     community: "",
+    communityName: "",
     bloodGroup: "",
     maritalStatus: "",
     programme: programmeName,
@@ -45,14 +54,19 @@ export function blankScholar(): ScholarFormValues {
     ug: emptyEducation(),
     pg: emptyEducation(),
     netQualified: "",
+    netRoll: "",
     netMonth: "",
     netYear: "",
+    netAgency: "",
+    setRoll: "",
+    setYear: "",
+    setAgency: "",
     email: "",
     mobile: "",
     communication: emptyAddress(),
     sameAddress: true,
     permanent: emptyAddress(),
-    experience: [{ organization: "", designation: "", from: "", to: "" }],
+    experience: [emptyExperience()],
     researchArea: "",
     outline: "",
     paymentMode: "",
@@ -70,7 +84,7 @@ export function mergeScholarValues(partial: unknown): ScholarFormValues {
   return {
     ...empty,
     ...parsed,
-    year: admissionYear,
+    year: parsed.year?.trim() || empty.year,
     programme: programmeName,
     ug: { ...empty.ug, ...parsed.ug },
     pg: { ...empty.pg, ...parsed.pg },
@@ -190,6 +204,27 @@ export async function clearRemoteDraft(mobile: string) {
   await supabase.rpc("delete_phd_draft", { p_token: token });
 }
 
+function dataImage(value: unknown): string | null {
+  if (typeof value === "string" && value.startsWith("data:")) return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const fileData = (value as { fileData?: unknown }).fileData;
+  return typeof fileData === "string" && fileData.startsWith("data:") ? fileData : null;
+}
+
+function imageFromRecord(record: Record<string, unknown>, key: string) {
+  const images = record.images;
+  if (images && typeof images === "object" && !Array.isArray(images)) {
+    const fromImages = dataImage((images as Record<string, unknown>)[key]);
+    if (fromImages) return fromImages;
+  }
+  const files = record.files;
+  if (files && typeof files === "object" && !Array.isArray(files)) {
+    const fromFiles = dataImage((files as Record<string, unknown>)[key]);
+    if (fromFiles) return fromFiles;
+  }
+  return null;
+}
+
 function receiptFromPayload(
   applicationNo: string,
   status: string,
@@ -197,30 +232,10 @@ function receiptFromPayload(
   payload: Json,
 ): PhdReceipt {
   const record =
-    payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  const images =
-    "images" in record &&
-    record.images &&
-    typeof record.images === "object" &&
-    !Array.isArray(record.images)
-      ? record.images
-      : null;
-  const photo =
-    images &&
-    "photo" in images &&
-    typeof images.photo === "string" &&
-    images.photo.startsWith("data:")
-      ? images.photo
-      : null;
-  const signature =
-    images &&
-    "signature" in images &&
-    typeof images.signature === "string" &&
-    images.signature.startsWith("data:")
-      ? images.signature
-      : null;
-  const attachments =
-    "attachments" in record &&
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  const attachments: Record<string, string | null> =
     record.attachments &&
     typeof record.attachments === "object" &&
     !Array.isArray(record.attachments)
@@ -231,14 +246,90 @@ function receiptFromPayload(
           ]),
         )
       : {};
+  if (record.files && typeof record.files === "object" && !Array.isArray(record.files)) {
+    for (const [key, value] of Object.entries(record.files)) {
+      if (attachments[key]) continue;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const fileName = (value as { fileName?: unknown }).fileName;
+        attachments[key] = typeof fileName === "string" ? fileName : null;
+      }
+    }
+  }
   return {
     applicationNo,
     status,
     submittedOn,
     values: mergeScholarValues(payload),
     attachments,
-    photo,
-    signature,
+    photo: imageFromRecord(record, "photo"),
+    signature: imageFromRecord(record, "signature"),
+  };
+}
+
+export function phdReceiptFromApplication(application: {
+  applicationNo: string;
+  status: string;
+  createdAt: string;
+  payload: Json;
+}): PhdReceipt {
+  return receiptFromPayload(
+    application.applicationNo,
+    application.status,
+    application.createdAt.slice(0, 10),
+    application.payload,
+  );
+}
+
+async function livePhdKeys() {
+  try {
+    const admission = await ensureAdmission();
+    return archivedKeys(admission.archived);
+  } catch {
+    return archivedKeys(currentAdmission()?.archived ?? []);
+  }
+}
+
+function payloadPhdSession(payload: Json) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const session = typeof record.session === "string" ? record.session.trim() : "";
+  const year = typeof record.year === "string" ? record.year.trim() : "";
+  if (!session && !year) return null;
+  return { session, year };
+}
+
+function isLivePhdApplication(
+  applicationNo: string,
+  payload: Json,
+  archived: ReadonlySet<string>,
+  id = "",
+) {
+  if (archived.has(applicationNo) || (id && archived.has(id))) return false;
+  const stored = payloadPhdSession(payload);
+  if (!stored) return true;
+  return matchesOpenPhdSession(stored.session, stored.year);
+}
+
+export async function trackPhdApplication(
+  applicationNo: string,
+  dateOfBirth: string,
+): Promise<
+  { kind: "missing" } | { kind: "archived" } | { kind: "current"; receipt: PhdReceipt }
+> {
+  const remote = await lookupPhdApplication(applicationNo, dateOfBirth);
+  if (!remote) return { kind: "missing" };
+  const archived = await livePhdKeys();
+  if (!isLivePhdApplication(remote.applicationNo, remote.payload, archived, remote.id)) {
+    return { kind: "archived" };
+  }
+  return {
+    kind: "current",
+    receipt: receiptFromPayload(
+      remote.applicationNo,
+      remote.status,
+      remote.createdAt.slice(0, 10),
+      remote.payload,
+    ),
   };
 }
 
@@ -250,14 +341,17 @@ export async function findPhdByMobile(
   | { kind: "none" }
 > {
   const supabase = createSupabase();
+  const archived = await livePhdKeys();
   if (supabase) {
     const submitted = await supabase
       .from("phd_applications")
-      .select("application_no, status, payload, created_at")
+      .select("id, application_no, status, payload, created_at")
       .filter("payload->>mobile", "eq", mobile)
       .order("created_at", { ascending: false })
-      .limit(1);
-    const row = submitted.data?.[0];
+      .limit(20);
+    const row = (submitted.data ?? []).find((item) =>
+      isLivePhdApplication(item.application_no, item.payload, archived, item.id),
+    );
     if (!submitted.error && row) {
       return {
         kind: "submitted",
@@ -292,7 +386,13 @@ export async function findPhdByMobile(
   }
 
   const localReceipt = readLocalReceipt(mobile);
-  if (localReceipt) return { kind: "submitted", receipt: localReceipt };
+  if (
+    localReceipt &&
+    !archived.has(localReceipt.applicationNo) &&
+    matchesOpenPhdSession(localReceipt.values.session, localReceipt.values.year)
+  ) {
+    return { kind: "submitted", receipt: localReceipt };
+  }
   const localDraft = readLocalDraft(mobile);
   if (localDraft) return { kind: "draft", ...localDraft };
   return { kind: "none" };

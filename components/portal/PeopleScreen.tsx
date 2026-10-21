@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PageTitle } from "@/components/portal/Desk";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Portrait } from "@/components/portal/Portrait";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,7 @@ export function PeopleScreen() {
   );
   const visible = people.filter(
     (user) =>
-      (roleFilter === "" || user.role === roleFilter) &&
+      filterMatches(roleFilter, user.role) &&
       textMatches(query, [user.name, user.identifier, user.role]),
   );
   const scholars = visible.filter((user) => user.role === "scholar");
@@ -59,10 +60,7 @@ export function PeopleScreen() {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Research office
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">People</h1>
+      <PageTitle kicker="Research office" title="People" />
       <ListToolbar
         query={query}
         onQuery={setQuery}

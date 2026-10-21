@@ -1,7 +1,8 @@
 import { issueApplicationNo } from "@/lib/applications";
-import { adminActionBlock } from "@/lib/access";
+import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { fileToDataUrl } from "@/lib/files";
 import { createSupabase } from "@/lib/supabase/client";
+import { assertPhdUploads } from "@/lib/upload-guard";
 import type { Json } from "@/types/database";
 
 export const applicationStatuses = [
@@ -9,7 +10,10 @@ export const applicationStatuses = [
   "Under review",
   "Shortlisted",
   "Selected",
+  "Waiting list",
   "Not selected",
+  "Not reported",
+  "Admitted",
 ] as const;
 
 export const supervisorReviewStatuses = [
@@ -22,12 +26,16 @@ export const supervisorReviewStatuses = [
 
 export type SupervisorReviewStatus = (typeof supervisorReviewStatuses)[number];
 
+/** The admission path: review → shortlist → select → admit (documents verified). */
 const applicationTransitions: Record<string, readonly string[]> = {
-  "Acknowledgement sent": ["Under review"],
+  "Acknowledgement sent": ["Under review", "Shortlisted", "Not selected"],
   "Under review": ["Shortlisted", "Not selected"],
-  Shortlisted: ["Selected", "Not selected"],
-  Selected: [],
-  "Not selected": [],
+  Shortlisted: ["Selected", "Waiting list", "Not selected", "Under review"],
+  Selected: ["Admitted", "Not selected", "Waiting list", "Not reported"],
+  "Waiting list": ["Selected", "Not selected", "Shortlisted"],
+  "Not selected": ["Under review", "Shortlisted", "Selected", "Waiting list"],
+  "Not reported": ["Selected"],
+  Admitted: [],
 };
 
 export function canChangeApplicationStatus(from: string, to: string) {
@@ -36,7 +44,63 @@ export function canChangeApplicationStatus(from: string, to: string) {
   return Boolean(allowed?.includes(to));
 }
 
+const phdProgress: Record<string, string> = {
+  "Acknowledgement sent": "Under review",
+  "Under review": "Shortlisted",
+  Shortlisted: "Selected",
+  Selected: "Admitted",
+};
+
+const phdReject: Record<string, string> = {
+  "Under review": "Not selected",
+  Shortlisted: "Not selected",
+};
+
+const supervisorProgress: Record<string, string> = {
+  "Acknowledgement sent": "Under review",
+  "Under review": "Accepted",
+  Accepted: "Approved",
+};
+
+const supervisorTransitions: Record<string, readonly SupervisorReviewStatus[]> = {
+  "Acknowledgement sent": ["Under review", "Accepted", "Rejected"],
+  "Under review": ["Accepted", "Rejected"],
+  Accepted: ["Approved", "Rejected"],
+  Approved: [],
+  Rejected: [],
+};
+
+export function canChangeSupervisorStatus(from: string, to: string) {
+  if (from === to) return true;
+  return Boolean(supervisorTransitions[from]?.includes(to as SupervisorReviewStatus));
+}
+
 export type ApplicationKind = "phd" | "supervisor";
+
+export function canAdvanceApplication(kind: ApplicationKind, from: string, to: string) {
+  return kind === "supervisor"
+    ? canChangeSupervisorStatus(from, to)
+    : canChangeApplicationStatus(from, to);
+}
+
+export function nextApplicationStage(kind: ApplicationKind, status: string) {
+  const next = kind === "supervisor" ? supervisorProgress[status] : phdProgress[status];
+  if (!next) return null;
+  return canAdvanceApplication(kind, status, next) ? next : null;
+}
+
+export function approveApplicationStage(kind: ApplicationKind, status: string) {
+  const next = kind === "supervisor" ? "Approved" : "Selected";
+  return canAdvanceApplication(kind, status, next) ? next : null;
+}
+
+export function rejectApplicationStage(kind: ApplicationKind, status: string) {
+  if (kind === "supervisor") {
+    return canChangeSupervisorStatus(status, "Rejected") ? "Rejected" : null;
+  }
+  const next = phdReject[status];
+  return next && canChangeApplicationStatus(status, next) ? next : null;
+}
 
 export type StoredApplication = {
   id: string;
@@ -102,6 +166,16 @@ export function toJson(value: unknown): Json {
   return null;
 }
 
+/** Lets the research office know a website application arrived. */
+async function announceApplication(kind: ApplicationKind, applicationNo: string) {
+  if (typeof window === "undefined") return;
+  await fetch("/api/notices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "application", kind, applicationNo }),
+  }).catch(() => null);
+}
+
 async function insertApplication(
   kind: ApplicationKind,
   values: {
@@ -114,6 +188,41 @@ async function insertApplication(
     year?: string;
   },
 ): Promise<SaveResult> {
+  if (kind === "phd") {
+    const uploads = assertPhdUploads(values.payload);
+    if (!uploads.ok) return uploads;
+    try {
+      const response = await fetch("/api/apply/phd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const data: unknown = await response.json().catch(() => null);
+      if (
+        data &&
+        typeof data === "object" &&
+        "ok" in data &&
+        data.ok === true &&
+        "applicationNo" in data &&
+        typeof data.applicationNo === "string"
+      ) {
+        return { ok: true, applicationNo: data.applicationNo };
+      }
+      if (
+        data &&
+        typeof data === "object" &&
+        "ok" in data &&
+        data.ok === false &&
+        "message" in data &&
+        typeof data.message === "string"
+      ) {
+        return { ok: false, message: data.message };
+      }
+    } catch {
+      // Fall through to the client insert path if the route is unavailable.
+    }
+  }
+
   const supabase = createSupabase();
   if (!supabase) return { ok: false, message: saveError };
 
@@ -136,7 +245,10 @@ async function insertApplication(
             .from("phd_applications")
             .insert({ ...shared, study_mode: values.studyMode ?? "" })
         : await supabase.from("supervisor_applications").insert(shared);
-    if (!error) return { ok: true, applicationNo };
+    if (!error) {
+      await announceApplication(kind, applicationNo);
+      return { ok: true, applicationNo };
+    }
     if (error.code !== "23505") return { ok: false, message: saveError };
   }
 
@@ -169,17 +281,22 @@ export async function lookupPhdApplication(applicationNo: string, dateOfBirth: s
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("phd_applications")
-    .select("application_no, applicant_name, email, date_of_birth, status")
+    .select(
+      "id, application_no, applicant_name, email, date_of_birth, status, payload, created_at",
+    )
     .ilike("application_no", applicationNo.trim())
     .eq("date_of_birth", dateOfBirth)
     .maybeSingle();
   if (error || !data) return null;
   return {
+    id: data.id,
     applicationNo: data.application_no,
     name: data.applicant_name,
     email: data.email,
     dateOfBirth: data.date_of_birth,
     status: data.status,
+    payload: data.payload,
+    createdAt: data.created_at,
   };
 }
 
@@ -287,13 +404,15 @@ export async function updateApplicationStatus(
   const table = applicationTable(kind);
   const current = await supabase.from(table).select("status").eq("id", id).maybeSingle();
   if (current.error || !current.data) return false;
-  if (!canChangeApplicationStatus(current.data.status, status)) return false;
+  if (!canAdvanceApplication(kind, current.data.status, status)) return false;
   const { error } = await supabase
     .from(table)
     .update({ status })
     .eq("id", id)
     .eq("status", current.data.status);
-  return !error;
+  if (error) return false;
+  rememberApplication(id, { status });
+  return true;
 }
 
 function rememberApplication(id: string, patch: Partial<StoredApplication>) {
@@ -302,19 +421,6 @@ function rememberApplication(id: string, patch: Partial<StoredApplication>) {
     item.id === id ? { ...item, ...patch } : item,
   );
   notifyApplications();
-}
-
-const supervisorTransitions: Record<string, readonly SupervisorReviewStatus[]> = {
-  "Acknowledgement sent": ["Under review", "Accepted", "Rejected"],
-  "Under review": ["Accepted", "Rejected"],
-  Accepted: ["Approved", "Rejected"],
-  Approved: [],
-  Rejected: [],
-};
-
-export function canChangeSupervisorStatus(from: string, to: string) {
-  if (from === to) return true;
-  return Boolean(supervisorTransitions[from]?.includes(to as SupervisorReviewStatus));
 }
 
 export async function reviewSupervisorApplication(
@@ -344,6 +450,23 @@ export async function reviewSupervisorApplication(
     .eq("id", id);
   if (error) return false;
   rememberApplication(id, { status, payload: nextPayload });
+  if (status === "Approved" && approvedQuota !== undefined) {
+    // An approved supervisor goes straight onto the vacancy list, which drives the public
+    // vacancy page and scholar allotment.
+    const field = (key: string) => {
+      const value = (current as Record<string, unknown>)[key];
+      return typeof value === "string" ? value.trim() : "";
+    };
+    const { addApprovedSupervisorVacancy } = await import("@/lib/vacancies");
+    await addApprovedSupervisorVacancy({
+      name: field("name"),
+      designation: field("designation"),
+      school: field("faculty"),
+      department: field("subject") || field("proposedDepartment") || field("department"),
+      researchArea: field("expertise"),
+      quota: approvedQuota,
+    });
+  }
   return true;
 }
 
@@ -397,6 +520,50 @@ export async function updateApplicationDetails(
     ...(studyMode !== undefined ? { studyMode } : {}),
   });
   return { ok: true as const };
+}
+
+/**
+ * Stores a copy of an enclosure (or the photo / signature) uploaded by the research office for
+ * an application whose file was not saved at submission.
+ */
+export async function attachApplicationFile(
+  kind: ApplicationKind,
+  id: string,
+  slot: string,
+  fileName: string,
+  fileData: string,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return { ok: false as const, message: blocked.message };
+  if (!isStoredApplication(id) || !fileData.startsWith("data:")) {
+    return { ok: false as const, message: saveError };
+  }
+  const supabase = createSupabase();
+  if (!supabase) return { ok: false as const, message: saveError };
+  const table = applicationTable(kind);
+  const current = await supabase.from(table).select("payload").eq("id", id).maybeSingle();
+  if (current.error || !current.data) return { ok: false as const, message: saveError };
+  const record = (value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, Json | undefined>)
+      : {};
+  const payload = record(current.data.payload);
+  const next: Record<string, Json | undefined> = {
+    ...payload,
+    files: { ...record(payload.files), [slot]: { fileName, fileData } },
+    attachments: { ...record(payload.attachments), [slot]: fileName },
+  };
+  if (slot === "photo" || slot === "signature") {
+    next.images = { ...record(payload.images), [slot]: fileData };
+  }
+  const nextPayload = toJson(next);
+  const { error } = await supabase
+    .from(table)
+    .update({ payload: nextPayload })
+    .eq("id", id);
+  if (error) return { ok: false as const, message: saveError };
+  rememberApplication(id, { payload: nextPayload });
+  return { ok: true as const, payload: nextPayload };
 }
 
 export async function deleteApplication(kind: ApplicationKind, id: string) {

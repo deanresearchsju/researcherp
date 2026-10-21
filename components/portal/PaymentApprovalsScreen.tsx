@@ -10,6 +10,7 @@ import {
   StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
+import { filterMatches, ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { applicationFee } from "@/data/fees";
 import {
@@ -91,6 +92,9 @@ export function PaymentApprovalsScreen() {
   const [tab, setTab] = useState<PaymentKindId>("application");
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
 
   async function markApplication(id: string, payment: PaymentMark) {
     setBusyId(id);
@@ -121,15 +125,105 @@ export function PaymentApprovalsScreen() {
     );
   }
 
-  const applications = admission?.cases ?? [];
-  const courses = doctoral ? courseGroups(doctoral.registrations) : [];
-  const annualRows = annual?.records ?? [];
+  const allApplications = admission?.cases ?? [];
+  const allCourses = doctoral ? courseGroups(doctoral.registrations) : [];
+  const allAnnual = annual?.records ?? [];
+  const applications = allApplications.filter(
+    (row) =>
+      filterMatches(statusFilter, row.payment) &&
+      filterMatches(groupFilter, row.department) &&
+      textMatches(query, [displayName(row), row.applicationNo, row.department]),
+  );
+  const courses = allCourses.filter(
+    (row) =>
+      filterMatches(statusFilter, row.status) &&
+      filterMatches(groupFilter, `Semester ${row.semester}`) &&
+      textMatches(query, [row.scholarName, row.papers, row.paymentReference]),
+  );
+  const annualRows = allAnnual.filter(
+    (row) =>
+      filterMatches(statusFilter, row.status) &&
+      textMatches(query, [
+        row.scholarName,
+        row.scholarIdentifier,
+        row.payload.purpose ?? "",
+      ]),
+  );
+  const statusOptions = [
+    ...new Set(
+      tab === "application"
+        ? allApplications.map((row) => row.payment)
+        : tab === "course-work"
+          ? allCourses.map((row) => row.status)
+          : allAnnual.map((row) => row.status),
+    ),
+  ]
+    .filter(Boolean)
+    .sort()
+    .map((value) => ({ value, label: value }));
+  const groupOptions = [
+    ...new Set(
+      tab === "application"
+        ? allApplications.map((row) => row.department)
+        : allCourses.map((row) => `Semester ${row.semester}`),
+    ),
+  ]
+    .filter(Boolean)
+    .sort()
+    .map((value) => ({ value, label: value }));
+  const exportTable =
+    tab === "application"
+      ? {
+          title: "Application fee",
+          headers: ["Applicant", "Application No.", "Department", "Amount", "Status"],
+          rows: applications.map((row) => [
+            displayName(row),
+            row.applicationNo,
+            row.department,
+            String(applicationFee.amount),
+            row.payment,
+          ]),
+          total: allApplications.length,
+        }
+      : tab === "course-work"
+        ? {
+            title: "Course-work fee",
+            headers: [
+              "Scholar",
+              "Semester",
+              "Papers",
+              "Amount",
+              "Paid on",
+              "Reference",
+              "Status",
+            ],
+            rows: courses.map((row) => [
+              row.scholarName,
+              String(row.semester),
+              row.papers,
+              formatInr(row.amount),
+              row.paymentDate,
+              row.paymentReference,
+              row.status,
+            ]),
+            total: allCourses.length,
+          }
+        : {
+            title: "Annual research fee",
+            headers: ["Scholar", "Sign-in", "Amount", "Purpose", "Paid on", "Status"],
+            rows: annualRows.map((row) => [
+              row.scholarName,
+              row.scholarIdentifier,
+              row.payload.amount ?? "",
+              row.payload.purpose ?? "",
+              row.payload.paidOn ?? "",
+              row.status,
+            ]),
+            total: allAnnual.length,
+          };
 
   return (
     <DeskPage kicker={paymentCopy.kicker} title={paymentCopy.title}>
-      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        {paymentCopy.detail}
-      </p>
       {notice ? (
         <p role="status" className="text-sm text-secondary">
           {notice}
@@ -138,7 +232,41 @@ export function PaymentApprovalsScreen() {
       <DeskTabs
         tabs={paymentKinds.map((item) => ({ id: item.id, label: item.label }))}
         value={tab}
-        onChange={(id) => setTab(id as PaymentKindId)}
+        onChange={(id) => {
+          setTab(id as PaymentKindId);
+          setStatusFilter("");
+          setGroupFilter("");
+        }}
+      />
+      <ListToolbar
+        query={query}
+        onQuery={setQuery}
+        filters={[
+          {
+            id: "status",
+            label: "Status",
+            value: statusFilter,
+            options: statusOptions,
+            onChange: setStatusFilter,
+          },
+          ...(tab === "annual"
+            ? []
+            : [
+                {
+                  id: "group",
+                  label: tab === "application" ? "Department" : "Semester",
+                  value: groupFilter,
+                  options: groupOptions,
+                  onChange: setGroupFilter,
+                },
+              ]),
+        ]}
+        shown={exportTable.rows.length}
+        total={exportTable.total}
+        filename={`payments-${tab}.csv`}
+        title={`Payment approvals · ${exportTable.title}`}
+        headers={exportTable.headers}
+        rows={exportTable.rows}
       />
       {tab === "application" ? (
         <DeskSection title="Application fee">

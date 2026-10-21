@@ -1,0 +1,21 @@
+export const helpdeskCopy = {
+  formTitle: "Write to the helpdesk",
+  send: "Send message",
+  sent: "Your message has been received. The office will reply by email.",
+  sendError: "The message could not be sent. Please try again.",
+  sending: "Sending…",
+  officeTitle: "Office address",
+  menu: "Helpdesk",
+  title: "Helpdesk",
+  kicker: "Website",
+  hint: "Messages sent from the public Contact page. Newest first.",
+  empty: "No helpdesk messages yet.",
+  browserHint:
+    "Messages from this browser are listed until the office table is connected.",
+  received: "Received",
+  name: "Name",
+  phone: "Contact number",
+  email: "Email",
+  subject: "Subject",
+  message: "Message",
+} as const;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isOfficeRole, isPrincipalAdmin, parseMenuRights } from "@/lib/access";
+import { isOfficeRole, parseMenuRights, resolvedMenus } from "@/lib/access";
 import { portalHome } from "@/lib/auth";
 import type { CookieSession } from "@/lib/session";
 import { hashSecret, isHashedSecret, verifySecret } from "@/lib/passwords";
@@ -212,11 +212,13 @@ export async function POST(request: Request) {
     identifier: data.identifier,
     name: data.name,
     mustReset: data.must_reset === true,
-    menus: isPrincipalAdmin({ role: data.role, identifier: data.identifier })
-      ? null
-      : fallback
+    menus: resolvedMenus({
+      role: data.role,
+      identifier: data.identifier,
+      menus: fallback
         ? null
         : parseMenuRights("menu_rights" in data ? data.menu_rights : null),
+    }),
   };
   const token = await encodeSessionCookie(session, remember);
   if (!token) {

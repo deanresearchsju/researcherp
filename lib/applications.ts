@@ -34,6 +34,7 @@ export function phdSessionCode(session: string) {
 export function isPhdApplicationNo(value: string) {
   const number = value.trim();
   return (
+    /^SJU\/PHD\/(Jan|Jul|Jun)\d{2}\/\d{4}$/i.test(number) ||
     /^SJU\/PHD\/\d{4}\/(Jan|Jul|Jun)\/\d{4}$/i.test(number) ||
     /^SJU\/PHD\/\d{4}\/\d{4}$/.test(number)
   );
@@ -41,7 +42,8 @@ export function isPhdApplicationNo(value: string) {
 
 export function formatPhdApplicationNo(year: string, session: string, serial: number) {
   const code = phdSessionCode(session) || "Jan";
-  return `SJU/PHD/${year}/${code}/${String(serial).padStart(4, "0")}`;
+  const yy = year.trim().slice(-2).padStart(2, "0");
+  return `SJU/PHD/${code}${yy}/${String(serial).padStart(4, "0")}`;
 }
 
 export function formatSupervisorApplicationNo(issuedOn: string, serial: number) {

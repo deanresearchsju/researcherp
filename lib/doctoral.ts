@@ -6,11 +6,16 @@ import {
   programmeSemesters,
   reportTargets,
   schoolNeedsIndexedPair,
+  synopsisChecklist,
+  thesisChecklist,
   thesisWindowMonths,
 } from "@/data/doctoral";
 import { officeActionCopy } from "@/data/office-actions";
+import { researchRegister } from "@/data/research-register";
+import { readPreviewSession } from "@/lib/auth";
 import { scholarSchoolName } from "@/lib/admission";
-import { pushNotice, recordAudit } from "@/lib/audit";
+import { notifyOffice, pushNotice, recordAudit } from "@/lib/audit";
+import { committeeHref } from "@/lib/notice-links";
 import { examOutcomes, type ExamOutcome } from "@/data/exams";
 import { feeStatuses, type FeeStatus } from "@/data/payments";
 import {
@@ -22,9 +27,9 @@ import {
 } from "@/lib/constants";
 import { clientToday } from "@/lib/dates";
 import { saveJsonBlob } from "@/lib/json-lock";
-import { sameId } from "@/lib/office";
-import { scholarBySignIn, scholarSignInId } from "@/lib/register";
-import { adminActionBlock } from "@/lib/access";
+import { currentOffice, sameId } from "@/lib/office";
+import { scholarBySignIn, scholarSignInId, supervisorForGuide } from "@/lib/register";
+import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { toJson } from "@/lib/records";
 import { createSupabase } from "@/lib/supabase/client";
@@ -104,6 +109,11 @@ export type CourseRegistration = {
   receiptName: string | null;
   receiptData: string | null;
   paymentStatus: FeeStatus;
+  /** Re-registration of a paper with an earlier RA or Absent result. */
+  arrear: boolean;
+  /** Sent to the Controller of Examinations for the hall ticket and results. */
+  coeStatus: "" | "Forwarded";
+  coeForwardedOn: string;
 };
 
 export type { FeeStatus };
@@ -167,7 +177,21 @@ export type CommitteeReport = {
   minutes: string;
   decidedOn: string;
   createdAt: string;
+  /** Date the committee met. */
+  meetingOn: string;
+  /** Guide's step before the Dean: empty until the guide acts. */
+  supervisorStatus: "" | "Recommended" | "Returned";
+  supervisorRemarks: string;
+  supervisorOn: string;
+  supervisorName: string;
+  decidedBy: string;
+  /** Recorded by the office for batches that met before the ERP (no upload, no guide step). */
+  officeEntry: boolean;
+  /** Research title: fixed at the first committee, finalised at the second. */
+  researchTitle: string;
 };
+
+export type ColloquiumMark = "Present" | "Absent";
 
 export type Colloquium = {
   id: string;
@@ -177,7 +201,27 @@ export type Colloquium = {
   issuedOn: string;
   scholars: { identifier: string; name: string }[];
   supervisors: { identifier: string; name: string }[];
+  /** Event details. */
+  date: string;
+  time: string;
+  venue: string;
+  mode: "Offline" | "Online" | "Hybrid";
+  details: string;
+  /** Attendance by `scholar:<id>` and `supervisor:<id>`; empty until marked after the event. */
+  attendance: Record<string, ColloquiumMark>;
+  markedOn: string;
+  markedBy: string;
 };
+
+export const colloquiumModes = ["Offline", "Online", "Hybrid"] as const;
+
+export function attendanceKey(role: "scholar" | "supervisor", identifier: string) {
+  return `${role}:${identifier.trim().toLowerCase()}`;
+}
+
+export function colloquiumMarked(item: Pick<Colloquium, "markedOn">) {
+  return Boolean(item.markedOn);
+}
 
 export type SynopsisSubmission = {
   id: string;
@@ -224,10 +268,17 @@ export type ThesisSubmission = {
   createdAt: string;
 };
 
+export type PlagiarismStage = "synopsis" | "thesis";
+
 export type PlagiarismCertificate = {
   id: string;
+  /** Synopsis or thesis: a certificate is issued before each submission. */
+  stage: PlagiarismStage;
   scholarIdentifier: string;
   scholarName: string;
+  /** Checklist items the office verified before issuing. */
+  checks: string[];
+  issuedBy: string;
   similarity: string;
   fileName: string;
   fileData: string | null;
@@ -304,7 +355,47 @@ export type DoctoralState = {
   examinerReports: ExaminerReport[];
   vivas: VivaRecord[];
   completions: CompletionRecord[];
+  letters: IssuedLetter[];
   detail: string | null;
+};
+
+export const letterKinds = [
+  "provisional",
+  "confirmation",
+  "recognition",
+  "viva",
+  "completion",
+] as const;
+
+export type LetterKind = (typeof letterKinds)[number];
+
+export type LetterDetail = { label: string; value: string };
+
+/** Everything printed on an official letter; edited by the office before it is issued. */
+export type LetterDraft = {
+  kind: LetterKind;
+  /** The approval the letter is for: application, committee report or viva id. */
+  sourceId: string;
+  recipientRole: "scholar" | "supervisor";
+  recipientIdentifier: string;
+  recipientName: string;
+  refNo: string;
+  issuedOn: string;
+  title: string;
+  toLines: string[];
+  subject: string;
+  reference: string;
+  details: LetterDetail[];
+  /** Paragraphs; lines starting with "- " print as a list. */
+  body: string[];
+  closing: string;
+  copyTo: string[];
+};
+
+export type IssuedLetter = LetterDraft & {
+  id: string;
+  issuedBy: string;
+  createdAt: string;
 };
 
 const empty: Omit<DoctoralState, "detail"> = {
@@ -324,6 +415,7 @@ const empty: Omit<DoctoralState, "detail"> = {
   examinerReports: [],
   vivas: [],
   completions: [],
+  letters: [],
 };
 
 function text(value: unknown) {
@@ -459,6 +551,11 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           receiptName: text(registration.receiptName) || null,
           receiptData: text(registration.receiptData) || null,
           paymentStatus: parseFeeStatus(text(registration.paymentStatus)),
+          arrear: registration.arrear === true,
+          coeStatus: (text(registration.coeStatus) === "Forwarded"
+            ? "Forwarded"
+            : "") as CourseRegistration["coeStatus"],
+          coeForwardedOn: text(registration.coeForwardedOn),
         },
       ];
     }),
@@ -502,6 +599,18 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           minutes: text(report.minutes),
           decidedOn: text(report.decidedOn),
           createdAt: text(report.createdAt),
+          meetingOn: text(report.meetingOn),
+          supervisorStatus: (text(report.supervisorStatus) === "Recommended"
+            ? "Recommended"
+            : text(report.supervisorStatus) === "Returned"
+              ? "Returned"
+              : "") as CommitteeReport["supervisorStatus"],
+          supervisorRemarks: text(report.supervisorRemarks),
+          supervisorOn: text(report.supervisorOn),
+          supervisorName: text(report.supervisorName),
+          decidedBy: text(report.decidedBy),
+          officeEntry: report.officeEntry === true,
+          researchTitle: text(report.researchTitle),
         },
       ];
     }),
@@ -514,6 +623,12 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           if (!entry || !text(entry.identifier)) return [];
           return [{ identifier: text(entry.identifier), name: text(entry.name) }];
         });
+      const marks = objectRow(sitting.attendance) ?? {};
+      const attendance: Record<string, ColloquiumMark> = {};
+      for (const [key, value] of Object.entries(marks)) {
+        if (value === "Present" || value === "Absent") attendance[key] = value;
+      }
+      const mode = text(sitting.mode);
       return [
         {
           id: text(sitting.id),
@@ -523,6 +638,14 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           issuedOn: text(sitting.issuedOn),
           scholars: people("scholars"),
           supervisors: people("supervisors"),
+          date: text(sitting.date),
+          time: text(sitting.time),
+          venue: text(sitting.venue),
+          mode: mode === "Online" || mode === "Hybrid" ? mode : "Offline",
+          details: text(sitting.details),
+          attendance,
+          markedOn: text(sitting.markedOn),
+          markedBy: text(sitting.markedBy),
         },
       ];
     }),
@@ -619,8 +742,15 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
       return [
         {
           id: text(certificate.id),
+          stage: (text(certificate.stage) === "synopsis"
+            ? "synopsis"
+            : "thesis") as PlagiarismStage,
           scholarIdentifier: text(certificate.scholarIdentifier),
           scholarName: text(certificate.scholarName),
+          checks: list(certificate.checks).filter(
+            (entry): entry is string => typeof entry === "string",
+          ),
+          issuedBy: text(certificate.issuedBy),
           similarity: text(certificate.similarity),
           fileName: text(certificate.fileName),
           fileData: text(certificate.fileData) || null,
@@ -693,6 +823,43 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           issuedOn: text(completion.issuedOn),
           remarks: text(completion.remarks),
           createdAt: text(completion.createdAt),
+        },
+      ];
+    }),
+    letters: list(row.letters).flatMap((item) => {
+      const letter = objectRow(item);
+      if (!letter || !text(letter.id)) return [];
+      const kind = letterKinds.find((value) => value === text(letter.kind));
+      if (!kind) return [];
+      const lines = (key: string) =>
+        list(letter[key]).flatMap((value) => (typeof value === "string" ? [value] : []));
+      return [
+        {
+          id: text(letter.id),
+          kind,
+          sourceId: text(letter.sourceId),
+          recipientRole: (text(letter.recipientRole) === "supervisor"
+            ? "supervisor"
+            : "scholar") as LetterDraft["recipientRole"],
+          recipientIdentifier: text(letter.recipientIdentifier),
+          recipientName: text(letter.recipientName),
+          refNo: text(letter.refNo),
+          issuedOn: text(letter.issuedOn),
+          title: text(letter.title),
+          toLines: lines("toLines"),
+          subject: text(letter.subject),
+          reference: text(letter.reference),
+          details: list(letter.details).flatMap((entry) => {
+            const detail = objectRow(entry);
+            return detail
+              ? [{ label: text(detail.label), value: text(detail.value) }]
+              : [];
+          }),
+          body: lines("body"),
+          closing: text(letter.closing),
+          copyTo: lines("copyTo"),
+          issuedBy: text(letter.issuedBy),
+          createdAt: text(letter.createdAt),
         },
       ];
     }),
@@ -779,6 +946,7 @@ async function loadDoctoral(): Promise<DoctoralState> {
     examinerReports: keep(browser.examinerReports, remote.examinerReports),
     vivas: keep(browser.vivas, remote.vivas),
     completions: keep(browser.completions, remote.completions),
+    letters: keep(browser.letters, remote.letters),
     detail: null,
   };
 }
@@ -833,6 +1001,7 @@ function snapshot(): Omit<DoctoralState, "detail"> {
     examinerReports: current.examinerReports ?? [],
     vivas: current.vivas ?? [],
     completions: current.completions ?? [],
+    letters: current.letters ?? [],
   };
 }
 
@@ -877,10 +1046,7 @@ export async function saveEnrollment(enrollment: Omit<CourseEnrollment, "id">) {
   return saveDoctoral(next);
 }
 
-export function standingFor(
-  standings: readonly ScholarStanding[],
-  identifier: string,
-) {
+export function standingFor(standings: readonly ScholarStanding[], identifier: string) {
   const scholar = scholarBySignIn(identifier);
   const keys = scholar
     ? [
@@ -913,6 +1079,29 @@ function semesterHeld(
   return semesters.length > 0 ? Math.max(...semesters) : 0;
 }
 
+export function scholarSemester(
+  state: Pick<DoctoralState, "standings" | "registrations">,
+  identifier: string,
+) {
+  return semesterHeld(state.standings, state.registrations, identifier);
+}
+
+export function batchSemesterFloor(
+  state: Pick<DoctoralState, "standings">,
+  batchId: string,
+) {
+  const held = state.standings
+    .filter((item) => item.batchId === batchId)
+    .map((item) => item.semester);
+  return held.length > 0 ? Math.min(...held) : 0;
+}
+
+function semesterClosed(held: number, semester: number) {
+  return held > semester
+    ? `This scholar has moved to semester ${held}. Semester ${semester} work is closed.`
+    : null;
+}
+
 export async function promoteScholars(input: {
   batchId: string;
   semester: number;
@@ -933,7 +1122,9 @@ export async function promoteScholars(input: {
   const eligible = input.scholars.filter((scholar) => {
     const current = semesterHeld(next.standings, next.registrations, scholar.identifier);
     return input.direction === "promote"
-      ? input.semester > current
+      ? current === 0
+        ? input.semester > current
+        : input.semester === current + 1
       : current > 0 && input.semester < current;
   });
   if (eligible.length === 0) {
@@ -996,6 +1187,13 @@ export async function promoteScholars(input: {
 
 export async function saveCourseWindow(window: CourseWindow) {
   const next = snapshot();
+  const floor = batchSemesterFloor(next, window.batchId);
+  if (window.enabled && window.semester < floor) {
+    return {
+      ok: false as const,
+      message: `This batch has moved to semester ${floor}. Semester ${window.semester} registration cannot be reopened.`,
+    };
+  }
   next.windows = [
     window,
     ...next.windows.filter((item) => item.batchId !== window.batchId),
@@ -1018,6 +1216,11 @@ export async function registerSubject(
   > & { code?: string; name?: string },
 ) {
   const next = snapshot();
+  const closed = semesterClosed(
+    semesterHeld(next.standings, next.registrations, registration.scholarIdentifier),
+    registration.semester,
+  );
+  if (closed) return { ok: false as const, message: closed };
   const exists = next.registrations.some(
     (item) =>
       sameId(item.scholarIdentifier, registration.scholarIdentifier) &&
@@ -1048,8 +1251,109 @@ export async function registerSubject(
     receiptName: null,
     receiptData: null,
     paymentStatus: "Pending",
+    arrear: false,
+    coeStatus: "",
+    coeForwardedOn: "",
   });
   return saveDoctoral(next);
+}
+
+export type PaperStanding = {
+  code: string;
+  name: string;
+  subjectId: string;
+  semester: number;
+  status: "Passed" | "Pending" | "Arrear";
+  /** Latest result, when one is published. */
+  outcome: ExamOutcome | null;
+  attempts: number;
+};
+
+/**
+ * Each course-work paper of a scholar, one row per subject code: passed, waiting for a result,
+ * or an arrear (latest result RA or Absent) that can be registered again.
+ */
+export function paperStandings(
+  state: Pick<DoctoralState, "registrations" | "results">,
+  identifier: string,
+): PaperStanding[] {
+  const own = state.registrations.filter(
+    (item) =>
+      sameId(item.scholarIdentifier, identifier) && item.paymentStatus !== "Returned",
+  );
+  const byCode = new Map<string, CourseRegistration[]>();
+  for (const row of own) {
+    const key = (row.code || row.name).trim().toLowerCase();
+    byCode.set(key, [...(byCode.get(key) ?? []), row]);
+  }
+  return [...byCode.values()].map((rows) => {
+    const first = rows[0];
+    const outcomes = rows.map((row) => resultFor(state, row.id)?.outcome ?? null);
+    const passed = outcomes.includes("Pass");
+    const pending = outcomes.some((outcome) => outcome === null);
+    const latest =
+      state.results
+        .filter((result) => rows.some((row) => row.id === result.registrationId))
+        .sort((left, right) => right.publishedOn.localeCompare(left.publishedOn))[0]
+        ?.outcome ?? null;
+    return {
+      code: first.code,
+      name: first.name,
+      subjectId: first.subjectId,
+      semester: Math.min(...rows.map((row) => row.semester)),
+      status: passed ? "Passed" : pending ? "Pending" : "Arrear",
+      outcome: passed ? "Pass" : latest,
+      attempts: rows.length,
+    };
+  });
+}
+
+/** Papers with an RA or Absent result that the scholar may register again. */
+export function arrearPapers(
+  state: Pick<DoctoralState, "registrations" | "results">,
+  identifier: string,
+) {
+  return paperStandings(state, identifier).filter((paper) => paper.status === "Arrear");
+}
+
+/** Marks paid registrations as sent to the Controller of Examinations. */
+export async function forwardToCoe(registrationIds: readonly string[]) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const next = snapshot();
+  const chosen = next.registrations.filter((item) => registrationIds.includes(item.id));
+  const unpaid = chosen.filter((item) => item.paymentStatus !== "Approved");
+  if (unpaid.length > 0) {
+    return {
+      ok: false as const,
+      message: `${unpaid.length} registration(s) do not have a verified fee yet.`,
+    };
+  }
+  const today = clientToday();
+  next.registrations = next.registrations.map((item) =>
+    registrationIds.includes(item.id)
+      ? { ...item, coeStatus: "Forwarded" as const, coeForwardedOn: today }
+      : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: "coursework:coe",
+      subject: "coe",
+      detail: `${chosen.length} registration(s) forwarded on ${today}`,
+    });
+    const scholars = [...new Set(chosen.map((item) => item.scholarIdentifier))];
+    for (const identifier of scholars) {
+      await pushNotice({
+        role: "scholar",
+        identifier,
+        title: "Course-work registration sent to the COE",
+        detail: "The Controller of Examinations issues the hall ticket and the results.",
+        href: "/scholar/course-work",
+      });
+    }
+  }
+  return saved;
 }
 
 export async function registerCoursePapers(input: {
@@ -1072,55 +1376,91 @@ export async function registerCoursePapers(input: {
   if (!window.lastDate || window.lastDate < clientToday()) {
     return { ok: false as const, message: "The last date for registration has passed." };
   }
-  if (input.semester > 2 && !hasArrear(next, input.scholarIdentifier)) {
-    return {
-      ok: false as const,
-      message: "Semester 3 and semester 4 are open to scholars with an arrear.",
-    };
-  }
+  const closed = semesterClosed(
+    semesterHeld(next.standings, next.registrations, input.scholarIdentifier),
+    input.semester,
+  );
+  if (closed) return { ok: false as const, message: closed };
   if (input.subjects.length < 1) {
     return { ok: false as const, message: "Add a subject." };
-  }
-  const existing = next.registrations.filter(
-    (item) =>
-      sameId(item.scholarIdentifier, input.scholarIdentifier) &&
-      item.semester === input.semester,
-  );
-  if (existing.length + input.subjects.length > 2) {
-    return {
-      ok: false as const,
-      message: "Two papers are the limit for this semester.",
-    };
   }
   const codes = input.subjects.map((subject) => subject.code.trim().toLowerCase());
   if (new Set(codes).size !== codes.length) {
     return { ok: false as const, message: "Each subject code can be entered once." };
   }
-  if (
-    codes.some((code) =>
-      existing.some((item) => item.code.trim().toLowerCase() === code && code.length > 0),
-    )
-  ) {
-    return { ok: false as const, message: "That subject is already registered." };
+  const standings = paperStandings(next, input.scholarIdentifier);
+  const standingOf = (code: string) =>
+    standings.find((paper) => paper.code.trim().toLowerCase() === code);
+  const taken = codes.find((code) => {
+    const status = standingOf(code)?.status;
+    return status === "Passed" || status === "Pending";
+  });
+  if (taken) {
+    return {
+      ok: false as const,
+      message: `${taken.toUpperCase()} is already ${standingOf(taken)?.status === "Passed" ? "passed" : "registered and waiting for the result"}.`,
+    };
+  }
+  const arrearCodes = codes.filter((code) => standingOf(code)?.status === "Arrear");
+  const fresh = input.subjects.filter(
+    (subject) => !arrearCodes.includes(subject.code.trim().toLowerCase()),
+  );
+  if (input.semester > 2 && fresh.length > 0) {
+    return {
+      ok: false as const,
+      message: "Semester 3 and semester 4 are open only to register arrear papers again.",
+    };
+  }
+  const firstAttempts = next.registrations.filter(
+    (item) =>
+      sameId(item.scholarIdentifier, input.scholarIdentifier) &&
+      item.semester === input.semester &&
+      !item.arrear &&
+      item.paymentStatus !== "Returned",
+  );
+  if (firstAttempts.length + fresh.length > 2) {
+    return {
+      ok: false as const,
+      message: "Two papers are the limit for this semester.",
+    };
   }
   const catalog = courseCatalogFor(next, {
     identifier: input.scholarIdentifier,
     semester: input.semester,
     batchId: input.batchId,
   });
-  if (catalog.length === 0) {
+  if (fresh.length > 0 && catalog.length === 0) {
     return {
       ok: false as const,
       message: "Subjects for this semester are not listed yet.",
     };
   }
   const matched = input.subjects.map((subject) => {
+    const code = subject.code.trim().toLowerCase();
+    const arrear = standingOf(code);
+    if (arrear?.status === "Arrear") {
+      return {
+        id: arrear.subjectId,
+        code: arrear.code,
+        name: arrear.name,
+        semester: arrear.semester,
+        arrear: true,
+      };
+    }
     const hit = catalog.find(
       (item) =>
-        item.code.trim().toLowerCase() === subject.code.trim().toLowerCase() &&
+        item.code.trim().toLowerCase() === code &&
         item.name.trim().toLowerCase() === subject.name.trim().toLowerCase(),
     );
-    return hit ? { id: hit.id, code: hit.code, name: hit.name } : null;
+    return hit
+      ? {
+          id: hit.id,
+          code: hit.code,
+          name: hit.name,
+          semester: input.semester,
+          arrear: false,
+        }
+      : null;
   });
   if (matched.some((item) => item === null)) {
     return { ok: false as const, message: "Select a listed subject." };
@@ -1133,7 +1473,10 @@ export async function registerCoursePapers(input: {
       subjectId: subject.id,
       scholarIdentifier: input.scholarIdentifier,
       scholarName: input.scholarName,
-      semester: input.semester,
+      semester: subject.semester,
+      arrear: subject.arrear,
+      coeStatus: "",
+      coeForwardedOn: "",
       code: subject.code,
       name: subject.name,
       amount: courseWorkFee,
@@ -1145,7 +1488,15 @@ export async function registerCoursePapers(input: {
       paymentStatus: "Pending",
     });
   }
-  return saveDoctoral(next);
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await notifyOffice({
+      title: `Course work registration · ${input.scholarName}`,
+      detail: `Semester ${input.semester}: ${input.subjects.length} paper(s). Fee receipt to verify.`,
+      href: "/admin/payments",
+    });
+  }
+  return saved;
 }
 
 export async function setCourseWorkPayment(
@@ -1160,6 +1511,12 @@ export async function setCourseWorkPayment(
   const rows = next.registrations.filter((item) => ids.has(item.id));
   if (rows.length === 0) {
     return { ok: false as const, message: "That course-work payment was not found." };
+  }
+  if (rows.some((item) => item.paymentStatus === "Approved")) {
+    return {
+      ok: false as const,
+      message: "An approved course-work payment cannot be changed.",
+    };
   }
   next.registrations = next.registrations.map((item) =>
     ids.has(item.id) ? { ...item, paymentStatus } : item,
@@ -1178,6 +1535,7 @@ export async function setCourseWorkPayment(
       identifier: first.scholarIdentifier,
       title: `Course-work fee ${paymentStatus}`,
       detail: `The research office marked the course-work fee ${paymentStatus}.`,
+      href: "/scholar/course-work",
     });
   }
   return { ok: true as const };
@@ -1212,6 +1570,27 @@ export async function publishResults(
 ) {
   const next = snapshot();
   for (const entry of entries) {
+    const passed = next.results.some(
+      (item) => item.registrationId === entry.registrationId && item.outcome === "Pass",
+    );
+    const published = next.results.some(
+      (item) =>
+        item.registrationId === entry.registrationId &&
+        item.sessionMonth === sessionMonth &&
+        item.sessionYear === sessionYear,
+    );
+    if (passed || published) {
+      const row = next.registrations.find((item) => item.id === entry.registrationId);
+      const who = row ? `${row.scholarName} · ${row.code || row.name}` : "A paper";
+      return {
+        ok: false as const,
+        message: passed
+          ? `${who} is already passed. Its result cannot be changed.`
+          : `${who} already has a result for ${sessionMonth} ${sessionYear}. Published results cannot be changed.`,
+      };
+    }
+  }
+  for (const entry of entries) {
     const recorded: CourseResult = {
       id: localId(),
       registrationId: entry.registrationId,
@@ -1235,6 +1614,24 @@ export async function publishResults(
   return saveDoctoral(next);
 }
 
+/** The guide a notice about this scholar goes to: the allotment, else the register. */
+function guideOf(identifier: string) {
+  const allocation = currentOffice()?.allocations.find((item) =>
+    sameId(item.scholarIdentifier, identifier),
+  );
+  if (allocation) return allocation.supervisorIdentifier || allocation.supervisorName;
+  const scholar = scholarBySignIn(identifier);
+  if (!scholar?.guideName.trim()) return "";
+  return supervisorForGuide(scholar.guideName)?.supervisorId || scholar.guideName;
+}
+
+const committeeNames: Record<CommitteeKind, string> = {
+  first: "First doctoral committee",
+  second: "Ph.D. confirmation",
+  third: "Third doctoral committee",
+  fourth: "Fourth doctoral committee",
+};
+
 export function committeeBlocked(
   state: Pick<DoctoralState, "committees" | "synopses" | "registrations" | "results">,
   kind: CommitteeKind,
@@ -1244,7 +1641,7 @@ export function committeeBlocked(
   if (kind === "second") {
     return confirmationReady(state, identifier)
       ? null
-      : "Semester 1 and semester 2 results have to be published first. That is four papers.";
+      : "All four course-work papers have to be cleared first: the two common papers, the major paper and the allied paper.";
   }
   if (kind === "third") {
     return latestCommittee(state, "second", identifier)?.status === "Approved"
@@ -1257,38 +1654,69 @@ export function committeeBlocked(
 }
 
 export function thesisBlocked(
-  state: Pick<DoctoralState, "committees" | "synopses">,
+  state: Pick<DoctoralState, "committees" | "synopses" | "plagiarism">,
   identifier: string,
 ) {
-  const fourth = latestCommittee(state, "fourth", identifier);
   const synopsis = latestSynopsis(state, identifier);
-  if (fourth?.status !== "Approved") {
-    return "The fourth doctoral committee has to be approved before the thesis opens.";
+  if (synopsis?.status !== "Approved") {
+    return "The synopsis has to be accepted first.";
   }
-  if (synopsis?.status !== "Approved" || !synopsis.decidedOn) {
-    return "The synopsis has to be approved first.";
+  const opens = thesisOpensOn(synopsis);
+  if (clientToday() < opens) {
+    return `The thesis opens on ${opens}, three months after the synopsis was submitted.`;
   }
-  const deadline = thesisDeadline(synopsis.decidedOn);
-  if (clientToday() > deadline) return `The thesis window closed on ${deadline}.`;
+  if (!plagiarismIssued(state, identifier, "thesis")) {
+    return "The research office has to verify the checklist and issue the thesis plagiarism certificate first.";
+  }
   return null;
 }
 
 export async function saveCommittee(
-  report: Omit<
+  report: Pick<
     CommitteeReport,
-    | "id"
-    | "status"
-    | "remarks"
-    | "decidedOn"
-    | "createdAt"
-    | "agenda"
-    | "attendance"
-    | "minutes"
-  >,
+    "kind" | "scholarIdentifier" | "scholarName" | "fileName" | "fileData" | "meetingOn"
+  > & { researchTitle?: string },
 ) {
   const next = snapshot();
+  if (!report.meetingOn) {
+    return { ok: false as const, message: "Enter the date of the meeting." };
+  }
+  const researchTitle = (report.researchTitle ?? "").trim();
+  if (
+    (report.kind === "first" || report.kind === "second") &&
+    researchTitle.length < 10
+  ) {
+    return {
+      ok: false as const,
+      message:
+        report.kind === "first"
+          ? "Enter the research title fixed in the first doctoral committee."
+          : "Enter the final research title approved in the second doctoral committee.",
+    };
+  }
+  if (synopsisSubmitted(next, report.scholarIdentifier) && researchTitle) {
+    const fixed = latestCommittee(
+      next,
+      "second",
+      report.scholarIdentifier,
+    )?.researchTitle;
+    if (fixed && fixed !== researchTitle) {
+      return {
+        ok: false as const,
+        message: "The synopsis is submitted, so the research title can no longer change.",
+      };
+    }
+  }
   const blocked = committeeBlocked(next, report.kind, report.scholarIdentifier);
   if (blocked) return { ok: false as const, message: blocked };
+  if (
+    latestCommittee(next, report.kind, report.scholarIdentifier)?.status === "Approved"
+  ) {
+    return {
+      ok: false as const,
+      message: "This doctoral committee is approved. It cannot be submitted again.",
+    };
+  }
   next.committees = next.committees.filter(
     (item) =>
       !(
@@ -1299,6 +1727,7 @@ export async function saveCommittee(
   );
   next.committees.unshift({
     ...report,
+    researchTitle,
     id: localId(),
     status: "Submitted",
     remarks: "",
@@ -1307,8 +1736,217 @@ export async function saveCommittee(
     minutes: "",
     decidedOn: "",
     createdAt: new Date().toISOString(),
+    supervisorStatus: "",
+    supervisorRemarks: "",
+    supervisorOn: "",
+    supervisorName: "",
+    decidedBy: "",
+    officeEntry: false,
   });
-  return saveDoctoral(next);
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    const guide = guideOf(report.scholarIdentifier);
+    if (guide) {
+      await pushNotice({
+        role: "supervisor",
+        identifier: guide,
+        title: `${committeeNames[report.kind]} report to recommend`,
+        detail: `${report.scholarName} uploaded the committee report.`,
+        href: committeeHref("supervisor", report.kind),
+      });
+    } else {
+      await notifyOffice({
+        title: `${committeeNames[report.kind]} report · ${report.scholarName}`,
+        detail: "No guide is on record. The report is waiting for the research office.",
+        href: committeeHref("admin", report.kind),
+      });
+    }
+  }
+  return saved;
+}
+
+/** The guide recommends the report to the Dean, or returns it to the scholar. */
+export async function recommendCommittee(
+  id: string,
+  decision: { status: "Recommended" | "Returned"; remarks: string },
+) {
+  const viewing = officeViewWriteBlock();
+  if (viewing) return viewing;
+  const signer = readPreviewSession();
+  if (!signer || signer.role !== "supervisor") {
+    return { ok: false as const, message: "Only the guide can recommend this report." };
+  }
+  const next = snapshot();
+  const current = next.committees.find((item) => item.id === id);
+  if (!current || current.status !== "Submitted" || current.supervisorStatus !== "") {
+    return { ok: false as const, message: "This report is not waiting for the guide." };
+  }
+  if (decision.status === "Returned" && decision.remarks.trim().length < 2) {
+    return { ok: false as const, message: "Enter the remarks for the scholar." };
+  }
+  next.committees = next.committees.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          supervisorStatus: decision.status,
+          supervisorRemarks: decision.remarks.trim(),
+          supervisorOn: clientToday(),
+          supervisorName: signer.name.trim() || signer.identifier,
+          ...(decision.status === "Returned"
+            ? {
+                status: "Rejected" as const,
+                remarks: `Returned by the guide: ${decision.remarks.trim()}`,
+                decidedOn: clientToday(),
+              }
+            : {}),
+        }
+      : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await pushNotice({
+      role: "scholar",
+      identifier: current.scholarIdentifier,
+      title:
+        decision.status === "Recommended"
+          ? "Committee report sent to the Dean"
+          : "Committee report returned by the guide",
+      detail: decision.remarks || "The guide reviewed your committee report.",
+      href: committeeHref("scholar", current.kind),
+    });
+    if (decision.status === "Recommended") {
+      await notifyOffice({
+        title: `${committeeNames[current.kind]} report for approval · ${current.scholarName}`,
+        detail: `Recommended by ${signer.name.trim() || signer.identifier}. Waiting for the Dean.`,
+        href: committeeHref("admin", current.kind),
+      });
+    }
+  }
+  return saved;
+}
+
+/**
+ * Office entry for scholars whose committee met before the ERP: records the meeting as held
+ * and approved, with no upload and no guide step.
+ */
+export async function recordCommitteeHeld(input: {
+  kind: CommitteeKind;
+  meetingOn: string;
+  remarks: string;
+  scholars: readonly { identifier: string; name: string }[];
+  /** Research title for each scholar, by identifier (first and second committee). */
+  titles?: Readonly<Record<string, string>>;
+}) {
+  const viewing = officeViewWriteBlock();
+  if (viewing) return viewing;
+  const signer = readPreviewSession();
+  if (
+    !signer ||
+    (signer.role !== "admin" && signer.role !== "dean" && signer.role !== "staff")
+  ) {
+    return { ok: false as const, message: "Only the research office can record this." };
+  }
+  if (!input.meetingOn)
+    return { ok: false as const, message: "Enter the date of the meeting." };
+  if (input.meetingOn > clientToday()) {
+    return { ok: false as const, message: "The meeting date cannot be in the future." };
+  }
+  const next = snapshot();
+  const fresh = input.scholars.filter(
+    (scholar) =>
+      latestCommittee(next, input.kind, scholar.identifier)?.status !== "Approved",
+  );
+  if (fresh.length === 0) {
+    return {
+      ok: false as const,
+      message: "These scholars are already recorded as completed.",
+    };
+  }
+  const by = signer.name.trim() || signer.identifier;
+  const stamp = new Date().toISOString();
+  next.committees = [
+    ...fresh.map((scholar) => ({
+      id: localId(),
+      kind: input.kind,
+      scholarIdentifier: scholar.identifier,
+      scholarName: scholar.name,
+      status: "Approved" as const,
+      fileName: "",
+      fileData: null,
+      remarks: input.remarks.trim(),
+      agenda: "",
+      attendance: "",
+      minutes: "Recorded by the research office.",
+      decidedOn: clientToday(),
+      createdAt: stamp,
+      meetingOn: input.meetingOn,
+      supervisorStatus: "" as const,
+      supervisorRemarks: "",
+      supervisorOn: "",
+      supervisorName: "",
+      decidedBy: by,
+      officeEntry: true,
+      researchTitle: input.titles?.[scholar.identifier]?.trim() ?? "",
+    })),
+    ...next.committees.filter(
+      (item) =>
+        !(
+          item.kind === input.kind &&
+          item.status !== "Approved" &&
+          fresh.some((scholar) => sameId(scholar.identifier, item.scholarIdentifier))
+        ),
+    ),
+  ];
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: `committee:recorded:${input.kind}`,
+      subject: input.kind,
+      detail: `${fresh.length} scholar(s) · meeting ${input.meetingOn} · ${by}`,
+    });
+  }
+  return saved.ok ? { ok: true as const, saved: fresh.length } : saved;
+}
+
+/** True once a synopsis is on record (submitted or approved): the title is then locked. */
+export function synopsisSubmitted(
+  state: Pick<DoctoralState, "synopses">,
+  identifier: string,
+) {
+  return state.synopses.some(
+    (item) => sameId(item.scholarIdentifier, identifier) && item.status !== "Rejected",
+  );
+}
+
+/** Office correction of the title on a committee record, allowed until the synopsis. */
+export async function setCommitteeTitle(id: string, title: string) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const next = snapshot();
+  const current = next.committees.find((item) => item.id === id);
+  if (!current)
+    return { ok: false as const, message: "That committee record was not found." };
+  if (synopsisSubmitted(next, current.scholarIdentifier)) {
+    return {
+      ok: false as const,
+      message: "The synopsis is submitted, so the research title is locked.",
+    };
+  }
+  if (title.trim().length < 10) {
+    return { ok: false as const, message: "Enter the full research title." };
+  }
+  next.committees = next.committees.map((item) =>
+    item.id === id ? { ...item, researchTitle: title.trim() } : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: `committee:title:${current.kind}`,
+      subject: current.scholarIdentifier,
+      detail: title.trim(),
+    });
+  }
+  return saved;
 }
 
 export async function decideCommittee(
@@ -1324,17 +1962,37 @@ export async function decideCommittee(
 ) {
   const next = snapshot();
   const current = next.committees.find((item) => item.id === id);
-  if (current?.status === "Approved") {
+  if (!current) return { ok: false as const, message: "That report was not found." };
+  if (current.status !== "Submitted") {
     return {
       ok: false as const,
-      message: "This report is approved and cannot be changed.",
+      message: `This report is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
   if (decision.status === "Approved" && (decision.minutes ?? "").trim().length < 2) {
     return { ok: false as const, message: "Enter the minutes before approving." };
   }
+  const signer = readPreviewSession();
+  if (!signer || (signer.role !== "dean" && signer.role !== "admin")) {
+    return {
+      ok: false as const,
+      message: "Only the Dean (or the administrator) approves this report.",
+    };
+  }
+  if (
+    decision.status === "Approved" &&
+    !current.officeEntry &&
+    current.supervisorStatus !== "Recommended"
+  ) {
+    return {
+      ok: false as const,
+      message: "The guide has to recommend the report first.",
+    };
+  }
   next.committees = next.committees.map((item) =>
-    item.id === id ? { ...item, ...decision } : item,
+    item.id === id
+      ? { ...item, ...decision, decidedBy: signer.name.trim() || signer.identifier }
+      : item,
   );
   const saved = await saveDoctoral(next);
   if (saved.ok && current) {
@@ -1349,19 +2007,125 @@ export async function decideCommittee(
       title: `Doctoral committee ${decision.status}`,
       detail:
         decision.remarks || `The committee report was ${decision.status.toLowerCase()}.`,
+      href: committeeHref("scholar", current.kind),
     });
   }
   return saved;
 }
 
-export async function issueColloquium(colloquium: Omit<Colloquium, "id" | "issuedOn">) {
+export type ColloquiumEventInput = Pick<
+  Colloquium,
+  | "name"
+  | "sitting"
+  | "year"
+  | "date"
+  | "time"
+  | "venue"
+  | "mode"
+  | "details"
+  | "scholars"
+  | "supervisors"
+>;
+
+/** Creates a colloquium event, or updates the details of one not yet marked. */
+export async function saveColloquiumEvent(input: ColloquiumEventInput, id?: string) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
   const next = snapshot();
-  next.colloquia.unshift({
+  if (id) {
+    const current = next.colloquia.find((item) => item.id === id);
+    if (!current)
+      return { ok: false as const, message: "That colloquium was not found." };
+    next.colloquia = next.colloquia.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ...input,
+            // Invitees stay as issued once attendance is marked.
+            scholars: colloquiumMarked(item) ? item.scholars : input.scholars,
+            supervisors: colloquiumMarked(item) ? item.supervisors : input.supervisors,
+          }
+        : item,
+    );
+  } else {
+    next.colloquia.unshift({
+      ...input,
+      id: localId(),
+      issuedOn: new Date().toISOString(),
+      attendance: {},
+      markedOn: "",
+      markedBy: "",
+    });
+  }
+  const saved = await saveDoctoral(next);
+  if (saved.ok && !id) {
+    await recordAudit({
+      action: "colloquium:create",
+      subject: input.name,
+      detail: `${input.sitting} ${input.year} · ${input.date}`,
+    });
+    for (const person of input.scholars) {
+      await pushNotice({
+        role: "scholar",
+        identifier: person.identifier,
+        title: `Colloquium: ${input.name}`,
+        detail: `${input.date}${input.time ? ` at ${input.time}` : ""} · ${input.venue}. Attendance is recorded.`,
+      });
+    }
+  }
+  return saved;
+}
+
+/** Records attendance after the event. The office may correct it later. */
+export async function markColloquiumAttendance(
+  id: string,
+  attendance: Record<string, ColloquiumMark>,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const signer = readPreviewSession();
+  const next = snapshot();
+  const current = next.colloquia.find((item) => item.id === id);
+  if (!current) return { ok: false as const, message: "That colloquium was not found." };
+  if (current.date && current.date > clientToday()) {
+    return {
+      ok: false as const,
+      message: "Attendance can be marked on or after the date of the colloquium.",
+    };
+  }
+  next.colloquia = next.colloquia.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          attendance,
+          markedOn: clientToday(),
+          markedBy: signer?.name || signer?.identifier || "",
+        }
+      : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: "colloquium:attendance",
+      subject: current.name,
+      detail: `${Object.values(attendance).filter((mark) => mark === "Present").length} present`,
+    });
+  }
+  return saved;
+}
+
+/** Kept for older callers: records an event with no details. */
+export async function issueColloquium(
+  colloquium: Pick<Colloquium, "name" | "sitting" | "year" | "scholars" | "supervisors">,
+) {
+  return saveColloquiumEvent({
     ...colloquium,
-    id: localId(),
-    issuedOn: new Date().toISOString(),
+    date: "",
+    time: "",
+    venue: "",
+    mode: "Offline",
+    details: "",
   });
-  return saveDoctoral(next);
 }
 
 export async function saveSynopsis(
@@ -1375,6 +2139,24 @@ export async function saveSynopsis(
     return {
       ok: false as const,
       message: "The third doctoral committee has to be approved first.",
+    };
+  }
+  if (latestSynopsis(next, synopsis.scholarIdentifier)?.status === "Approved") {
+    return {
+      ok: false as const,
+      message: "This synopsis is approved and cannot be replaced.",
+    };
+  }
+  const synopsisCertificate = plagiarismIssued(
+    next,
+    synopsis.scholarIdentifier,
+    "synopsis",
+  );
+  if (!synopsisCertificate) {
+    return {
+      ok: false as const,
+      message:
+        "The research office has to verify the checklist and issue the synopsis plagiarism certificate first.",
     };
   }
   next.synopses = next.synopses.filter(
@@ -1392,7 +2174,15 @@ export async function saveSynopsis(
     decidedOn: "",
     createdAt: new Date().toISOString(),
   });
-  return saveDoctoral(next);
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await notifyOffice({
+      title: `Synopsis submitted · ${synopsis.scholarName}`,
+      detail: "Waiting for the research office.",
+      href: "/admin/synopsis",
+    });
+  }
+  return saved;
 }
 
 export async function decideSynopsis(
@@ -1401,10 +2191,11 @@ export async function decideSynopsis(
 ) {
   const next = snapshot();
   const current = next.synopses.find((item) => item.id === id);
-  if (current?.status === "Approved") {
+  if (!current) return { ok: false as const, message: "That synopsis was not found." };
+  if (current.status !== "Submitted") {
     return {
       ok: false as const,
-      message: "This synopsis is approved and cannot be changed.",
+      message: `This synopsis is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
   next.synopses = next.synopses.map((item) =>
@@ -1422,6 +2213,7 @@ export async function decideSynopsis(
       identifier: current.scholarIdentifier,
       title: `Synopsis ${decision.status}`,
       detail: decision.remarks || `The synopsis was ${decision.status.toLowerCase()}.`,
+      href: "/scholar/synopsis",
     });
   }
   return saved;
@@ -1460,7 +2252,15 @@ export async function saveThesis(
     decidedOn: "",
     createdAt,
   });
-  return saveDoctoral(next);
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await notifyOffice({
+      title: `Thesis submitted · ${thesis.scholarName}`,
+      detail: thesis.title,
+      href: "/admin/thesis",
+    });
+  }
+  return saved;
 }
 
 export async function decideThesis(
@@ -1469,14 +2269,19 @@ export async function decideThesis(
 ) {
   const next = snapshot();
   const current = next.theses.find((item) => item.id === id);
-  if (current?.status === "Approved") {
+  if (!current) return { ok: false as const, message: "That thesis was not found." };
+  if (current.status !== "Submitted") {
     return {
       ok: false as const,
-      message: "This thesis is approved and cannot be changed.",
+      message: `This thesis is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
   if (decision.status === "Approved") {
-    const certificate = latestPlagiarism(next, current?.scholarIdentifier ?? "");
+    const certificate = latestPlagiarism(
+      next,
+      current?.scholarIdentifier ?? "",
+      "thesis",
+    );
     if (certificate?.status !== "Approved") {
       return {
         ok: false as const,
@@ -1502,6 +2307,7 @@ export async function decideThesis(
       identifier: current.scholarIdentifier,
       title: `Thesis ${decision.status}`,
       detail: decision.remarks || `The thesis was ${decision.status.toLowerCase()}.`,
+      href: "/scholar/thesis",
     });
   }
   return saved;
@@ -1510,10 +2316,15 @@ export async function decideThesis(
 export function latestPlagiarism(
   state: Pick<DoctoralState, "plagiarism">,
   identifier: string,
+  stage?: PlagiarismStage,
 ) {
   return (
     state.plagiarism
-      .filter((item) => sameId(item.scholarIdentifier, identifier))
+      .filter(
+        (item) =>
+          sameId(item.scholarIdentifier, identifier) &&
+          (stage === undefined || item.stage === stage),
+      )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null
   );
 }
@@ -1534,15 +2345,112 @@ export function latestViva(state: Pick<DoctoralState, "vivas">, identifier: stri
   );
 }
 
-export function plagiarismBlocked(
-  state: Pick<DoctoralState, "theses">,
+export function plagiarismIssued(
+  state: Pick<DoctoralState, "plagiarism">,
   identifier: string,
+  stage: PlagiarismStage,
 ) {
-  const thesis = latestThesis(state, identifier);
-  if (!thesis || thesis.status === "Rejected") {
-    return "The thesis has to be submitted first.";
+  const latest = latestPlagiarism(state, identifier, stage);
+  return latest?.status === "Approved" ? latest : null;
+}
+
+/** Why the office cannot issue the certificate for this stage yet, or null when it can. */
+export function plagiarismBlocked(
+  state: Pick<DoctoralState, "committees" | "synopses" | "plagiarism">,
+  identifier: string,
+  stage: PlagiarismStage = "thesis",
+) {
+  if (plagiarismIssued(state, identifier, stage)) {
+    return `The ${stage} plagiarism certificate is already issued.`;
   }
-  return null;
+  if (stage === "synopsis") {
+    return latestCommittee(state, "third", identifier)?.status === "Approved"
+      ? null
+      : "The third doctoral committee has to be approved first.";
+  }
+  return latestSynopsis(state, identifier)?.status === "Approved"
+    ? null
+    : "The synopsis has to be accepted first.";
+}
+
+export async function issuePlagiarism(input: {
+  stage: PlagiarismStage;
+  scholarIdentifier: string;
+  scholarName: string;
+  checks: string[];
+  similarity: string;
+  fileName: string;
+  fileData: string | null;
+  remarks: string;
+}) {
+  const viewing = officeViewWriteBlock();
+  if (viewing) return viewing;
+  const signer = readPreviewSession();
+  if (!signer || (signer.role !== "admin" && signer.role !== "dean")) {
+    return {
+      ok: false as const,
+      message: "Only the Dean or the administrator issues the plagiarism certificate.",
+    };
+  }
+  const next = snapshot();
+  const blocked = plagiarismBlocked(next, input.scholarIdentifier, input.stage);
+  if (blocked) return { ok: false as const, message: blocked };
+  const checklist: readonly string[] =
+    input.stage === "synopsis" ? synopsisChecklist : thesisChecklist;
+  const missing = checklist.filter((item) => !input.checks.includes(item));
+  if (missing.length > 0) {
+    return {
+      ok: false as const,
+      message: `Checklist not complete: ${missing.join(", ")}.`,
+    };
+  }
+  const similarity = Number(input.similarity);
+  if (
+    !input.similarity.trim() ||
+    Number.isNaN(similarity) ||
+    similarity < 0 ||
+    similarity > 100
+  ) {
+    return { ok: false as const, message: "Enter the similarity percentage (0–100)." };
+  }
+  if (!input.fileName) {
+    return { ok: false as const, message: "Attach the plagiarism report." };
+  }
+  const issuedOn = clientToday();
+  const issuedBy = signer.name.trim() || signer.identifier;
+  next.plagiarism.unshift({
+    id: localId(),
+    stage: input.stage,
+    scholarIdentifier: input.scholarIdentifier,
+    scholarName: input.scholarName,
+    checks: [...checklist],
+    issuedBy,
+    similarity: input.similarity.trim(),
+    fileName: input.fileName,
+    fileData: input.fileData,
+    status: "Approved",
+    remarks: input.remarks.trim(),
+    decidedOn: issuedOn,
+    createdAt: new Date().toISOString(),
+  });
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: `plagiarism:issued:${input.stage}`,
+      subject: input.scholarIdentifier,
+      detail: `${input.scholarName} · ${input.similarity}% · ${issuedBy}`,
+    });
+    await pushNotice({
+      role: "scholar",
+      identifier: input.scholarIdentifier,
+      title: `Plagiarism certificate issued (${input.stage})`,
+      detail:
+        input.stage === "synopsis"
+          ? "You can now submit the synopsis."
+          : "You can now submit the thesis.",
+    });
+  }
+  return saved;
 }
 
 export function reportsReady(
@@ -1582,8 +2490,8 @@ export function vivaBlocked(
   if (thesis?.status !== "Approved") {
     return "The thesis examiners have to be recorded first.";
   }
-  if (latestPlagiarism(state, identifier)?.status !== "Approved") {
-    return "The plagiarism certificate has to be approved first.";
+  if (latestPlagiarism(state, identifier, "thesis")?.status !== "Approved") {
+    return "The thesis plagiarism certificate has to be issued first.";
   }
   if (!reportsReady(state, thesis)) {
     return "All three examiner reports have to recommend the thesis on the current version.";
@@ -1603,7 +2511,14 @@ export function completionBlocked(
 export async function savePlagiarism(
   certificate: Omit<
     PlagiarismCertificate,
-    "id" | "status" | "remarks" | "decidedOn" | "createdAt"
+    | "id"
+    | "status"
+    | "remarks"
+    | "decidedOn"
+    | "createdAt"
+    | "stage"
+    | "checks"
+    | "issuedBy"
   >,
 ) {
   const next = snapshot();
@@ -1624,6 +2539,9 @@ export async function savePlagiarism(
   );
   next.plagiarism.unshift({
     ...certificate,
+    stage: "thesis",
+    checks: [],
+    issuedBy: "",
     id: localId(),
     status: "Submitted",
     remarks: "",
@@ -1639,10 +2557,11 @@ export async function decidePlagiarism(
 ) {
   const next = snapshot();
   const current = next.plagiarism.find((item) => item.id === id);
-  if (current?.status === "Approved") {
+  if (!current) return { ok: false as const, message: "That certificate was not found." };
+  if (current.status !== "Submitted") {
     return {
       ok: false as const,
-      message: "This certificate is approved and cannot be changed.",
+      message: `This certificate is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
   if (decision.status === "Rejected" && decision.remarks.trim().length < 2) {
@@ -1678,20 +2597,25 @@ export async function saveExaminerReport(
   if (thesis?.status !== "Approved") {
     return { ok: false as const, message: "Record the examiners on the thesis first." };
   }
-  if (latestPlagiarism(next, report.scholarIdentifier)?.status !== "Approved") {
+  if (latestPlagiarism(next, report.scholarIdentifier, "thesis")?.status !== "Approved") {
     return {
       ok: false as const,
       message: "The plagiarism certificate has to be approved first.",
     };
   }
-  next.examinerReports = next.examinerReports.filter(
-    (item) =>
-      !(
+  if (
+    next.examinerReports.some(
+      (item) =>
         item.thesisId === report.thesisId &&
         item.group === report.group &&
-        item.version === report.version
-      ),
-  );
+        item.version === report.version,
+    )
+  ) {
+    return {
+      ok: false as const,
+      message: `The ${report.group} examiner report for version ${report.version} is already recorded.`,
+    };
+  }
   next.examinerReports.unshift({
     ...report,
     id: localId(),
@@ -1825,6 +2749,18 @@ export async function saveCompletion(
   const next = snapshot();
   const blocked = completionBlocked(next, completion.scholarIdentifier);
   if (blocked) return { ok: false as const, message: blocked };
+  if (
+    next.completions.some(
+      (item) =>
+        item.kind === completion.kind &&
+        sameId(item.scholarIdentifier, completion.scholarIdentifier),
+    )
+  ) {
+    return {
+      ok: false as const,
+      message: `The ${completion.kind.toLowerCase()} is already issued.`,
+    };
+  }
   next.completions.unshift({
     ...completion,
     id: localId(),
@@ -1867,6 +2803,14 @@ export async function decideAccess(
   decision: { status: "Granted" | "Rejected"; remarks: string },
 ) {
   const next = snapshot();
+  const current = next.access.find((item) => item.id === id);
+  if (!current) return { ok: false as const, message: "That request was not found." };
+  if (current.status !== "Requested") {
+    return {
+      ok: false as const,
+      message: `This request is already ${current.status.toLowerCase()}.`,
+    };
+  }
   next.access = next.access.map((item) =>
     item.id === id ? { ...item, ...decision } : item,
   );
@@ -1930,27 +2874,21 @@ export function hasArrear(
   state: Pick<DoctoralState, "registrations" | "results">,
   identifier: string,
 ) {
-  return state.registrations.some((item) => {
-    if (!sameId(item.scholarIdentifier, identifier)) return false;
-    const latest = resultFor(state, item.id);
-    return latest?.outcome === "RA" || latest?.outcome === "AAA";
-  });
+  return arrearPapers(state, identifier).length > 0;
 }
 
 export function confirmationReady(
   state: Pick<DoctoralState, "registrations" | "results">,
   identifier: string,
 ) {
-  const own = state.registrations.filter((item) =>
-    sameId(item.scholarIdentifier, identifier),
+  // Four papers cleared: the two common papers (semester 1), and the major and allied papers
+  // (semester 2). A paper cleared on a later attempt counts.
+  const passed = paperStandings(state, identifier).filter(
+    (paper) => paper.status === "Passed",
   );
-  return [1, 2].every((semester) => {
-    const papers = own.filter((item) => item.semester === semester);
-    return (
-      papers.length >= 2 &&
-      papers.every((item) => resultFor(state, item.id)?.outcome === "Pass")
-    );
-  });
+  return [1, 2].every(
+    (semester) => passed.filter((paper) => paper.semester === semester).length >= 2,
+  );
 }
 
 export function latestCommittee(
@@ -2024,8 +2962,9 @@ export function addMonths(iso: string, count: number) {
   return `${date.getUTCFullYear()}-${nextMonth}-${nextDay}`;
 }
 
-export function thesisDeadline(approvedOn: string) {
-  return addMonths(approvedOn.slice(0, 10), thesisWindowMonths);
+/** The thesis can be submitted three months after the synopsis was submitted. */
+export function thesisOpensOn(synopsis: Pick<SynopsisSubmission, "createdAt">) {
+  return addMonths(synopsis.createdAt.slice(0, 10), thesisWindowMonths);
 }
 
 export function publicationEligibility(
@@ -2052,3 +2991,103 @@ export function reportTarget(studyMode: string) {
 }
 
 export { courseSemesters };
+
+/** Report periods for a scholar: from the course-work batch, else from the admission batch. */
+export function reportPeriodsFor(
+  state: Pick<DoctoralState, "enrollments" | "batches">,
+  identifier: string,
+) {
+  const enrollment = enrollmentFor(state, identifier);
+  const batch = state.batches.find((item) => item.id === enrollment?.batchId);
+  if (batch) return reportPeriods(batch.session, Number(batch.year) || 2026);
+  const scholar = scholarBySignIn(identifier);
+  const admitted = researchRegister.batches.find((item) => item.id === scholar?.batchId);
+  if (!admitted) return [];
+  return reportPeriods(parseAdmissionSession(admitted.session), admitted.year);
+}
+
+/** The letter issued for an approval, if any (the latest when it was reissued). */
+export function letterFor(
+  state: Pick<DoctoralState, "letters">,
+  kind: LetterKind,
+  sourceId: string,
+) {
+  return (
+    state.letters
+      .filter((item) => item.kind === kind && item.sourceId === sourceId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null
+  );
+}
+
+export function lettersOf(
+  state: Pick<DoctoralState, "letters">,
+  role: "scholar" | "supervisor",
+  keys: readonly string[],
+) {
+  return state.letters.filter(
+    (item) =>
+      item.recipientRole === role &&
+      keys.some((key) => key.trim() && sameId(item.recipientIdentifier, key)),
+  );
+}
+
+/** Next serial for a reference prefix in a year. */
+export function nextLetterSerial(
+  state: Pick<DoctoralState, "letters">,
+  kind: LetterKind,
+  year: string,
+) {
+  return (
+    state.letters.filter((item) => item.kind === kind && item.issuedOn.startsWith(year))
+      .length + 1
+  );
+}
+
+const letterNames: Record<LetterKind, string> = {
+  provisional: "Provisional selection letter",
+  confirmation: "Confirmation of provisional registration",
+  recognition: "Supervisor recognition letter",
+  viva: "Viva-voce communication",
+  completion: "Ph.D. completion letter",
+};
+
+export function letterName(kind: LetterKind) {
+  return letterNames[kind];
+}
+
+/** Issues (or reissues, with the corrected text) an official letter. */
+export async function issueLetter(draft: LetterDraft) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  if (!draft.refNo.trim() || !draft.issuedOn) {
+    return { ok: false as const, message: "Enter the reference number and the date." };
+  }
+  if (draft.body.join("").trim().length < 20) {
+    return { ok: false as const, message: "The letter has no text." };
+  }
+  const next = snapshot();
+  const reissue = letterFor(next, draft.kind, draft.sourceId);
+  const signer = readPreviewSession();
+  next.letters.unshift({
+    ...draft,
+    id: localId(),
+    issuedBy: signer?.name || signer?.identifier || "",
+    createdAt: new Date().toISOString(),
+  });
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: `letter:${draft.kind}${reissue ? ":reissued" : ""}`,
+      subject: draft.recipientIdentifier,
+      detail: `${draft.recipientName} · ${draft.refNo}`,
+    });
+    await pushNotice({
+      role: draft.recipientRole,
+      identifier: draft.recipientIdentifier,
+      title: `${letterNames[draft.kind]} ${reissue ? "reissued" : "issued"}`,
+      detail: `${draft.refNo} dated ${draft.issuedOn}. Download it under Approved documents.`,
+      href: `/${draft.recipientRole}/approved`,
+    });
+  }
+  return saved;
+}

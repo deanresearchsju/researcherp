@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 
 import { Contact } from "@/components/home/Contact";
 import { ContactForm } from "@/components/home/ContactForm";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Container } from "@/components/ui/container";
+import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -12,11 +14,15 @@ export const metadata: Metadata = {
 };
 
 export default function ContactPage() {
+  const copy = pageHeroes.contact;
   return (
     <>
-      <Contact />
-      <Container className="pb-16">
-        <ContactForm />
+      <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
+      <Container className="py-8 sm:py-10">
+        <div className="space-y-6">
+          <ContactForm />
+          <Contact />
+        </div>
       </Container>
     </>
   );

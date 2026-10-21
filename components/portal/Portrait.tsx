@@ -1,10 +1,4 @@
-export function Portrait({
-  src,
-  name,
-}: {
-  src: string | null;
-  name: string;
-}) {
+export function Portrait({ src, name }: { src: string | null; name: string }) {
   return (
     <figure className="w-28 shrink-0">
       <div className="aspect-[7/9] overflow-hidden rounded-xl border border-border bg-muted">
@@ -18,7 +12,9 @@ export function Portrait({
           </span>
         )}
       </div>
-      <figcaption className="mt-1 text-center text-xs text-muted-foreground">{name}</figcaption>
+      <figcaption className="mt-1 text-center text-xs text-muted-foreground">
+        {name}
+      </figcaption>
     </figure>
   );
 }

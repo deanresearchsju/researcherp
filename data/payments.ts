@@ -11,8 +11,8 @@ export const paymentKinds = [
 export type PaymentKindId = (typeof paymentKinds)[number]["id"];
 
 export const paymentCopy = {
-  title: "Payment approvals",
-  kicker: "Office",
+  title: "Fee approvals",
+  kicker: "Fee",
   detail:
     "Approve the application fee, course-work fee, and annual research fee. Approved payments show as Approved on the scholar portal.",
   approve: "Approve",

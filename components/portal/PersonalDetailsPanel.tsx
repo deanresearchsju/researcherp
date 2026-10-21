@@ -14,6 +14,8 @@ import {
 import { currentApplications, subscribeApplications } from "@/lib/records";
 import { currentAllotments, subscribeRegister } from "@/lib/register";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
+import { isOfficeRole } from "@/lib/access";
+import { useCanMenuAction } from "@/lib/use-menu-action";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
 export function PersonalDetailsPanel({
@@ -42,7 +44,13 @@ export function PersonalDetailsPanel({
     role === "scholar"
       ? scholarPersonSections(identifier, name, applications ?? [])
       : supervisorPersonSections(identifier, name, applications ?? []);
-  const canDownload = own?.role === "admin";
+  const canDownloadScholar = useCanMenuAction("export", "/admin/register");
+  const canDownloadSupervisor = useCanMenuAction("export", "/admin/supervisors");
+  // Only the research office downloads a person's file; scholars and supervisors download
+  // approved documents only.
+  const canDownload =
+    Boolean(own && isOfficeRole(own.role)) &&
+    (role === "scholar" ? canDownloadScholar : canDownloadSupervisor);
 
   return (
     <section className="mt-6 rounded-xl border border-border bg-card shadow-card">

@@ -52,13 +52,18 @@ export function ResearchAreas() {
   return (
     <section
       id="research-areas"
-      className="scroll-mt-24 py-8 sm:py-10"
+      className="scroll-mt-24 py-6 sm:py-8"
       aria-labelledby="schools-title"
     >
       <Container>
-        <SectionHeading eyebrow={copy.eyebrow} title={copy.title} id="schools-title" />
+        <SectionHeading
+          compact
+          eyebrow={copy.eyebrow}
+          title={copy.title}
+          id="schools-title"
+        />
         <div
-          className="mt-8 flex flex-wrap gap-2"
+          className="mt-4 flex flex-wrap gap-1.5"
           role="tablist"
           aria-label="Research schools"
           onKeyDown={(event) => {
@@ -79,7 +84,7 @@ export function ResearchAreas() {
                 tabIndex={selected ? 0 : -1}
                 onClick={() => setActiveId(school.id)}
                 className={cn(
-                  "rounded-xl border px-4 py-2 text-sm font-medium",
+                  "rounded-lg border px-3 py-1.5 text-xs font-medium",
                   selected
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-foreground hover:bg-muted",
@@ -94,25 +99,29 @@ export function ResearchAreas() {
           role="tabpanel"
           id={`panel-${active.id}`}
           aria-labelledby={`tab-${active.id}`}
-          className="mt-4 rounded-xl border border-border bg-card p-6 shadow-card sm:p-8"
+          className="mt-3 rounded-xl border border-border bg-card p-4 shadow-card sm:p-5"
         >
-          <div className="flex items-start gap-4">
-            <span className="grid size-12 place-items-center rounded-xl bg-accent text-accent-foreground">
-              <ActiveIcon className="size-6" aria-hidden="true" />
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 place-items-center rounded-lg bg-accent text-accent-foreground">
+              <ActiveIcon className="size-4" aria-hidden="true" />
             </span>
-            <div>
-              <h3 className="font-heading text-2xl text-primary">{active.name}</h3>
+            <div className="min-w-0">
+              <h3 className="font-heading text-lg leading-snug text-primary">
+                {active.name}
+              </h3>
               {active.summary ? (
-                <p className="mt-1 text-sm text-muted-foreground">{active.summary}</p>
+                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                  {active.summary}
+                </p>
               ) : null}
             </div>
           </div>
           {active.areas.length > 0 ? (
-            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2">
               {active.areas.map((area) => (
                 <li
                   key={area}
-                  className="rounded-xl border border-border bg-muted/60 px-4 py-3 text-sm font-medium text-foreground"
+                  className="rounded-lg border border-border bg-muted/60 px-3 py-2 text-xs font-medium leading-5 text-foreground"
                 >
                   {area}
                 </li>

@@ -5,8 +5,10 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import { PhdApplicationSheet } from "@/components/forms/scholar/PhdApplicationSheet";
+import { SupervisorApplicationSheet } from "@/components/forms/supervisor/SupervisorApplicationSheet";
 import { DeskModal, StatusPill, ViewFilesButton } from "@/components/portal/Desk";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,10 +18,23 @@ import {
   scholarApplicationEditFields,
   supervisorApplicationEditFields,
 } from "@/data/application-review";
-import { scholarPersonSections, supervisorPersonSections } from "@/lib/person-file";
 import type { AdmissionCase } from "@/lib/admission";
 import { admissionChecklist } from "@/data/admission";
-import { isStoredApplication, toJson, type StoredApplication } from "@/lib/records";
+import { downloadPhdApplications } from "@/lib/phd-application-pdf";
+import { compressImage, fileToDataUrl } from "@/lib/files";
+import {
+  attachApplicationFile,
+  isStoredApplication,
+  toJson,
+  type StoredApplication,
+} from "@/lib/records";
+import { phdReceiptFromApplication } from "@/lib/scholar-progress";
+import { supervisorReceiptFromApplication } from "@/lib/supervisor-application";
+import { downloadSupervisorApplications } from "@/lib/supervisor-application-pdf";
+import { isOfficeRole } from "@/lib/access";
+import { useCanMenuAction } from "@/lib/use-menu-action";
+import { usePreviewSession } from "@/lib/use-preview-session";
+import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database";
 
 export type ReviewAction = "Accepted" | "Approved" | "Rejected";
@@ -43,12 +58,17 @@ function textOf(value: unknown) {
 function fileFromUnknown(
   value: unknown,
 ): { fileName: string; fileData: string | null } | null {
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) return { fileName: "file", fileData: value };
+    return value.trim() ? { fileName: value.trim(), fileData: null } : null;
+  }
   const row = asRecord(value);
   if (!row) return null;
   const fileName = textOf(row.fileName) || textOf(row.name);
   const fileData = textOf(row.fileData) || textOf(row.data);
-  if (!fileName) return null;
-  return { fileName, fileData: fileData.startsWith("data:") ? fileData : null };
+  const data = fileData.startsWith("data:") ? fileData : null;
+  if (!fileName && !data) return null;
+  return { fileName: fileName || "file", fileData: data };
 }
 
 function payloadFiles(payload: Json, kind: StoredApplication["kind"]): StoredFileRow[] {
@@ -57,7 +77,9 @@ function payloadFiles(payload: Json, kind: StoredApplication["kind"]): StoredFil
   const attachments = asRecord(record.attachments);
   const images = asRecord(record.images);
   const specs = kind === "phd" ? scholarDocuments : supervisorEnclosures;
+  const seen = new Set<string>();
   const rows: StoredFileRow[] = specs.map((spec) => {
+    seen.add(spec.id);
     const stored = files ? fileFromUnknown(files[spec.id]) : null;
     const named = attachments ? textOf(attachments[spec.id]) : "";
     return {
@@ -77,6 +99,7 @@ function payloadFiles(payload: Json, kind: StoredApplication["kind"]): StoredFil
         fileName: "photograph.jpg",
         fileData: photo,
       });
+      seen.add("photo-image");
     }
     if (signature.startsWith("data:")) {
       rows.splice(1, 0, {
@@ -85,23 +108,43 @@ function payloadFiles(payload: Json, kind: StoredApplication["kind"]): StoredFil
         fileName: "signature.jpg",
         fileData: signature,
       });
+      seen.add("signature-image");
     }
   }
   const papers = asRecord(record.papers);
   if (papers) {
-    Object.entries(papers).forEach(([id, value]) => {
-      const named = typeof value === "string" ? value : fileFromUnknown(value)?.fileName;
-      const stored = fileFromUnknown(value);
-      if (!named && !stored) return;
+    Object.entries(papers).forEach(([id, value], index) => {
+      const fromFiles = files ? fileFromUnknown(files[id]) : null;
+      const fromPaper = fileFromUnknown(value);
+      const fileName =
+        fromFiles?.fileName || fromPaper?.fileName || `publication-${index + 1}`;
+      const fileData = fromFiles?.fileData ?? fromPaper?.fileData ?? null;
+      if (!fileName && !fileData) return;
+      seen.add(id);
+      seen.add(`paper-${id}`);
       rows.push({
         id: `paper-${id}`,
-        label: "Publication paper",
-        fileName: stored?.fileName || named || "paper",
-        fileData: stored?.fileData ?? null,
+        label: `Publication paper ${index + 1}`,
+        fileName,
+        fileData,
       });
     });
   }
-  return rows.filter((row) => row.fileName);
+  if (files) {
+    Object.entries(files).forEach(([id, value]) => {
+      if (seen.has(id) || id === "photo" || id === "signature") return;
+      const stored = fileFromUnknown(value);
+      if (!stored) return;
+      seen.add(id);
+      rows.push({
+        id,
+        label: stored.fileName,
+        fileName: stored.fileName,
+        fileData: stored.fileData,
+      });
+    });
+  }
+  return rows.filter((row) => row.fileName || row.fileData);
 }
 
 function publicationsOf(payload: Json) {
@@ -245,7 +288,6 @@ export function ApplicationViewer({
   admission,
   onClose,
   review,
-  personId,
   editable,
   saving,
   onSave,
@@ -262,14 +304,94 @@ export function ApplicationViewer({
   saving?: boolean;
   onSave?: (next: { applicantName: string; email: string; payload: Json }) => void;
 }) {
-  const lookupId = personId || application.email || application.applicationNo;
+  const canDownload = useCanMenuAction("export");
   const canEdit = Boolean(editable && onSave && isStoredApplication(application.id));
-  const sections =
-    application.kind === "phd"
-      ? scholarPersonSections(lookupId, application.applicantName, [application])
-      : supervisorPersonSections(lookupId, application.applicantName, [application]);
-  const files = payloadFiles(application.payload, application.kind);
+  const isPhd = application.kind === "phd";
+  const isSupervisor = application.kind === "supervisor";
+  const viewer = usePreviewSession();
+  // Scholars and supervisors only read here; downloads stay with the research office.
+  const officeViewer = viewer ? isOfficeRole(viewer.role) : false;
+  const canUpload =
+    (viewer?.role === "admin" || viewer?.role === "staff") &&
+    isStoredApplication(application.id);
+  const [uploaded, setUploaded] = useState<
+    Record<string, { fileName: string; fileData: string }>
+  >({});
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const allFiles = payloadFiles(application.payload, application.kind);
+  const photoRow = allFiles.find((row) => row.id === "photo-image");
+  const signatureRow = allFiles.find((row) => row.id === "signature-image");
+  const identityRows: StoredFileRow[] = isPhd
+    ? [
+        {
+          id: "photo",
+          label: applicationReviewCopy.photo,
+          fileName: photoRow?.fileName ?? "photograph",
+          fileData: photoRow?.fileData ?? null,
+        },
+        {
+          id: "signature",
+          label: applicationReviewCopy.signature,
+          fileName: signatureRow?.fileName ?? "signature",
+          fileData: signatureRow?.fileData ?? null,
+        },
+      ]
+    : [];
+  const files = [
+    ...identityRows,
+    ...allFiles.filter(
+      (row) =>
+        row.id !== "photo-image" &&
+        row.id !== "signature-image" &&
+        row.id !== "photo" &&
+        row.id !== "signature",
+    ),
+  ].map((row) => (uploaded[row.id] ? { ...row, ...uploaded[row.id] } : row));
+
+  async function uploadCopy(row: StoredFileRow, file: File) {
+    const image = row.id === "photo" || row.id === "signature";
+    const types = image
+      ? ["image/jpeg", "image/png"]
+      : ["application/pdf", "image/jpeg", "image/png"];
+    if (!types.includes(file.type)) {
+      setUploadNotice(image ? "Use a JPG or PNG image." : "Use a PDF, JPG or PNG file.");
+      return;
+    }
+    if (!image && file.size > 5 * 1024 * 1024) {
+      setUploadNotice("The file must be 5 MB or smaller.");
+      return;
+    }
+    setUploadingId(row.id);
+    setUploadNotice(null);
+    try {
+      const prepared = image ? await compressImage(file, 300 * 1024) : file;
+      const fileData = await fileToDataUrl(prepared);
+      const saved = await attachApplicationFile(
+        application.kind,
+        application.id,
+        row.id,
+        file.name,
+        fileData,
+      );
+      if (!saved.ok) {
+        setUploadNotice(saved.message);
+        return;
+      }
+      setUploaded((current) => ({
+        ...current,
+        [row.id]: { fileName: file.name, fileData },
+      }));
+      setUploadNotice(`${row.label} saved with the application.`);
+    } catch {
+      setUploadNotice("The file could not be read. Try another copy.");
+    } finally {
+      setUploadingId(null);
+    }
+  }
   const publications = publicationsOf(application.payload);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
   const [action, setAction] = useState<ReviewAction | null>(null);
   const form = useForm<CommentsValues>({
     resolver: zodResolver(commentsSchema),
@@ -295,28 +417,54 @@ export function ApplicationViewer({
           busy={Boolean(saving)}
           onSave={onSave}
         />
-      ) : (
-        <>
-          {editable && !isStoredApplication(application.id) ? (
-            <p className="text-sm text-muted-foreground">
-              {applicationReviewCopy.noStored}
-            </p>
-          ) : null}
-          {sections.map((section) => (
-            <section key={section.heading}>
-              <h3 className="font-semibold text-primary">{section.heading}</h3>
-              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-                {section.pairs.map((pair) => (
-                  <div key={`${section.heading}-${pair.label}`}>
-                    <dt className="text-xs text-muted-foreground">{pair.label}</dt>
-                    <dd className="text-sm">{pair.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-        </>
-      )}
+      ) : null}
+      {editable && !isStoredApplication(application.id) ? (
+        <p className="text-sm text-muted-foreground">{applicationReviewCopy.noStored}</p>
+      ) : null}
+      {isPhd || isSupervisor ? (
+        <div>
+          <div className="no-print mb-3 flex flex-wrap items-center gap-2">
+            {canDownload && officeViewer ? (
+              <Button
+                type="button"
+                variant="gold"
+                size="sm"
+                disabled={pdfBusy}
+                onClick={() => {
+                  setPdfBusy(true);
+                  setPdfNotice(null);
+                  const job = isPhd
+                    ? downloadPhdApplications([phdReceiptFromApplication(application)])
+                    : downloadSupervisorApplications([
+                        supervisorReceiptFromApplication(application),
+                      ]);
+                  void job
+                    .catch(() => {
+                      setPdfNotice(applicationReviewCopy.downloadFailed);
+                    })
+                    .finally(() => setPdfBusy(false));
+                }}
+              >
+                {pdfBusy
+                  ? applicationReviewCopy.downloadingPdf
+                  : applicationReviewCopy.downloadPdf}
+              </Button>
+            ) : null}
+            {pdfNotice ? (
+              <p role="status" className="text-sm text-secondary">
+                {pdfNotice}
+              </p>
+            ) : null}
+          </div>
+          {isPhd ? (
+            <PhdApplicationSheet receipt={phdReceiptFromApplication(application)} />
+          ) : (
+            <SupervisorApplicationSheet
+              receipt={supervisorReceiptFromApplication(application)}
+            />
+          )}
+        </div>
+      ) : null}
       {admission ? (
         <section>
           <h3 className="font-semibold text-primary">{applicationReviewCopy.payment}</h3>
@@ -335,7 +483,7 @@ export function ApplicationViewer({
           ) : null}
         </section>
       ) : null}
-      {publications.length > 0 ? (
+      {publications.length > 0 && !isSupervisor ? (
         <section>
           <h3 className="font-semibold text-primary">
             {applicationReviewCopy.publications}
@@ -351,22 +499,72 @@ export function ApplicationViewer({
         <h3 className="font-semibold text-primary">
           {applicationReviewCopy.certificates}
         </h3>
+        {uploadNotice ? (
+          <p role="status" className="mt-2 text-sm text-secondary">
+            {uploadNotice}
+          </p>
+        ) : null}
         <ul className="mt-2 space-y-2">
           {files.map((file) => (
             <li
               key={file.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3 text-sm"
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-2 rounded-lg p-3 text-sm",
+                file.fileData
+                  ? "bg-muted/50"
+                  : "border border-secondary/25 bg-secondary/5",
+              )}
             >
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold">{file.label}</p>
-                <p className="text-muted-foreground">{file.fileName}</p>
+                <p className="truncate text-muted-foreground">{file.fileName}</p>
                 {!file.fileData ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs font-medium text-secondary">
                     {applicationReviewCopy.noFile}
                   </p>
                 ) : null}
               </div>
-              <ViewFilesButton fileName={file.fileName} data={file.fileData} />
+              <div className="flex flex-wrap items-center gap-2">
+                {file.fileData ? (
+                  <ViewFilesButton
+                    fileName={file.fileName || file.label}
+                    data={file.fileData}
+                  />
+                ) : null}
+                {canUpload ? (
+                  <label
+                    className={buttonVariants({
+                      size: "sm",
+                      variant: file.fileData ? "ghost" : "outline",
+                      className: cn(
+                        "cursor-pointer",
+                        uploadingId === file.id && "pointer-events-none opacity-60",
+                      ),
+                    })}
+                  >
+                    {uploadingId === file.id
+                      ? "Saving…"
+                      : file.fileData
+                        ? "Replace"
+                        : "Upload copy"}
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept={
+                        file.id === "photo" || file.id === "signature"
+                          ? "image/jpeg,image/png"
+                          : "application/pdf,image/jpeg,image/png"
+                      }
+                      disabled={uploadingId !== null}
+                      onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen) void uploadCopy(file, chosen);
+                      }}
+                    />
+                  </label>
+                ) : null}
+              </div>
             </li>
           ))}
           {admission

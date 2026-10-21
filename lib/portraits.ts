@@ -5,8 +5,6 @@ export type PortraitIndex = {
   byKey: Record<string, string>;
 };
 
-const empty: PortraitIndex = { byKey: {} };
-
 let memory: PortraitIndex | null = null;
 let loading = false;
 const listeners = new Set<() => void>();

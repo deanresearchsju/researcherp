@@ -17,7 +17,7 @@ export const faqs: FaqItem[] = [
     id: "documents",
     question: "Which documents are required?",
     answer:
-      "Prepare a passport photograph (below 100 KB), a signature (below 100 KB), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a SET or NET certificate if you hold one. PDF files must be below 250 KB.",
+      "Prepare a passport photograph (JPG or PNG, up to 200 KB, 3.5 × 4.5 cm), a signature (JPG or PNG, up to 100 KB), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a NET / SET / SLET certificate if you are qualified. PDF files must be 1 MB or smaller.",
   },
   {
     id: "duration",

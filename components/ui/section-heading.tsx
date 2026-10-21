@@ -7,6 +7,7 @@ type SectionHeadingProps = {
   align?: "left" | "center";
   id?: string;
   light?: boolean;
+  compact?: boolean;
 };
 
 export function SectionHeading({
@@ -16,25 +17,32 @@ export function SectionHeading({
   align = "left",
   id,
   light = false,
+  compact = false,
 }: SectionHeadingProps) {
   return (
     <div className={cn(align === "center" && "mx-auto max-w-2xl text-center")}>
       <p
         className={cn(
-          "text-xs font-semibold tracking-[0.22em] uppercase",
+          "font-semibold tracking-[0.18em] uppercase",
+          compact ? "text-[0.65rem]" : "text-xs tracking-[0.22em]",
           light ? "text-accent" : "text-secondary",
         )}
       >
         {eyebrow}
       </p>
       <div
-        className={cn("mt-3 h-px w-12 bg-accent", align === "center" && "mx-auto")}
+        className={cn(
+          "bg-accent",
+          compact ? "mt-1.5 h-px w-8" : "mt-3 h-px w-12",
+          align === "center" && "mx-auto",
+        )}
         aria-hidden="true"
       />
       <h2
         id={id}
         className={cn(
-          "mt-4 font-heading text-3xl leading-tight font-semibold sm:text-4xl",
+          "font-heading leading-tight font-semibold",
+          compact ? "mt-2 text-xl sm:text-2xl" : "mt-4 text-3xl sm:text-4xl",
           light ? "text-white" : "text-primary",
         )}
       >
@@ -43,7 +51,7 @@ export function SectionHeading({
       {description ? (
         <p
           className={cn(
-            "mt-4 text-base leading-7",
+            compact ? "mt-2 text-sm leading-5" : "mt-4 text-base leading-7",
             light ? "text-white/80" : "text-muted-foreground",
           )}
         >

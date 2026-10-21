@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -10,14 +11,17 @@ import { ApplicationsClosed } from "@/components/forms/ApplicationsClosed";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { scholarFormCopy } from "@/data/forms";
 import { phdWindowCopy } from "@/data/home";
-import { schools } from "@/data/schools";
 import { university } from "@/lib/constants";
-import { currentOffice, subscribeOffice } from "@/lib/office";
-
-const departments = schools.map((school) => school.name);
+import {
+  currentOffice,
+  defaultSiteSettings,
+  formatPhdSession,
+  parsePhdSession,
+  subscribeOffice,
+} from "@/lib/office";
+import { hasAnyOpenVacancy, loadVacancies, type Vacancy } from "@/lib/vacancies";
 
 const startSchema = z.object({
   mobile: z
@@ -25,29 +29,40 @@ const startSchema = z.object({
     .trim()
     .regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number."),
   email: z.string().trim().email("Enter a valid email address."),
-  department: z.string().refine((value) => departments.includes(value), {
-    message: "Select a department.",
-  }),
 });
 
-export type ApplicationStartValues = z.infer<typeof startSchema>;
+type StartFields = z.infer<typeof startSchema>;
+
+export type ApplicationStartValues = StartFields & {
+  vacancies: Vacancy[];
+};
 
 export function ApplicationStart({
   onApply,
 }: {
   onApply: (values: ApplicationStartValues) => Promise<void>;
 }) {
-  const form = useForm<ApplicationStartValues>({
+  const form = useForm<StartFields>({
     resolver: zodResolver(startSchema),
-    defaultValues: { mobile: "", email: "", department: "" },
+    defaultValues: { mobile: "", email: "" },
   });
   const [busy, setBusy] = useState(false);
+  const [vacancyError, setVacancyError] = useState<string | null>(null);
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  const settings = office?.settings ?? defaultSiteSettings;
+  const session = parsePhdSession(settings.admissionSession);
+  const sessionLabel = formatPhdSession(session.month, session.year);
 
-  async function submit(values: ApplicationStartValues) {
+  async function submit(values: StartFields) {
     setBusy(true);
+    setVacancyError(null);
     try {
-      await onApply(values);
+      const loaded = await loadVacancies();
+      if (!hasAnyOpenVacancy(loaded.rows)) {
+        setVacancyError(scholarFormCopy.noVacancy);
+        return;
+      }
+      await onApply({ ...values, vacancies: loaded.rows });
     } finally {
       setBusy(false);
     }
@@ -55,7 +70,7 @@ export function ApplicationStart({
   if (office && !office.settings.phdOpen) {
     return (
       <ApplicationsClosed
-        title="Ph.D. applications are closed"
+        title="Admissions are currently closed"
         detail={
           office.settings.deadline.trim()
             ? `${phdWindowCopy.closedDetail} ${office.settings.deadlineLabel} ${office.settings.deadline}.`
@@ -74,11 +89,13 @@ export function ApplicationStart({
       <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
         {university.researchOffice}
       </p>
-      <h1 className="mt-2 font-heading text-3xl text-primary">Apply for Ph.D.</h1>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {scholarFormCopy.startHint}
-      </p>
+      <h1 className="mt-2 font-heading text-3xl text-primary">
+        {scholarFormCopy.pageTitle}
+      </h1>
       <div className="mt-6 space-y-4">
+        <FormField label={scholarFormCopy.session} htmlFor="start-session" required>
+          <Input id="start-session" readOnly value={sessionLabel} />
+        </FormField>
         <FormField
           label="Mobile number"
           htmlFor="start-mobile"
@@ -105,22 +122,12 @@ export function ApplicationStart({
             {...form.register("email")}
           />
         </FormField>
-        <FormField
-          label="Department"
-          htmlFor="start-department"
-          required
-          error={form.formState.errors.department?.message}
-        >
-          <NativeSelect id="start-department" {...form.register("department")}>
-            <option value="">Select a department</option>
-            {departments.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </NativeSelect>
-        </FormField>
       </div>
+      {vacancyError ? (
+        <p role="alert" className="mt-4 text-sm font-semibold text-secondary">
+          {vacancyError}
+        </p>
+      ) : null}
       <Button
         type="submit"
         variant="gold"
@@ -130,6 +137,11 @@ export function ApplicationStart({
       >
         {busy ? "Opening…" : "Apply"}
       </Button>
+      <p className="mt-4 text-sm">
+        <Link href="/apply/status" className="font-semibold text-secondary underline">
+          {scholarFormCopy.track}
+        </Link>
+      </p>
     </form>
   );
 }

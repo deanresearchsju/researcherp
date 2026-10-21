@@ -5,7 +5,8 @@ import {
   type RecordStatus,
   type ScholarRecordKind,
 } from "@/data/scholar-records";
-import { pushNotice, recordAudit } from "@/lib/audit";
+import { notifyOffice, pushNotice, recordAudit } from "@/lib/audit";
+import { readPreviewSession } from "@/lib/auth";
 import {
   admissionSessions,
   admissionSessionsCopy,
@@ -18,14 +19,17 @@ import { toJson } from "@/lib/records";
 import { ensureAdmission } from "@/lib/admission";
 import {
   currentRegister,
+  exitFor,
+  isPassedOut,
   loadRegister,
+  sameGuide,
   scholarBySignIn,
   scholarSignInId,
   scholarsGuidedBy,
   vacancyBeforeAllotment,
 } from "@/lib/register";
 import { syncAllottedVacancies } from "@/lib/vacancies";
-import type { Json } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 
 export const officeMigrationHint =
   "Open the Supabase SQL editor for this project and run supabase/migrations/20261013180000_office_controls.sql. Until then, these records stay in this browser.";
@@ -80,6 +84,25 @@ export function formatPhdSession(month: string, year: string) {
   return `${session} ${year.trim()}`.trim();
 }
 
+export function openPhdSession() {
+  return parsePhdSession(
+    currentOffice()?.settings.admissionSession ?? defaultSiteSettings.admissionSession,
+  );
+}
+
+export function matchesOpenPhdSession(session: string, year: string) {
+  const open = openPhdSession();
+  return session.trim() === open.month && year.trim() === open.year;
+}
+
+export function payloadMatchesOpenPhdSession(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as Record<string, unknown>;
+  const session = typeof record.session === "string" ? record.session : "";
+  const year = typeof record.year === "string" ? record.year : "";
+  return matchesOpenPhdSession(session, year);
+}
+
 export function formatPhdWindowLine(settings: SiteSettings) {
   const parts: string[] = [
     settings.phdOpen ? settings.admissionLabel : "Admissions closed",
@@ -104,7 +127,7 @@ export type Allocation = {
 };
 
 export type RacNominee = {
-  key: "internal-1" | "internal-2" | "external-1" | "external-2";
+  key: (typeof nomineeKeys)[number];
   side: "internal" | "external";
   name: string;
   designation: string;
@@ -130,6 +153,9 @@ export type RacProposal = {
   agenda: string;
   attendance: string;
   minutes: string;
+  reason: string;
+  decidedOn: string;
+  decidedBy: string;
   createdAt: string;
 };
 
@@ -188,13 +214,24 @@ export function scholarsStillGuidedBy(
   });
 }
 
+function racDecidedOn(proposal: RacProposal) {
+  return proposal.decidedOn || proposal.createdAt.slice(0, 10);
+}
+
+function latestApprovedRac(proposals: readonly RacProposal[], scholarIdentifier: string) {
+  return (
+    proposals
+      .filter(
+        (item) =>
+          item.status === "Approved" && sameId(item.scholarIdentifier, scholarIdentifier),
+      )
+      .sort((left, right) => racDecidedOn(right).localeCompare(racDecidedOn(left)))[0] ??
+    null
+  );
+}
+
 export function presentRac(proposals: RacProposal[], scholarIdentifier: string) {
-  const latest = proposals
-    .filter(
-      (item) =>
-        item.status === "Approved" && sameId(item.scholarIdentifier, scholarIdentifier),
-    )
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const latest = latestApprovedRac(proposals, scholarIdentifier);
   if (!latest) return null;
   const internal = latest.nominees.find((item) => item.key === latest.selectedInternal);
   const external = latest.nominees.find((item) => item.key === latest.selectedExternal);
@@ -203,11 +240,90 @@ export function presentRac(proposals: RacProposal[], scholarIdentifier: string) 
     guide: latest.supervisorName,
     internal,
     external,
-    approvedOn: latest.createdAt,
+    approvedOn: racDecidedOn(latest),
+    selectedBy: latest.decidedBy,
   };
 }
 
-const nomineeKeys = ["internal-1", "internal-2", "external-1", "external-2"] as const;
+/** Months a constituted RAC must stand before the supervisor can ask to change it. */
+export const racChangeGapMonths = 6;
+
+function addMonthsIso(iso: string, months: number) {
+  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + months, day));
+  return date.toISOString().slice(0, 10);
+}
+
+export type RacStanding = {
+  /** Approved committee in force, if any. */
+  approved: RacProposal | null;
+  /** Nomination waiting for the Dean, if any. */
+  pending: RacProposal | null;
+  /** Kind of request the supervisor may send now, or null when none is allowed. */
+  canRequest: RacProposal["kind"] | null;
+  /** Earliest date a reconstitution may be requested. */
+  changeOpensOn: string | null;
+  /** Why no request is allowed, when canRequest is null. */
+  blocked: string | null;
+};
+
+export function racStanding(
+  proposals: readonly RacProposal[],
+  scholarIdentifier: string,
+  today = new Date().toISOString().slice(0, 10),
+): RacStanding {
+  const approved = latestApprovedRac(proposals, scholarIdentifier);
+  const pending =
+    proposals.find(
+      (item) =>
+        item.status === "Submitted" && sameId(item.scholarIdentifier, scholarIdentifier),
+    ) ?? null;
+  const changeOpensOn = approved
+    ? addMonthsIso(racDecidedOn(approved), racChangeGapMonths)
+    : null;
+  if (pending) {
+    return {
+      approved,
+      pending,
+      canRequest: null,
+      changeOpensOn,
+      blocked: "A nomination is waiting for the Dean's selection.",
+    };
+  }
+  if (!approved) {
+    return {
+      approved,
+      pending,
+      canRequest: "constitution",
+      changeOpensOn,
+      blocked: null,
+    };
+  }
+  if (changeOpensOn && today < changeOpensOn) {
+    return {
+      approved,
+      pending,
+      canRequest: null,
+      changeOpensOn,
+      blocked: `The RAC was constituted on ${racDecidedOn(approved)}. A change can be requested from ${changeOpensOn}.`,
+    };
+  }
+  return {
+    approved,
+    pending,
+    canRequest: "reconstitution",
+    changeOpensOn,
+    blocked: null,
+  };
+}
+
+const nomineeKeys = [
+  "internal-1",
+  "internal-2",
+  "external-1",
+  "external-2",
+  "external-3",
+] as const;
 
 function isNominee(value: unknown): value is RacNominee {
   if (!value || typeof value !== "object") return false;
@@ -264,6 +380,9 @@ function readProposals(): RacProposal[] {
     agenda: item.agenda ?? "",
     attendance: item.attendance ?? "",
     minutes: item.minutes ?? "",
+    reason: item.reason ?? "",
+    decidedOn: item.decidedOn ?? "",
+    decidedBy: item.decidedBy ?? "",
   }));
 }
 
@@ -482,6 +601,9 @@ async function loadOffice(): Promise<OfficeState> {
                 agenda: typeof row.agenda === "string" ? row.agenda : "",
                 attendance: typeof row.attendance === "string" ? row.attendance : "",
                 minutes: typeof row.minutes === "string" ? row.minutes : "",
+                reason: typeof row.reason === "string" ? row.reason : "",
+                decidedOn: typeof row.decided_on === "string" ? row.decided_on : "",
+                decidedBy: typeof row.decided_by === "string" ? row.decided_by : "",
                 createdAt: row.created_at,
               },
             ];
@@ -535,6 +657,34 @@ async function refreshVacancyCounts(names: readonly string[]) {
   await syncAllottedVacancies(memory?.allocations ?? readAllocations(), names);
 }
 
+async function noticeRacNeeded(
+  allocation: Pick<
+    Allocation,
+    "scholarIdentifier" | "scholarName" | "supervisorIdentifier" | "supervisorName"
+  >,
+  previous: Allocation | undefined,
+) {
+  if (
+    previous &&
+    sameId(previous.supervisorIdentifier, allocation.supervisorIdentifier)
+  ) {
+    return;
+  }
+  const standing = racStanding(
+    memory?.proposals ?? readProposals(),
+    allocation.scholarIdentifier,
+  );
+  if (standing.approved || standing.pending) return;
+  await pushNotice({
+    role: "supervisor",
+    identifier: allocation.supervisorIdentifier,
+    title: `New scholar · ${allocation.scholarName}`,
+    detail:
+      "No RAC is constituted for this scholar yet. Open RAC proposal to initiate it.",
+    href: "/supervisor/rac",
+  });
+}
+
 export async function saveAllocation(
   allocation: Omit<Allocation, "id"> & { id?: string },
 ) {
@@ -543,9 +693,44 @@ export async function saveAllocation(
     sameId(item.scholarIdentifier, allocation.scholarIdentifier),
   );
   const register = currentRegister() ?? (await loadRegister());
+  if (isPassedOut(allocation.scholarIdentifier, allocation.scholarName)) {
+    return {
+      ok: false as const,
+      message: `${allocation.scholarName} has passed out and cannot be allotted.`,
+    };
+  }
+  const staying = Boolean(
+    previous && sameGuide(previous.supervisorName, allocation.supervisorName),
+  );
+  if (!staying && exitFor([allocation.supervisorIdentifier], allocation.supervisorName)) {
+    return {
+      ok: false as const,
+      message: `${allocation.supervisorName} is leaving and cannot take new scholars.`,
+    };
+  }
   const room = vacancyBeforeAllotment(allocation, existing, register.quotas);
   if (room && !room.keeping && room.vacancy < 1) {
     return { ok: false as const, message: `${room.supervisor.name} has no vacancy.` };
+  }
+  if (!room && !staying) {
+    // Supervisor approved after the register was built: the approved number is the limit.
+    const quota = register.quotas.find((item) =>
+      sameGuide(item.name, allocation.supervisorName),
+    );
+    if (quota) {
+      const load = existing.filter(
+        (item) =>
+          sameGuide(item.supervisorName, allocation.supervisorName) &&
+          !sameId(item.scholarIdentifier, allocation.scholarIdentifier) &&
+          !isPassedOut(item.scholarIdentifier, item.scholarName),
+      ).length;
+      if (load >= quota.quota) {
+        return {
+          ok: false as const,
+          message: `${allocation.supervisorName} has no vacancy.`,
+        };
+      }
+    }
   }
   const alreadyAllotted = existing.some((item) =>
     sameId(item.scholarIdentifier, allocation.scholarIdentifier),
@@ -583,6 +768,7 @@ export async function saveAllocation(
         allocation.supervisorName,
         previous?.supervisorName ?? "",
       ]);
+      await noticeRacNeeded(allocation, previous);
       return { ok: true as const };
     }
   }
@@ -599,6 +785,7 @@ export async function saveAllocation(
   window.localStorage.setItem(storageKeys.allocations, JSON.stringify(all));
   await refreshOffice();
   await refreshVacancyCounts([allocation.supervisorName, previous?.supervisorName ?? ""]);
+  await noticeRacNeeded(allocation, previous);
   return { ok: true as const };
 }
 
@@ -613,54 +800,166 @@ export async function removeAllocation(allocation: Allocation) {
   await refreshVacancyCounts([allocation.supervisorName]);
 }
 
-export async function saveRacProposal(
-  proposal: Omit<
-    RacProposal,
-    | "id"
-    | "createdAt"
-    | "status"
-    | "selectedInternal"
-    | "selectedExternal"
-    | "remarks"
-    | "agenda"
-    | "attendance"
-    | "minutes"
-  >,
-) {
+export type RacNomination = Pick<
+  RacProposal,
+  | "kind"
+  | "scholarIdentifier"
+  | "scholarName"
+  | "supervisorIdentifier"
+  | "supervisorName"
+  | "nominees"
+  | "reason"
+>;
+
+/** Internal members named per nomination; the Dean selects one. */
+export const racInternalCount = 2;
+/** External panel candidates named per nomination; the Dean selects one. */
+export const racExternalCount = 3;
+
+function nominationProblem(proposal: RacNomination) {
+  const internal = proposal.nominees.filter((item) => item.side === "internal");
+  const external = proposal.nominees.filter((item) => item.side === "external");
+  if (internal.length !== racInternalCount) {
+    return `Name ${racInternalCount} internal members.`;
+  }
+  if (external.length !== racExternalCount) {
+    return `Name ${racExternalCount} candidates for the external panel.`;
+  }
+  const names = proposal.nominees.map((item) => item.name.trim().toLowerCase());
+  if (new Set(names).size !== names.length) {
+    return "Each member can be named once.";
+  }
+  if (proposal.kind === "reconstitution" && proposal.reason.trim().length < 10) {
+    return "Give the reason for changing the RAC.";
+  }
+  return null;
+}
+
+async function firstSaved(attempts: readonly (() => PromiseLike<{ error: unknown }>)[]) {
+  for (const attempt of attempts) {
+    const { error } = await attempt();
+    if (!error) return true;
+  }
+  return false;
+}
+
+export async function saveRacProposal(proposal: RacNomination) {
   const blocked = officeViewWriteBlock();
   if (blocked) return blocked;
-  const supabase = createSupabase();
-  if (supabase && memory && !memory.detail) {
-    const { error } = await supabase.from("rac_proposals").insert({
-      kind: proposal.kind,
-      scholar_identifier: proposal.scholarIdentifier,
-      scholar_name: proposal.scholarName,
-      supervisor_identifier: proposal.supervisorIdentifier,
-      supervisor_name: proposal.supervisorName,
-      nominees: toJson(proposal.nominees),
-    });
-    if (!error) {
-      await refreshOffice();
-      return { ok: true as const };
+  const standing = racStanding(
+    memory?.proposals ?? readProposals(),
+    proposal.scholarIdentifier,
+  );
+  const pending = standing.pending;
+  const editing =
+    pending !== null &&
+    sameId(pending.supervisorIdentifier, proposal.supervisorIdentifier);
+  if (pending && !editing) {
+    return {
+      ok: false as const,
+      message:
+        "Another supervisor's nomination for this scholar is waiting for the Dean.",
+    };
+  }
+  if (editing && pending && proposal.kind !== pending.kind) {
+    return {
+      ok: false as const,
+      message: `The waiting nomination is a ${pending.kind}. Edit it as a ${pending.kind}.`,
+    };
+  }
+  if (!editing) {
+    if (!standing.canRequest) {
+      return { ok: false as const, message: standing.blocked ?? "RAC is closed." };
+    }
+    if (proposal.kind !== standing.canRequest) {
+      return {
+        ok: false as const,
+        message:
+          standing.canRequest === "constitution"
+            ? "The RAC is not constituted yet. Submit a constitution first."
+            : "The RAC is already constituted. Submit a reconstitution to change it.",
+      };
     }
   }
-  const all = readProposals();
-  all.unshift({
-    ...proposal,
-    id: `local-${crypto.randomUUID()}`,
-    status: "Submitted",
-    selectedInternal: "",
-    selectedExternal: "",
-    remarks: "",
-    agenda: "",
-    attendance: "",
-    minutes: "",
-    createdAt: new Date().toISOString(),
+  const problem = nominationProblem(proposal);
+  if (problem) return { ok: false as const, message: problem };
+
+  const supabase = createSupabase();
+  let stored = false;
+  if (supabase && memory && !memory.detail) {
+    if (editing && pending && !pending.id.startsWith("local-")) {
+      stored = await firstSaved([
+        () =>
+          supabase
+            .from("rac_proposals")
+            .update({ nominees: toJson(proposal.nominees), reason: proposal.reason })
+            .eq("id", pending.id)
+            .eq("status", "Submitted"),
+        () =>
+          supabase
+            .from("rac_proposals")
+            .update({ nominees: toJson(proposal.nominees) })
+            .eq("id", pending.id)
+            .eq("status", "Submitted"),
+      ]);
+    } else if (!editing) {
+      const row = {
+        kind: proposal.kind,
+        scholar_identifier: proposal.scholarIdentifier,
+        scholar_name: proposal.scholarName,
+        supervisor_identifier: proposal.supervisorIdentifier,
+        supervisor_name: proposal.supervisorName,
+        nominees: toJson(proposal.nominees),
+      };
+      stored = await firstSaved([
+        () => supabase.from("rac_proposals").insert({ ...row, reason: proposal.reason }),
+        () => supabase.from("rac_proposals").insert(row),
+      ]);
+    }
+  }
+  if (!stored) {
+    const all = readProposals();
+    const local = editing && pending ? all.find((item) => item.id === pending.id) : null;
+    const next: RacProposal[] = local
+      ? all.map((item) =>
+          item.id === local.id
+            ? { ...item, nominees: proposal.nominees, reason: proposal.reason }
+            : item,
+        )
+      : [
+          {
+            ...proposal,
+            id: `local-${crypto.randomUUID()}`,
+            status: "Submitted",
+            selectedInternal: "",
+            selectedExternal: "",
+            remarks: "",
+            agenda: "",
+            attendance: "",
+            minutes: "",
+            decidedOn: "",
+            decidedBy: "",
+            createdAt: new Date().toISOString(),
+          },
+          ...all,
+        ];
+    window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(next));
+  }
+  await recordAudit({
+    action: editing ? "rac:edited" : `rac:${proposal.kind}`,
+    subject: proposal.scholarIdentifier,
+    detail: `${proposal.scholarName} · ${proposal.supervisorName}`,
   });
-  window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(all));
+  await notifyOffice({
+    title: `RAC ${editing ? "nomination updated" : proposal.kind} · ${proposal.scholarName}`,
+    detail: `${proposal.supervisorName} sent the nominations. The Dean selects the members.`,
+    href: "/admin/rac",
+  });
   await refreshOffice();
-  return { ok: true as const };
+  return { ok: true as const, edited: editing };
 }
+
+type RacUpdate = Database["public"]["Tables"]["rac_proposals"]["Update"];
 
 export async function decideRac(
   proposal: RacProposal,
@@ -674,79 +973,114 @@ export async function decideRac(
     minutes: string;
   },
 ) {
-  if (decision.status === "Approved" && decision.minutes.trim().length < 2) {
-    return false;
+  const viewing = officeViewWriteBlock();
+  if (viewing) return viewing;
+  const signer = readPreviewSession();
+  if (!signer || (signer.role !== "dean" && signer.role !== "admin")) {
+    return {
+      ok: false as const,
+      message: "Only the Dean (or the administrator) selects RAC members.",
+    };
   }
-  const supabase = createSupabase();
-  if (supabase && memory && !memory.detail && !proposal.id.startsWith("local-")) {
-    const withRemarks = await supabase
-      .from("rac_proposals")
-      .update({
-        status: decision.status,
-        selected_internal: decision.selectedInternal,
-        selected_external: decision.selectedExternal,
-        remarks: decision.remarks,
-        agenda: decision.agenda,
-        attendance: decision.attendance,
-        minutes: decision.minutes,
-      })
-      .eq("id", proposal.id);
-    const saved = withRemarks.error
-      ? await supabase
-          .from("rac_proposals")
-          .update({
-            status: decision.status,
-            selected_internal: decision.selectedInternal,
-            selected_external: decision.selectedExternal,
-          })
-          .eq("id", proposal.id)
-      : withRemarks;
-    if (!saved.error) {
-      await recordAudit({
-        action: `rac:${decision.status}`,
-        subject: proposal.id,
-        detail: `${proposal.scholarName} · ${decision.remarks}`.trim(),
-      });
-      await pushNotice({
-        role: "scholar",
-        identifier: proposal.scholarIdentifier,
-        title: `RAC ${decision.status}`,
-        detail:
-          decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
-      });
-      await refreshOffice();
-      return true;
+  const stored = (memory?.proposals ?? readProposals()).find(
+    (item) => item.id === proposal.id,
+  );
+  if ((stored ?? proposal).status !== "Submitted") {
+    return {
+      ok: false as const,
+      message: `This nomination is already ${(stored ?? proposal).status.toLowerCase()} and cannot be changed.`,
+    };
+  }
+  if (decision.status === "Approved") {
+    const internal = proposal.nominees.find(
+      (item) => item.key === decision.selectedInternal && item.side === "internal",
+    );
+    const external = proposal.nominees.find(
+      (item) => item.key === decision.selectedExternal && item.side === "external",
+    );
+    if (!internal || !external) {
+      return {
+        ok: false as const,
+        message: "Select one internal member and one external panel member.",
+      };
+    }
+    if (decision.minutes.trim().length < 2) {
+      return { ok: false as const, message: "Enter the minutes before approving." };
     }
   }
-  const all = readProposals().map((item) =>
-    item.id === proposal.id
-      ? {
-          ...item,
-          status: decision.status,
-          selectedInternal: decision.selectedInternal,
-          selectedExternal: decision.selectedExternal,
-          remarks: decision.remarks,
-          agenda: decision.agenda,
-          attendance: decision.attendance,
-          minutes: decision.minutes,
-        }
-      : item,
-  );
-  window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(all));
+  if (decision.status === "Returned" && decision.remarks.trim().length < 2) {
+    return { ok: false as const, message: "Enter the remarks before returning." };
+  }
+  const decidedOn = new Date().toISOString().slice(0, 10);
+  const decidedBy = signer.name.trim() || signer.identifier;
+  const supabase = createSupabase();
+  let saved = false;
+  if (supabase && memory && !memory.detail && !proposal.id.startsWith("local-")) {
+    const core = {
+      status: decision.status,
+      selected_internal: decision.selectedInternal,
+      selected_external: decision.selectedExternal,
+    };
+    const notes = {
+      remarks: decision.remarks,
+      agenda: decision.agenda,
+      attendance: decision.attendance,
+      minutes: decision.minutes,
+    };
+    const update = (values: RacUpdate) => () =>
+      supabase
+        .from("rac_proposals")
+        .update(values)
+        .eq("id", proposal.id)
+        .eq("status", "Submitted");
+    saved = await firstSaved([
+      update({ ...core, ...notes, decided_on: decidedOn, decided_by: decidedBy }),
+      update({ ...core, ...notes }),
+      update(core),
+    ]);
+  }
+  if (!saved) {
+    const all = readProposals().map((item) =>
+      item.id === proposal.id
+        ? {
+            ...item,
+            status: decision.status,
+            selectedInternal: decision.selectedInternal,
+            selectedExternal: decision.selectedExternal,
+            remarks: decision.remarks,
+            agenda: decision.agenda,
+            attendance: decision.attendance,
+            minutes: decision.minutes,
+            decidedOn,
+            decidedBy,
+          }
+        : item,
+    );
+    window.localStorage.setItem(storageKeys.racProposals, JSON.stringify(all));
+  }
   await recordAudit({
     action: `rac:${decision.status}`,
     subject: proposal.id,
-    detail: `${proposal.scholarName} · ${decision.remarks}`.trim(),
+    detail: `${proposal.scholarName} · ${decidedBy} · ${decision.remarks}`.trim(),
   });
+  const detail =
+    decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`;
   await pushNotice({
     role: "scholar",
     identifier: proposal.scholarIdentifier,
     title: `RAC ${decision.status}`,
-    detail:
-      decision.remarks || `The RAC nomination was ${decision.status.toLowerCase()}.`,
+    detail,
+    href: "/scholar/rac",
+  });
+  await pushNotice({
+    role: "supervisor",
+    identifier: proposal.supervisorIdentifier,
+    title: `RAC ${decision.status} · ${proposal.scholarName}`,
+    detail,
+    href: "/supervisor/rac",
   });
   await refreshOffice();
-  return true;
+  return { ok: true as const };
 }
 
 export function phdApplicationsOpen() {

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { TeamList } from "@/components/team/TeamList";
 import { Container } from "@/components/ui/container";
+import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
 import { loadTeam, officeTeam } from "@/lib/team";
 
@@ -20,9 +21,10 @@ async function TeamBoard() {
 }
 
 export default function OurTeamPage() {
+  const copy = pageHeroes.team;
   return (
     <>
-      <PageHeader eyebrow={university.researchOffice} title="Our Team" />
+      <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
       <Suspense
         fallback={
           <Container className="py-10">

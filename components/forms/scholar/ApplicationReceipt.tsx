@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import {
   PrintActions,
@@ -12,12 +13,14 @@ import {
   PrintSection,
   PrintSignature,
 } from "@/components/forms/PrintForm";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { scholarDeclaration } from "@/data/declarations";
 import { scholarDocuments } from "@/data/documents";
 import { scholarFormCopy } from "@/data/forms";
-import { applicationFeeInr, paymentStatus } from "@/lib/constants";
+import { applicationFeeInr, isPartTimeMode, paymentStatus } from "@/lib/constants";
 import { formatIsoDate } from "@/lib/dates";
+import { formatNetQualification } from "@/lib/net-exam";
+import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import type { PhdReceipt } from "@/lib/scholar-progress";
 import { formatInr } from "@/lib/utils";
 
@@ -39,6 +42,17 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
   const { values } = receipt;
   const experience = values.experience.filter((row) => row.organization.trim());
   const permanent = values.sameAddress ? values.communication : values.permanent;
+  const selected = receipt.status === "Selected";
+  const [downloading, setDownloading] = useState(false);
+
+  async function download() {
+    setDownloading(true);
+    try {
+      await downloadPhdApplications([receipt]);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div>
@@ -46,15 +60,35 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
         <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
           Application submitted
         </p>
-        <h1 className="mt-2 font-heading text-3xl text-primary">
+        <h2 className="mt-2 font-heading text-3xl text-primary">
           {receipt.applicationNo}
-        </h1>
+        </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Status: {receipt.status}. Submitted on {formatIsoDate(receipt.submittedOn)}.
         </p>
+        {selected ? (
+          <p className="mt-3 text-sm font-semibold text-secondary">
+            {scholarFormCopy.trackSelected}
+          </p>
+        ) : null}
         <div className="mt-5 flex flex-wrap justify-center gap-3">
+          {selected ? (
+            <Link href="/login/scholar" className={buttonVariants({ variant: "gold" })}>
+              {scholarFormCopy.scholarLogin}
+            </Link>
+          ) : (
+            <Button
+              type="button"
+              variant="gold"
+              disabled={downloading}
+              aria-busy={downloading}
+              onClick={() => void download()}
+            >
+              {downloading ? "Preparing…" : scholarFormCopy.download}
+            </Button>
+          )}
           <Link href="/apply/status" className={buttonVariants({ variant: "outline" })}>
-            Check application status
+            {scholarFormCopy.track}
           </Link>
           <Link href="/" className={buttonVariants({ variant: "outline" })}>
             Back to home
@@ -98,7 +132,15 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
               />
               <PrintCell label="Gender" value={values.gender} />
               <PrintCell label="Nationality" value={values.nationality} />
-              <PrintCell label="Community" value={values.community} />
+              {values.nationality === "Non-Indian" ? (
+                <PrintCell label="Country" value={values.country} />
+              ) : null}
+              <PrintCell
+                label="Community"
+                value={[values.community, values.communityName]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
               <PrintCell label="Blood group" value={values.bloodGroup} />
               <PrintCell label="Marital status" value={values.maritalStatus} />
             </PrintGrid>
@@ -108,8 +150,8 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
             <PrintGrid>
               <PrintCell label="Programme" value={values.programme} />
               <PrintCell label="Mode of study" value={values.studyMode} />
-              <PrintCell label="School / Department" value={values.school} />
-              <PrintCell label="Specialization" value={values.specialization} />
+              <PrintCell label="School" value={values.school} />
+              <PrintCell label="Subject" value={values.specialization} />
             </PrintGrid>
           </PrintSection>
 
@@ -170,10 +212,7 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
               </tbody>
             </table>
             <p className="mt-1 text-[11px]">
-              NET:{" "}
-              {values.netQualified === "Yes"
-                ? `Yes, ${values.netMonth} ${values.netYear}`.trim()
-                : values.netQualified || "—"}
+              NET / SET / SLET: {formatNetQualification(values)}
             </p>
           </PrintSection>
 
@@ -206,54 +245,52 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
             {scholarFormCopy.title} · {receipt.applicationNo}
           </p>
 
-          <PrintSection title="5. Work experience">
-            {experience.length === 0 ? (
-              <p className="text-[11px]">—</p>
-            ) : (
-              <table className="w-full border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="bg-muted">
-                    {["S.No.", "Organization", "Designation", "From", "To"].map(
-                      (heading) => (
-                        <th
-                          key={heading}
-                          className="border border-primary/15 px-1.5 py-1 font-semibold"
-                        >
-                          {heading}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {experience.map((row, index) => (
-                    <tr key={`${row.organization}-${row.from}`}>
-                      <td className="border border-primary/15 px-1.5 py-1">
-                        {index + 1}
-                      </td>
-                      <td className="border border-primary/15 px-1.5 py-1">
-                        {row.organization}
-                      </td>
-                      <td className="border border-primary/15 px-1.5 py-1">
-                        {row.designation}
-                      </td>
-                      <td className="border border-primary/15 px-1.5 py-1">{row.from}</td>
-                      <td className="border border-primary/15 px-1.5 py-1">{row.to}</td>
+          {isPartTimeMode(values.studyMode) ? (
+            <PrintSection title="5. Work experience">
+              {experience.length === 0 ? (
+                <p className="text-[11px]">—</p>
+              ) : (
+                <table className="w-full border-collapse text-left text-[11px]">
+                  <thead>
+                    <tr className="bg-muted">
+                      {["S.No.", "Organization", "Designation", "From", "To"].map(
+                        (heading) => (
+                          <th
+                            key={heading}
+                            className="border border-primary/15 px-1.5 py-1 font-semibold"
+                          >
+                            {heading}
+                          </th>
+                        ),
+                      )}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </PrintSection>
+                  </thead>
+                  <tbody>
+                    {experience.map((row, index) => (
+                      <tr key={`${row.organization}-${row.from}`}>
+                        <td className="border border-primary/15 px-1.5 py-1">
+                          {index + 1}
+                        </td>
+                        <td className="border border-primary/15 px-1.5 py-1">
+                          {row.organization}
+                        </td>
+                        <td className="border border-primary/15 px-1.5 py-1">
+                          {row.designation}
+                        </td>
+                        <td className="border border-primary/15 px-1.5 py-1">
+                          {row.from}
+                        </td>
+                        <td className="border border-primary/15 px-1.5 py-1">{row.to}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </PrintSection>
+          ) : null}
 
           <PrintSection title="6. Proposed research">
-            <PrintCell label="Proposed area of research" value={values.researchArea} />
-            <div className="border border-t-0 border-primary/15 px-2 py-1">
-              <p className="text-[9px] tracking-wide text-muted-foreground uppercase">
-                Brief outline
-              </p>
-              <p className="text-[11px] leading-4">{values.outline.trim() || "—"}</p>
-            </div>
+            <PrintCell label="Research area" value={values.researchArea} />
           </PrintSection>
 
           <PrintSection title="7. Payment details">

@@ -1,16 +1,17 @@
 import type { ChecklistItem } from "@/types";
+import { uploadStandards } from "@/lib/constants";
 
 export const checklist: ChecklistItem[] = [
   {
     id: "photo",
     title: "Passport photograph",
-    detail: "Recent colour photograph, file size below 100 KB.",
+    detail: `Recent colour photograph. ${uploadStandards.photo.label}.`,
     required: true,
   },
   {
     id: "signature",
     title: "Signature",
-    detail: "Scanned signature on a plain background, file size below 100 KB.",
+    detail: `Scanned signature on a plain background. ${uploadStandards.signature.label}.`,
     required: true,
   },
   {

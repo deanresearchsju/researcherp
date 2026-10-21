@@ -12,13 +12,14 @@ import {
   DeskPage,
   DeskSection,
   DeskTable,
+  FormDialog,
   GateBanner,
   ProcessFlow,
   ScholarIdentityHeader,
   StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { processFlows } from "@/data/portal-desk";
+import { portalModules } from "@/data/portal";
 import type { ScholarRecordKind, ScholarRecordMenu } from "@/data/scholar-records";
 import { formatIsoDate } from "@/lib/dates";
 import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
@@ -52,6 +54,8 @@ import {
 } from "@/lib/register";
 import { currentPortalUsers } from "@/lib/users";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
+import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 
 function flowFor(kind: ScholarRecordKind) {
   if (kind === "publication") return processFlows.publication;
@@ -97,13 +101,19 @@ function RecordForm({
   supervisorIdentifier,
   supervisorName,
   existing,
+  prefill,
+  onClose,
+  onDone,
 }: {
+  prefill?: Record<string, string>;
   menu: ScholarRecordMenu;
   scholarIdentifier: string;
   scholarName: string;
   supervisorIdentifier: string;
   supervisorName: string;
   existing?: ScholarRecord;
+  onClose: () => void;
+  onDone: (message: string) => void;
 }) {
   const schema = useMemo(() => recordSchema(menu), [menu]);
   const defaults = Object.fromEntries(menu.fields.map((field) => [field.name, ""]));
@@ -115,7 +125,7 @@ function RecordForm({
     resolver: zodResolver(schema) as Resolver<Record<string, string>>,
     defaultValues: existing
       ? { ...defaults, ...existing.payload }
-      : { ...defaults, ...registerDefaults },
+      : { ...defaults, ...registerDefaults, ...prefill },
   });
   const doi = useWatch({ control: form.control, name: "doi" });
   const [file, setFile] = useState<StoredFile | null>(null);
@@ -148,109 +158,125 @@ function RecordForm({
       setNotice(saved.message);
       return;
     }
-    setNotice(
+    if (!menu.single) form.reset(defaults);
+    setFile(null);
+    onDone(
       menu.needsSupervisor
         ? "Submitted. Your supervisor reviews it first, then the research office."
         : existing
           ? "Updated. The research office will review it again."
           : "Submitted. The research office will review it.",
     );
-    if (!menu.single) form.reset(defaults);
-    setFile(null);
   }
 
   return (
-    <form
-      className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
+    <FormDialog
+      title={existing ? `Update ${menu.label}` : `Add ${menu.label}`}
+      onClose={onClose}
       onSubmit={form.handleSubmit(onSubmit)}
-      noValidate
+      busy={busy}
+      submitLabel={existing ? "Save" : "Submit"}
+      size="lg"
     >
-      <h2 className="font-semibold text-primary sm:col-span-2">
-        {existing ? `Update ${menu.label}` : `Add ${menu.label}`}
-      </h2>
       {notice ? (
-        <p role="status" className="text-sm text-secondary sm:col-span-2">
+        <p role="alert" className="text-sm text-secondary">
           {notice}
         </p>
       ) : null}
-      {menu.fields.map((field) => (
-        <FormField
-          key={field.name}
-          label={field.label}
-          htmlFor={field.name}
-          required={field.required}
-          error={form.formState.errors[field.name]?.message}
-          className={field.kind === "textarea" ? "sm:col-span-2" : undefined}
-        >
-          {field.kind === "textarea" ? (
-            <Textarea id={field.name} {...form.register(field.name)} />
-          ) : field.kind === "select" ? (
-            <NativeSelect id={field.name} {...form.register(field.name)}>
-              <option value="">Select</option>
-              {field.options?.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </NativeSelect>
-          ) : (
-            <>
-              <Input
-                id={field.name}
-                type={
-                  field.kind === "date"
-                    ? "date"
-                    : field.kind === "email"
-                      ? "email"
-                      : "text"
-                }
-                inputMode={
-                  field.kind === "tel" || field.kind === "amount" ? "decimal" : undefined
-                }
-                {...form.register(field.name)}
-              />
-              {field.kind === "doi" && /^10\.\d{4,9}\/\S+$/.test(doi ?? "") ? (
-                <p className="text-xs text-primary">DOI format verified.</p>
-              ) : null}
-            </>
-          )}
-        </FormField>
-      ))}
-      {menu.fileLabel ? (
-        <FormField
-          label={menu.fileLabel}
-          htmlFor={`${menu.kind}-file`}
-          required={menu.fileRequired}
-          error={fileMessage ?? undefined}
-          className="sm:col-span-2"
-        >
-          <FileUpload
-            id={`${menu.kind}-file`}
-            acceptRule={menu.fileRule}
-            value={file}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {menu.fields.map((field) => (
+          <FormField
+            key={field.name}
+            label={field.label}
+            htmlFor={field.name}
+            required={field.required}
+            error={form.formState.errors[field.name]?.message}
+            className={field.kind === "textarea" ? "sm:col-span-2" : undefined}
+          >
+            {field.kind === "textarea" ? (
+              <Textarea id={field.name} {...form.register(field.name)} />
+            ) : field.kind === "select" ? (
+              <NativeSelect id={field.name} {...form.register(field.name)}>
+                <option value="">Select</option>
+                {field.options?.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : (
+              <>
+                <Input
+                  id={field.name}
+                  type={
+                    field.kind === "date"
+                      ? "date"
+                      : field.kind === "email"
+                        ? "email"
+                        : "text"
+                  }
+                  inputMode={
+                    field.kind === "tel" || field.kind === "amount"
+                      ? "decimal"
+                      : undefined
+                  }
+                  {...form.register(field.name)}
+                />
+                {field.kind === "doi" && /^10\.\d{4,9}\/\S+$/.test(doi ?? "") ? (
+                  <p className="text-xs text-primary">DOI format verified.</p>
+                ) : null}
+              </>
+            )}
+          </FormField>
+        ))}
+        {menu.fileLabel ? (
+          <FormField
+            label={menu.fileLabel}
+            htmlFor={`${menu.kind}-file`}
+            required={menu.fileRequired}
             error={fileMessage ?? undefined}
-            onChange={setFile}
-          />
-          {!file && existing?.fileName ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs text-muted-foreground">
-                Current file: {existing.fileName}
-              </p>
-              <ViewFilesButton
-                fileName={existing.fileName}
-                load={() => loadRecordFile(existing)}
-              />
-            </div>
-          ) : null}
-        </FormField>
-      ) : null}
-      <div className="sm:col-span-2">
-        <Button type="submit" variant="gold" disabled={busy}>
-          {existing ? "Save" : "Submit"}
-        </Button>
+            className="sm:col-span-2"
+          >
+            <FileUpload
+              id={`${menu.kind}-file`}
+              acceptRule={menu.fileRule}
+              value={file}
+              error={fileMessage ?? undefined}
+              onChange={setFile}
+            />
+            {!file && existing?.fileName ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Current file: {existing.fileName}
+                </p>
+                <ViewFilesButton
+                  fileName={existing.fileName}
+                  load={() => loadRecordFile(existing)}
+                />
+              </div>
+            ) : null}
+          </FormField>
+        ) : null}
       </div>
-    </form>
+    </FormDialog>
   );
+}
+
+function recordModule(kind: ScholarRecordKind) {
+  if (
+    kind === "phd_cancellation" ||
+    kind === "supervisor_change" ||
+    kind === "study_mode_change" ||
+    kind === "leave" ||
+    kind === "extension" ||
+    kind === "title_change"
+  ) {
+    return portalModules.requests;
+  }
+  if (kind === "publication" || kind === "six_month_report") {
+    return portalModules.doctoralProgress;
+  }
+  return portalModules.scholarRecords;
 }
 
 export function ScholarRecordScreen({
@@ -274,6 +300,8 @@ export function ScholarRecordScreen({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [openId, setOpenId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
 
   if (!load) {
     return (
@@ -308,8 +336,8 @@ export function ScholarRecordScreen({
     mode === "admin"
       ? owned.filter(
           (record) =>
-            (scholarFilter === "" || record.scholarIdentifier === scholarFilter) &&
-            (statusFilter === "" || record.status === statusFilter) &&
+            filterMatches(scholarFilter, record.scholarIdentifier) &&
+            filterMatches(statusFilter, record.status) &&
             textMatches(query, [
               record.scholarName,
               record.scholarIdentifier,
@@ -380,7 +408,7 @@ export function ScholarRecordScreen({
     existing?.status !== "Approved";
 
   return (
-    <DeskPage kicker={mode === "admin" ? "Admin" : "Scholar"} title={menu.label}>
+    <DeskPage kicker={recordModule(menu.kind)} title={menu.label}>
       {flow ? <ProcessFlow>{flow}</ProcessFlow> : null}
       {load.detail ? (
         <p role="status" className="max-w-2xl text-sm leading-6 text-secondary">
@@ -550,7 +578,40 @@ export function ScholarRecordScreen({
         </p>
       ) : null}
 
-      {canForm && session ? (
+      {menu.kind === "title_change" && mode === "scholar" && session && doctoral
+        ? (() => {
+            const title = researchTitleOf(
+              doctoral,
+              session.identifier,
+              load?.records ?? [],
+            );
+            return (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
+                  <p className="text-[0.65rem] font-bold tracking-[0.16em] text-muted-foreground uppercase">
+                    Research title · {title.stage}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-primary">
+                    {title.title || "Not fixed yet"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{title.note}</p>
+                </div>
+                <GateBanner tone={title.changeBlock ? "danger" : "info"}>
+                  {title.changeBlock ?? titleRuleText}
+                </GateBanner>
+              </div>
+            );
+          })()
+        : null}
+
+      {canForm &&
+      session &&
+      !(
+        menu.kind === "title_change" &&
+        mode === "scholar" &&
+        doctoral &&
+        researchTitleOf(doctoral, session.identifier, load?.records ?? []).changeBlock
+      ) ? (
         <DeskSection
           title={menu.single ? `Update ${menu.label}` : "New request"}
           tone={menu.single ? "primary" : "new"}
@@ -569,6 +630,31 @@ export function ScholarRecordScreen({
                 />
               </div>
             ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {existing
+                    ? `${existing.status}${existing.fileName ? ` · ${existing.fileName}` : ""}`
+                    : menu.single
+                      ? "Not submitted yet."
+                      : "Submit a new request."}
+                </p>
+                <Button
+                  type="button"
+                  variant="gold"
+                  onClick={() => {
+                    setNotice(null);
+                    setFormOpen(true);
+                  }}
+                >
+                  {existing
+                    ? `Update ${menu.label}`
+                    : menu.single
+                      ? `Add ${menu.label}`
+                      : "New request"}
+                </Button>
+              </div>
+            )}
+            {formOpen && existing?.status !== "Approved" ? (
               <RecordForm
                 key={existing?.id ?? "new"}
                 menu={menu}
@@ -577,8 +663,24 @@ export function ScholarRecordScreen({
                 supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
                 supervisorName={guide?.supervisorName ?? ""}
                 existing={existing}
+                prefill={
+                  menu.kind === "title_change" && doctoral
+                    ? {
+                        currentTitle: researchTitleOf(
+                          doctoral,
+                          session.identifier,
+                          load?.records ?? [],
+                        ).title,
+                      }
+                    : undefined
+                }
+                onClose={() => setFormOpen(false)}
+                onDone={(message) => {
+                  setFormOpen(false);
+                  setNotice(message);
+                }}
               />
-            )}
+            ) : null}
           </div>
         </DeskSection>
       ) : null}

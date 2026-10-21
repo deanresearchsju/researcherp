@@ -53,26 +53,6 @@ function parsePhotos(value: unknown) {
   });
 }
 
-export type EventPhoto = {
-  id: string;
-  src: string;
-  title: string;
-};
-
-export function collectEventPhotos(items: readonly NewsItem[]): EventPhoto[] {
-  const seen = new Set<string>();
-  const photos: EventPhoto[] = [];
-  for (const item of newestNewsFirst(items.filter((row) => row.kind === "Event"))) {
-    const sources = [...(item.photos ?? []), ...(item.image ? [item.image] : [])];
-    for (const src of sources) {
-      if (!src || seen.has(src)) continue;
-      seen.add(src);
-      photos.push({ id: `${item.id}-${photos.length}`, src, title: item.title });
-    }
-  }
-  return photos;
-}
-
 function parseItems(value: unknown): NewsItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -96,6 +76,7 @@ function parseItems(value: unknown): NewsItem[] {
         lastDate: isValidIsoDate(lastDateValue) ? lastDateValue : null,
         href: isNewsHref(hrefValue) ? hrefValue : null,
         summary,
+        venue: kind === "Event" ? asTrimmed(record.venue) : "",
         image,
         photos: parsePhotos(record.photos),
         createdAt: asTrimmed(record.createdAt) || null,

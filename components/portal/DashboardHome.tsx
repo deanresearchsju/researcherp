@@ -6,11 +6,16 @@ import { useSyncExternalStore } from "react";
 import { admissionArchiveCopy } from "@/data/admission";
 import { registrationCopy } from "@/data/registration";
 import { scholarRecordMenus } from "@/data/scholar-records";
+import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
+import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { personFileCopy } from "@/data/person-file";
+import { incompleteApplicationsCopy } from "@/data/incomplete-applications";
 import { portalIntro } from "@/data/portal";
 import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
+import { FeeReminderBanner } from "@/components/portal/FeeReminderBanner";
 import { ScholarFeeStatus } from "@/components/portal/ScholarFeeStatus";
-import { isOfficeRole } from "@/lib/access";
+import { canOpenMenu, isOfficeRole, resolvedMenus } from "@/lib/access";
+import { useCanMenuAction } from "@/lib/use-menu-action";
 import { currentAdmission, scholarIsAdmitted, subscribeAdmission } from "@/lib/admission";
 import { batchOf, scholarBySignIn } from "@/lib/register";
 import {
@@ -29,7 +34,11 @@ import {
   type OfficeRecord,
 } from "@/lib/office";
 import { ProfileCard } from "@/components/portal/ProfileCard";
-import { usePortalSession } from "@/lib/use-preview-session";
+import {
+  ScholarDashboard,
+  SupervisorDashboard,
+} from "@/components/portal/MemberDashboard";
+import { usePortalSession, usePreviewSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
 import type { Role } from "@/types";
 
@@ -64,6 +73,11 @@ function ScholarRecordLine({
 }) {
   const record = scholarBySignIn(identifier);
   const guide = allocationFor(allocations, identifier);
+  const payments = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("payment", onChange),
+    () => currentScholarRecords("payment"),
+    () => null,
+  );
   if (record) {
     const batch = batchOf(record.batchId);
     return (
@@ -80,7 +94,9 @@ function ScholarRecordLine({
   return (
     <p className="mt-3 text-sm text-accent">
       {guide
-        ? `Guide: ${guide.supervisorName}`
+        ? guideReleased(identifier, payments?.records ?? [])
+          ? `Guide: ${guide.supervisorName}`
+          : `Guide: ${guideHiddenCopy}`
         : "A supervisor has not been allotted yet."}
     </p>
   );
@@ -88,6 +104,9 @@ function ScholarRecordLine({
 
 export function DashboardHome({ role: pageRole }: { role: Role }) {
   const session = usePortalSession();
+  const rights = usePreviewSession();
+  const canExportScholars = useCanMenuAction("export", "/admin/register");
+  const canExportSupervisors = useCanMenuAction("export", "/admin/supervisors");
   const role =
     session && isOfficeRole(pageRole) && isOfficeRole(session.role)
       ? session.role
@@ -263,12 +282,13 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
     role === "scholar"
       ? admitted
         ? [
-            ["/scholar/records/publications", "Add a publication"],
-            ["/scholar/records/six-month-report", "Six-month report"],
             ["/scholar/records/payment-history", "Payment history"],
             ["/scholar/rac", "Present RAC"],
+            ["/scholar/course-work", "Course work"],
+            ["/scholar/records/publications", "Add a publication"],
+            ["/scholar/records/six-month-report", "Six-month report"],
           ]
-        : [["/scholar/admission", "Admission file"]]
+        : [["/scholar/dashboard#admission", "Admission application"]]
       : role === "supervisor"
         ? [
             ["/supervisor/scholars", "My scholars"],
@@ -277,44 +297,78 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
           ]
         : role === "staff"
           ? [
-              ["/admin/admission", "Selection"],
-              ["/admin/applications", "Applications"],
-              ["/admin/entrance-marks", "Entrance marks"],
-              ["/admin/registration-numbers", registrationCopy.menu],
               ["/admin/vacancies", "Vacancies"],
+              ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+              ["/admin/applications", "Applications"],
+              ["/admin/admission", "Selection"],
+              ["/admin/registration-numbers", registrationCopy.menu],
             ]
           : role === "dean"
             ? [
-                ["/admin/admission", "Selection"],
-                ["/admin/admission-archive", admissionArchiveCopy.menu],
-                ["/admin/applications", "Applications"],
-                ["/admin/entrance-marks", "Entrance marks"],
-                ["/admin/registration-numbers", registrationCopy.menu],
                 ["/admin/vacancies", "Vacancies"],
+                ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+                ["/admin/applications", "Applications"],
+                ["/admin/admission", "Selection"],
+                ["/admin/registration-numbers", registrationCopy.menu],
+                ["/admin/admission-archive", admissionArchiveCopy.menu],
               ]
             : [
                 ["/admin/site", "Application window"],
-                ["/admin/news", "News and events"],
-                ["/admin/admission-archive", admissionArchiveCopy.menu],
-                ["/admin/entrance-marks", "Entrance marks"],
+                ["/admin/vacancies", "Vacancies"],
+                ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+                ["/admin/applications", "Applications"],
+                ["/admin/admission", "Selection"],
                 ["/admin/allocations", "Allot a scholar"],
                 ["/admin/registration-numbers", registrationCopy.menu],
-                ["/admin/results", "Course results"],
-                ["/admin/transfers", "Transfer a supervisor"],
-                ["/admin/promotions", "Promote a semester"],
-                ["/admin/rac", "RAC decisions"],
+                ["/admin/admission-archive", admissionArchiveCopy.menu],
                 ["/admin/register", "Scholar register"],
                 ["/admin/supervisors", "Supervisor register"],
+                ["/admin/transfers", "Transfer a supervisor"],
+                ["/admin/rac", "RAC decisions"],
                 ["/admin/payments", "Payment approvals"],
                 ["/admin/records/payment-history", "All payments"],
+                ["/admin/promotions", "Promote a semester"],
+                ["/admin/results", "Course results"],
               ];
+  if (session && session.role === role && role === "scholar") {
+    return (
+      <ScholarDashboard
+        identifier={session.identifier}
+        name={session.name.trim() || session.identifier}
+        admitted={admitted}
+      />
+    );
+  }
+  if (session && session.role === role && role === "supervisor") {
+    return (
+      <SupervisorDashboard
+        identifier={session.identifier}
+        name={session.name.trim() || session.identifier}
+      />
+    );
+  }
+
+  const shownLinks = isOfficeRole(role)
+    ? links.filter(
+        (link): link is [string, string] =>
+          Boolean(link[0]) && canOpenMenu(link[0] ?? "", role, resolvedMenus(rights)),
+      )
+    : links;
 
   return (
     <div>
       {session &&
       (role === "scholar" || role === "supervisor") &&
       session.role === role ? (
-        <ProfileCard role={role} />
+        <>
+          {role === "scholar" ? (
+            <FeeReminderBanner
+              identifier={session.identifier}
+              name={session.name.trim() || session.identifier}
+            />
+          ) : null}
+          <ProfileCard role={role} />
+        </>
       ) : (
         <section className="overflow-hidden rounded-2xl bg-primary text-primary-foreground shadow-card">
           <div className="px-6 py-6 sm:px-8 sm:py-8">
@@ -349,22 +403,26 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
           completes admission.
         </p>
       ) : null}
-      {role === "admin" ? (
+      {isOfficeRole(role) && (canExportScholars || canExportSupervisors) ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
-            onClick={() => downloadAllScholarDetails()}
-          >
-            {personFileCopy.downloadAllScholars}
-          </button>
-          <button
-            type="button"
-            className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
-            onClick={() => downloadAllSupervisorDetails()}
-          >
-            {personFileCopy.downloadAllSupervisors}
-          </button>
+          {canExportScholars ? (
+            <button
+              type="button"
+              className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
+              onClick={() => downloadAllScholarDetails()}
+            >
+              {personFileCopy.downloadAllScholars}
+            </button>
+          ) : null}
+          {canExportSupervisors ? (
+            <button
+              type="button"
+              className="inline-flex rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-primary hover:bg-muted"
+              onClick={() => downloadAllSupervisorDetails()}
+            >
+              {personFileCopy.downloadAllSupervisors}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {office?.detail ? (
@@ -376,7 +434,7 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
         ))}
       </ul>
       <ul className="mt-6 flex flex-wrap gap-2">
-        {links.map(([href, label]) => (
+        {shownLinks.map(([href, label]) => (
           <li key={href}>
             <Link
               href={href ?? "/"}

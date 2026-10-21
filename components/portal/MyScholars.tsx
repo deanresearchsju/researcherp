@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
+import { PageTitle } from "@/components/portal/Desk";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Portrait } from "@/components/portal/Portrait";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
@@ -62,10 +63,7 @@ export function MyScholars() {
   );
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Supervisor
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">My scholars</h1>
+      <PageTitle kicker="Supervisor" title="My scholars" />
       {allotted.length === 0 && guided.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">
           No scholar is allotted to you yet.
@@ -102,9 +100,19 @@ export function MyScholars() {
                     Semester: {scholarSemesterLabel(scholar.scholarIdentifier)}
                   </p>
                   <p className="mt-2 text-sm">
-                    {present
-                      ? `RAC: ${present.guide}, ${present.internal.name}, ${present.external.name}`
-                      : "RAC not constituted yet."}
+                    {present ? (
+                      `RAC: ${present.guide}, ${present.internal.name}, ${present.external.name}`
+                    ) : (
+                      <>
+                        RAC not constituted yet.{" "}
+                        <Link
+                          href="/supervisor/rac"
+                          className="font-semibold text-primary hover:underline"
+                        >
+                          Initiate RAC
+                        </Link>
+                      </>
+                    )}
                   </p>
                 </div>
               </li>

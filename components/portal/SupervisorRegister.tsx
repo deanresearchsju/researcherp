@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
@@ -7,8 +9,8 @@ import {
   ApplicationViewer,
   type ReviewAction,
 } from "@/components/portal/ApplicationViewer";
-import { DeskTabs } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { DeskTabs, PageTitle } from "@/components/portal/Desk";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { applicationReviewCopy, supervisorOfficeCopy } from "@/data/application-review";
 import { personFileCopy } from "@/data/person-file";
@@ -20,6 +22,7 @@ import {
   supervisorApplicationCells,
   supervisorWideHeaders,
 } from "@/lib/person-file";
+import { useCanMenuAction } from "@/lib/use-menu-action";
 import {
   currentQuotas,
   currentStandings,
@@ -128,6 +131,7 @@ export function SupervisorRegister({
   } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const canExport = useCanMenuAction("export");
   const [saving, setSaving] = useState(false);
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
   const standings = useSyncExternalStore(
@@ -149,7 +153,7 @@ export function SupervisorRegister({
 
   const supervisors = directory.filter(
     (supervisor) =>
-      (department === "" || supervisor.department === department) &&
+      filterMatches(department, supervisor.department) &&
       textMatches(query, [
         supervisor.name,
         supervisor.department,
@@ -288,10 +292,7 @@ export function SupervisorRegister({
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Supervisor register</h1>
+      <PageTitle kicker="Administration" title="Supervisor register" />
       {notice ? (
         <p role="status" className="mt-4 text-sm text-secondary">
           {notice}
@@ -419,16 +420,20 @@ export function SupervisorRegister({
         </div>
       ) : null}
 
-      <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => downloadAllSupervisorDetails()}
-        >
-          {personFileCopy.downloadAllSupervisors}
-        </Button>
-      </div>
+      {canExport ? (
+        <>
+          <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => downloadAllSupervisorDetails()}
+            >
+              {personFileCopy.downloadAllSupervisors}
+            </Button>
+          </div>
+        </>
+      ) : null}
 
       <h2 className="mt-10 font-heading text-2xl text-primary">
         {listTab === "inactive"
@@ -482,7 +487,7 @@ export function SupervisorRegister({
                 "Actions",
                 "Quota",
                 "Vacancy",
-                "June 2026 allotment",
+                "July 2026 allotment",
                 "Balance",
                 "Campus",
                 "Phone",
@@ -598,26 +603,10 @@ export function SupervisorRegister({
                         >
                           {supervisorOfficeCopy.markInactive}
                         </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="maroon"
-                          disabled={busy}
-                          onClick={() =>
-                            void saveSupervisorStanding(
-                              supervisor,
-                              false,
-                              "Resigned",
-                            ).then((saved) =>
-                              setNotice(
-                                saved.ok
-                                  ? `${supervisor.name} is marked resigned.`
-                                  : saved.message,
-                              ),
-                            )
-                          }
-                        >
-                          {supervisorOfficeCopy.markResigned}
+                        <Button asChild size="sm" variant="maroon">
+                          <Link href="/admin/supervisor-exit">
+                            {supervisorOfficeCopy.markResigned}
+                          </Link>
                         </Button>
                       </div>
                     )}

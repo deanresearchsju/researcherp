@@ -64,7 +64,7 @@ export const scholarDocuments: DocumentSpec[] = [
   },
   {
     id: "net",
-    label: "NET/SET certificate",
+    label: "NET / SET / SLET certificate",
     rule: "document",
     required: "optional",
     remarks: office,

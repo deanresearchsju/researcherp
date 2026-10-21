@@ -1,6 +1,6 @@
 "use client";
 
-import { Images, X } from "lucide-react";
+import { Calendar, MapPin, X } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { newsBoardCopy, newsSeed } from "@/data/announcements";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
-  collectEventPhotos,
   currentNewsLoad,
   isNewNewsItem,
   newestNewsFirst,
@@ -21,11 +20,26 @@ function isExternalHref(href: string) {
   return /^https?:\/\//i.test(href);
 }
 
+function eventGallery(item: NewsItem) {
+  const seen = new Set<string>();
+  const photos: string[] = [];
+  for (const src of [item.image, ...item.photos]) {
+    if (!src || seen.has(src)) continue;
+    seen.add(src);
+    photos.push(src);
+  }
+  return photos;
+}
+
 export function NewsBoard() {
   const stored = useSyncExternalStore(subscribeNews, currentNewsLoad, currentNewsLoad);
   const items = stored?.items ?? newsSeed;
   const [tab, setTab] = useState<NewsKind>("Announcement");
-  const [photosOpen, setPhotosOpen] = useState(false);
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const openEvent =
+    tab === "Event"
+      ? (items.find((item) => item.id === openEventId && item.kind === "Event") ?? null)
+      : null;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -58,7 +72,7 @@ export function NewsBoard() {
               )}
               onClick={() => {
                 setTab(item.id);
-                setPhotosOpen(false);
+                setOpenEventId(null);
               }}
             >
               {item.label}
@@ -73,10 +87,10 @@ export function NewsBoard() {
         aria-labelledby={`news-tab-${tab}`}
         className="mt-6"
       >
-        {tab === "Event" && photosOpen ? (
-          <EventPhotoGallery items={items} onBack={() => setPhotosOpen(false)} />
+        {openEvent ? (
+          <EventPhotos item={openEvent} onBack={() => setOpenEventId(null)} />
         ) : (
-          <NewsList kind={tab} items={items} onOpenPhotos={() => setPhotosOpen(true)} />
+          <NewsList kind={tab} items={items} onOpenEvent={(id) => setOpenEventId(id)} />
         )}
       </div>
     </div>
@@ -86,48 +100,38 @@ export function NewsBoard() {
 function NewsList({
   kind,
   items,
-  onOpenPhotos,
+  onOpenEvent,
 }: {
   kind: NewsKind;
   items: readonly NewsItem[];
-  onOpenPhotos: () => void;
+  onOpenEvent: (id: string) => void;
 }) {
   const rows = newestNewsFirst(items.filter((item) => item.kind === kind));
   const today = clientToday();
 
   return (
     <div className="space-y-4">
-      {kind === "Event" ? (
-        <button
-          type="button"
-          className="flex w-full items-start gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-card transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          onClick={onOpenPhotos}
-        >
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
-            <Images className="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <span className="font-heading text-xl text-primary sm:text-2xl">
-              {newsBoardCopy.photosEntry}
-            </span>
-            <span className="mt-1 block text-sm text-muted-foreground">
-              {newsBoardCopy.photosTitle}
-            </span>
-          </span>
-        </button>
-      ) : null}
-
       {rows.length === 0 ? (
-        kind === "Announcement" ? (
-          <p className="text-sm text-muted-foreground">
-            {newsBoardCopy.emptyAnnouncement}
-          </p>
-        ) : null
+        <p className="text-sm text-muted-foreground">
+          {kind === "Event" ? newsBoardCopy.emptyEvent : newsBoardCopy.emptyAnnouncement}
+        </p>
       ) : (
         <ul className="space-y-4">
           {rows.map((item, index) => {
             const latest = index === 0 && Boolean(item.createdAt);
             const isNew = isNewNewsItem(item, today);
+            if (kind === "Event") {
+              return (
+                <li key={item.id}>
+                  <EventRow
+                    item={item}
+                    latest={latest}
+                    isNew={isNew}
+                    onOpen={() => onOpenEvent(item.id)}
+                  />
+                </li>
+              );
+            }
             return (
               <li
                 key={item.id}
@@ -185,13 +189,6 @@ function NewsList({
                       </div>
                     ) : null}
                   </dl>
-                  {item.image ? (
-                    <img
-                      src={item.image}
-                      alt=""
-                      className="mt-4 max-h-72 w-full rounded-xl object-cover"
-                    />
-                  ) : null}
                 </div>
               </li>
             );
@@ -202,45 +199,92 @@ function NewsList({
   );
 }
 
-function EventPhotoGallery({
-  items,
-  onBack,
+function EventRow({
+  item,
+  latest,
+  isNew,
+  onOpen,
 }: {
-  items: readonly NewsItem[];
-  onBack: () => void;
+  item: NewsItem;
+  latest: boolean;
+  isNew: boolean;
+  onOpen: () => void;
 }) {
-  const photos = collectEventPhotos(items);
+  return (
+    <button
+      type="button"
+      className="w-full rounded-2xl border border-border bg-card p-5 text-left shadow-card transition-colors hover:border-primary/25 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      onClick={onOpen}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {latest ? (
+          <Badge variant="gold" className="notice-blink">
+            {newsBoardCopy.latestBadge}
+          </Badge>
+        ) : null}
+        {isNew ? (
+          <Badge variant="maroon" className="notice-blink">
+            {newsBoardCopy.newBadge}
+          </Badge>
+        ) : null}
+      </div>
+      <h2 className="mt-2 font-heading text-xl text-primary sm:text-2xl">{item.title}</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.summary}</p>
+      <EventDetails item={item} />
+    </button>
+  );
+}
+
+function EventDetails({ item }: { item: NewsItem }) {
+  return (
+    <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+      <div className="inline-flex items-center gap-1.5">
+        <Calendar className="size-3.5 text-secondary" aria-hidden="true" />
+        <dt className="font-semibold text-primary">{newsBoardCopy.eventDate}:</dt>
+        <dd className="text-muted-foreground">
+          <time dateTime={item.isoDate}>{formatIsoDate(item.isoDate)}</time>
+        </dd>
+      </div>
+      {item.venue ? (
+        <div className="inline-flex items-center gap-1.5">
+          <MapPin className="size-3.5 text-secondary" aria-hidden="true" />
+          <dt className="font-semibold text-primary">{newsBoardCopy.venue}:</dt>
+          <dd className="text-muted-foreground">{item.venue}</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function EventPhotos({ item, onBack }: { item: NewsItem; onBack: () => void }) {
   const [active, setActive] = useState<string | null>(null);
+  const photos = eventGallery(item);
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-heading text-2xl text-primary">
-          {newsBoardCopy.photosTitle}
-        </h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-heading text-2xl text-primary">{item.title}</h2>
+          <EventDetails item={item} />
+        </div>
         <Button type="button" variant="outline" size="sm" onClick={onBack}>
           {newsBoardCopy.photosBack}
         </Button>
       </div>
       {photos.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">{newsBoardCopy.emptyPhotos}</p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {newsBoardCopy.emptyEventPhotos}
+        </p>
       ) : (
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {photos.map((photo) => (
-            <li key={photo.id}>
+        <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {photos.map((src) => (
+            <li key={src}>
               <button
                 type="button"
-                className="block w-full overflow-hidden rounded-2xl border border-border bg-card shadow-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                onClick={() => setActive(photo.src)}
+                className="block w-full overflow-hidden rounded-xl border border-border bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                onClick={() => setActive(src)}
               >
-                <img
-                  src={photo.src}
-                  alt={photo.title}
-                  className="h-52 w-full object-cover"
-                />
-                <span className="block px-4 py-3 text-left text-sm font-semibold text-primary">
-                  {photo.title}
-                </span>
+                <SafeImage src={src} alt="" className="h-52 w-full object-cover" />
               </button>
             </li>
           ))}
@@ -251,7 +295,7 @@ function EventPhotoGallery({
           className="fixed inset-0 z-50 grid place-items-center bg-purple-deep/70 p-4"
           role="dialog"
           aria-modal="true"
-          aria-label={newsBoardCopy.photosTitle}
+          aria-label={item.title}
         >
           <button
             type="button"
@@ -269,5 +313,21 @@ function EventPhotoGallery({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function SafeImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [visible, setVisible] = useState(true);
+  if (!visible) return null;
+  return (
+    <img src={src} alt={alt} className={className} onError={() => setVisible(false)} />
   );
 }

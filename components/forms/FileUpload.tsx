@@ -3,9 +3,19 @@
 import { FileText, X } from "lucide-react";
 import { useState } from "react";
 
+import { ImageCropper } from "@/components/forms/ImageCropper";
 import { Button } from "@/components/ui/button";
 import { fileLimits, type FileLimitKey } from "@/lib/constants";
-import { fileError, releaseFile, takeFile, type StoredFile } from "@/lib/files";
+import {
+  compressImage,
+  cropAspectFor,
+  fileError,
+  fileSizeError,
+  fileTypeError,
+  releaseFile,
+  takeFile,
+  type StoredFile,
+} from "@/lib/files";
 
 type FileUploadProps = {
   id: string;
@@ -27,11 +37,28 @@ export function FileUpload({
 }: FileUploadProps) {
   const rule = fileLimits[acceptRule];
   const [pickError, setPickError] = useState<string | null>(null);
+  const [pending, setPending] = useState<File | null>(null);
   const shownError = error ?? pickError;
+  const cropAspect = cropAspectFor(acceptRule);
 
   function replace(file: File | null) {
     releaseFile(value);
     onChange(takeFile(file));
+  }
+
+  async function acceptImage(file: File) {
+    try {
+      const compressed = await compressImage(file, rule.maxBytes);
+      const message = fileError(compressed, acceptRule, true);
+      if (message) {
+        setPickError(message);
+        return;
+      }
+      setPickError(null);
+      replace(compressed);
+    } catch {
+      setPickError(`This image is outside the allowed size. Use ${rule.label}.`);
+    }
   }
 
   return (
@@ -45,20 +72,33 @@ export function FileUpload({
         aria-describedby={shownError ? `${id}-error` : undefined}
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
+          event.target.value = "";
           if (!file) {
             setPickError(null);
             replace(null);
             return;
           }
-          const message = fileError(file, acceptRule, true);
-          if (message) {
-            setPickError(message);
-            event.target.value = "";
+          const typeMessage = fileTypeError(file, acceptRule);
+          if (typeMessage) {
+            setPickError(typeMessage);
             return;
           }
-          setPickError(null);
-          replace(file);
-          event.target.value = "";
+          if (file.type === "application/pdf") {
+            const sizeMessage = fileSizeError(file, acceptRule);
+            if (sizeMessage) {
+              setPickError(sizeMessage);
+              return;
+            }
+            setPickError(null);
+            replace(file);
+            return;
+          }
+          if (cropAspect) {
+            setPickError(null);
+            setPending(file);
+            return;
+          }
+          void acceptImage(file);
         }}
       />
       <p className="text-xs text-muted-foreground">{rule.label}</p>
@@ -111,6 +151,23 @@ export function FileUpload({
         <p id={`${id}-error`} role="alert" className="text-sm text-secondary">
           {shownError}
         </p>
+      ) : null}
+      {pending && cropAspect ? (
+        <ImageCropper
+          file={pending}
+          aspect={cropAspect}
+          maxBytes={rule.maxBytes}
+          onCancel={() => setPending(null)}
+          onConfirm={(next) => {
+            setPending(null);
+            setPickError(null);
+            replace(next);
+          }}
+          onError={(message) => {
+            setPending(null);
+            setPickError(message);
+          }}
+        />
       ) : null}
     </div>
   );

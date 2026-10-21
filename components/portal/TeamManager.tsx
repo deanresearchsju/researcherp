@@ -6,7 +6,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { FileUpload } from "@/components/forms/FileUpload";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { FormDialog, PageTitle } from "@/components/portal/Desk";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -93,6 +94,7 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
   const [photoFile, setPhotoFile] = useState<StoredFile | null>(null);
   const [keptPhoto, setKeptPhoto] = useState("");
   const [photoError, setPhotoError] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
 
   const form = useForm<TeamFormValues>({
     resolver: zodResolver(teamFormSchema),
@@ -114,6 +116,8 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
     setPhotoError("");
     setKeptPhoto(member.photo);
     setEditingId(member.id);
+    setNotice(null);
+    setFormOpen(true);
     form.reset({
       sortOrder: String(member.sortOrder),
       role: member.role,
@@ -125,6 +129,7 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
 
   function cancelEdit() {
     clearPhoto();
+    setFormOpen(false);
     setEditingId(null);
     form.reset(emptyForm);
   }
@@ -275,7 +280,9 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         );
         continue;
       }
-      const existing = members.find((member) => member.sortOrder === Number(parsed.data.sortOrder));
+      const existing = members.find(
+        (member) => member.sortOrder === Number(parsed.data.sortOrder),
+      );
       const columns = toColumns(parsed.data, existing?.photo ?? "");
       const existingId = known.get(columns.sort_order);
       if (existingId) {
@@ -310,7 +317,7 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
 
   const visible = members.filter(
     (member) =>
-      (roleFilter === "" || member.role === roleFilter) &&
+      filterMatches(roleFilter, member.role) &&
       textMatches(query, [
         member.role,
         member.name,
@@ -323,10 +330,25 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
 
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.18em] text-secondary uppercase">
-        Admin
-      </p>
-      <h1 className="mt-2 font-heading text-4xl text-primary">Our Team</h1>
+      <PageTitle
+        kicker="Website"
+        title="Our Team"
+        actions={
+          writable && source === "database" ? (
+            <Button
+              type="button"
+              variant="gold"
+              onClick={() => {
+                cancelEdit();
+                setNotice(null);
+                setFormOpen(true);
+              }}
+            >
+              Add member
+            </Button>
+          ) : null
+        }
+      />
       <ListToolbar
         query={query}
         onQuery={setQuery}
@@ -389,92 +411,103 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
         </div>
       ) : null}
 
-      {writable && source === "database" ? (
-        <form
-          className="mt-6 grid gap-4 rounded-xl border border-border bg-card p-4 shadow-card sm:grid-cols-2"
+      {formOpen && writable && source === "database" ? (
+        <FormDialog
+          title={editingId ? "Edit member" : "Add member"}
+          onClose={cancelEdit}
           onSubmit={form.handleSubmit(onSubmit)}
-          noValidate
+          busy={busy}
+          submitLabel={editingId ? "Save member" : "Add member"}
         >
-          <h2 className="font-semibold text-primary sm:col-span-2">
-            {editingId ? "Edit member" : "Add member"}
-          </h2>
-          <FormField
-            label="Order"
-            htmlFor="sortOrder"
-            required
-            error={form.formState.errors.sortOrder?.message}
-          >
-            <Input id="sortOrder" inputMode="numeric" {...form.register("sortOrder")} />
-          </FormField>
-          <FormField
-            label="Name"
-            htmlFor="memberName"
-            error={form.formState.errors.name?.message}
-          >
-            <Input id="memberName" {...form.register("name")} />
-          </FormField>
-          <FormField
-            label="Role"
-            htmlFor="memberRole"
-            required
-            error={form.formState.errors.role?.message}
-            className="sm:col-span-2"
-          >
-            <Input id="memberRole" {...form.register("role")} />
-          </FormField>
-          <FormField
-            label="Email"
-            htmlFor="memberEmail"
-            error={form.formState.errors.email?.message}
-          >
-            <Input id="memberEmail" type="email" autoComplete="off" {...form.register("email")} />
-          </FormField>
-          <FormField
-            label="Phone"
-            htmlFor="memberPhone"
-            error={form.formState.errors.phone?.message}
-          >
-            <Input id="memberPhone" type="tel" autoComplete="off" {...form.register("phone")} />
-          </FormField>
-          <FormField label="Photograph" htmlFor="memberPhoto" error={photoError} className="sm:col-span-2">
-            <FileUpload
-              id="memberPhoto"
-              acceptRule="teamPhoto"
-              value={photoFile}
+          {notice ? (
+            <p role="alert" className="text-sm text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Order"
+              htmlFor="sortOrder"
+              required
+              error={form.formState.errors.sortOrder?.message}
+            >
+              <Input id="sortOrder" inputMode="numeric" {...form.register("sortOrder")} />
+            </FormField>
+            <FormField
+              label="Name"
+              htmlFor="memberName"
+              error={form.formState.errors.name?.message}
+            >
+              <Input id="memberName" {...form.register("name")} />
+            </FormField>
+            <FormField
+              label="Role"
+              htmlFor="memberRole"
+              required
+              error={form.formState.errors.role?.message}
+              className="sm:col-span-2"
+            >
+              <Input id="memberRole" {...form.register("role")} />
+            </FormField>
+            <FormField
+              label="Email"
+              htmlFor="memberEmail"
+              error={form.formState.errors.email?.message}
+            >
+              <Input
+                id="memberEmail"
+                type="email"
+                autoComplete="off"
+                {...form.register("email")}
+              />
+            </FormField>
+            <FormField
+              label="Phone"
+              htmlFor="memberPhone"
+              error={form.formState.errors.phone?.message}
+            >
+              <Input
+                id="memberPhone"
+                type="tel"
+                autoComplete="off"
+                {...form.register("phone")}
+              />
+            </FormField>
+            <FormField
+              label="Photograph"
+              htmlFor="memberPhoto"
               error={photoError}
-              onChange={(next) => {
-                releaseFile(photoFile);
-                setPhotoFile(next);
-                setPhotoError("");
-                if (next) setKeptPhoto("");
-              }}
-            />
-            {keptPhoto && !photoFile ? (
-              <div className="flex items-center gap-3">
-                {/* Stored team photograph; next/image cannot serve a data URL. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={keptPhoto}
-                  alt=""
-                  className="aspect-[7/9] w-20 rounded-lg border border-border object-contain"
-                />
-                <Button type="button" variant="ghost" size="sm" onClick={clearPhoto}>
-                  Remove photograph
-                </Button>
-              </div>
-            ) : null}
-          </FormField>
-          <div className="flex gap-2 sm:col-span-2">
-            <Button type="submit" variant="gold" disabled={busy}>
-              {editingId ? "Save member" : "Add member"}
-            </Button>
-            {editingId ? (
-              <Button type="button" variant="outline" onClick={cancelEdit}>
-                Cancel
-              </Button>
-            ) : null}
+              className="sm:col-span-2"
+            >
+              <FileUpload
+                id="memberPhoto"
+                acceptRule="teamPhoto"
+                value={photoFile}
+                error={photoError}
+                onChange={(next) => {
+                  releaseFile(photoFile);
+                  setPhotoFile(next);
+                  setPhotoError("");
+                  if (next) setKeptPhoto("");
+                }}
+              />
+              {keptPhoto && !photoFile ? (
+                <div className="flex items-center gap-3">
+                  {/* Stored team photograph; next/image cannot serve a data URL. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={keptPhoto}
+                    alt=""
+                    className="aspect-[7/9] w-20 rounded-lg border border-border object-contain"
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={clearPhoto}>
+                    Remove photograph
+                  </Button>
+                </div>
+              ) : null}
+            </FormField>
           </div>
-        </form>
+        </FormDialog>
       ) : null}
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">

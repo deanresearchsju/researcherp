@@ -65,8 +65,8 @@ export const researchRegister = {
     },
     {
       id: "2025-june",
-      name: "June 2025",
-      session: "June",
+      name: "July 2025",
+      session: "July",
       year: 2025,
       order: 2,
       needsRegistrationNumber: false,
@@ -83,8 +83,8 @@ export const researchRegister = {
     },
     {
       id: "2026-june",
-      name: "June 2026",
-      session: "June",
+      name: "July 2026",
+      session: "July",
       year: 2026,
       order: 4,
       needsRegistrationNumber: true,

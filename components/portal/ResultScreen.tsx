@@ -14,7 +14,7 @@ import {
   ScholarIdentityHeader,
   StatusPill,
 } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -72,8 +72,8 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (mode !== "admin") return true;
     const label = outcomeLabel(row, doctoral);
     return (
-      (outcome === "" || label === outcome) &&
-      (semester === "" || String(row.semester) === semester) &&
+      filterMatches(outcome, label) &&
+      filterMatches(semester, String(row.semester)) &&
       textMatches(query, [
         row.scholarName,
         paperOf(doctoral, row).code,
@@ -101,7 +101,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
       return [{ registrationId: row.id, outcome: chosen }];
     });
     if (entries.length === 0) {
-      setNotice("Mark Pass, RA, or AAA on this page before saving.");
+      setNotice("Mark Pass, RA or Absent on this page before saving.");
       return;
     }
     setBusy(true);
@@ -138,7 +138,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
           tabs={[
             { id: "grades", label: "Grade / mark" },
             { id: "failed", label: "RA courses" },
-            { id: "absent", label: "AAA details" },
+            { id: "absent", label: "Absent details" },
             { id: "history", label: examCopy.historyTitle },
           ]}
           value={tab}
@@ -199,7 +199,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               value: outcome,
               options: [...examOutcomes, examCopy.pending].map((item) => ({
                 value: item,
-                label: item,
+                label: item === "AAA" ? "Absent" : item,
               })),
               onChange: (value) => {
                 setOutcome(value);
@@ -319,7 +319,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
             </DeskSection>
           ) : null}
           {tab === "absent" ? (
-            <DeskSection title="AAA details">
+            <DeskSection title="Absent details">
               <DeskTable
                 headers={["Code", "Description", "Semester"]}
                 empty={absent.length === 0}
@@ -392,6 +392,13 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                     const paper = paperOf(doctoral, row);
                     const result = resultFor(doctoral, row.id);
                     const attempts = resultsFor(doctoral, row.id);
+                    const locked =
+                      attempts.some((item) => item.outcome === "Pass") ||
+                      attempts.some(
+                        (item) =>
+                          item.sessionMonth === sessionMonth &&
+                          item.sessionYear === sessionYear,
+                      );
                     return (
                       <tr key={row.id} className="border-t border-border align-top">
                         <td className="px-3 py-3">
@@ -416,7 +423,11 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                         <td className="px-3 py-3">
                           <NativeSelect
                             aria-label={`Result for ${row.scholarName} ${paper.code}`}
-                            value={drafts[row.id] ?? ""}
+                            disabled={locked}
+                            title={
+                              locked ? "This result is published and locked." : undefined
+                            }
+                            value={locked ? "" : (drafts[row.id] ?? "")}
                             onChange={(event) =>
                               setDrafts((current) => ({
                                 ...current,
@@ -424,10 +435,10 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                               }))
                             }
                           >
-                            <option value="">Not marked</option>
+                            <option value="">{locked ? "Locked" : "Not marked"}</option>
                             {examOutcomes.map((item) => (
                               <option key={item} value={item}>
-                                {item}
+                                {item === "AAA" ? "Absent" : item}
                               </option>
                             ))}
                           </NativeSelect>

@@ -1,7 +1,57 @@
-import { officeWorkHrefs, portalGroups } from "@/data/portal";
+import { portalGroups } from "@/data/portal";
 import { readPreviewSession } from "@/lib/auth";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { officeRoles, type PortalNavGroup, type Role } from "@/types";
+
+export const menuActionKinds = ["edit", "approve", "export", "upload"] as const;
+export type MenuActionKind = (typeof menuActionKinds)[number];
+
+export const menuActionCopy: Record<MenuActionKind, string> = {
+  edit: "Add / edit",
+  approve: "Approve / decide",
+  export: "Export",
+  upload: "Upload",
+};
+
+/**
+ * Saved with every rights list since sub-menu rights (add/edit, approve) were introduced.
+ * Lists without it were saved earlier: their granted menus keep add/edit and approve.
+ */
+export const rightsMarker = "/rights#v2";
+
+const approveWords =
+  /\b(approve|verify|recommend|grant|refuse|reject|return|issue|promote|demote|transfer|allot|shortlist|select|mark|send|remind|accept|decline|move|sign|seal|schedule|check & issue)\b/i;
+const editWords =
+  /\b(add|edit|save|create|update|delete|remove|upload|reset|publish|record|withdraw|reopen|change|give access|activate|nominate|submit|register|start)\b/i;
+const neverBlocked =
+  /^(cancel|close|done|clear|clear all|clear filters|back|view|print|select all|clear selection|export csv|export pdf|approved copy|download.*|previous|next|search)$/i;
+
+/** Which right a button needs, from its label. Null for buttons anyone may use. */
+export function actionForLabel(label: string): MenuActionKind | null {
+  const text = label
+    .replace(/\s+/g, " ")
+    .replace(/\(\d+\)|·.*$/g, "")
+    .trim();
+  if (!text || neverBlocked.test(text)) return null;
+  if (/^export|download|zip/i.test(text)) return "export";
+  if (approveWords.test(text)) return "approve";
+  if (editWords.test(text)) return "edit";
+  return null;
+}
+
+const uploadMenus = new Set([
+  "/admin/vacancies",
+  "/admin/applications",
+  "/admin/team",
+  "/admin/registration-numbers",
+]);
+
+const skipExportMenus = new Set([
+  "/admin/site",
+  "/admin/news",
+  "/admin/helpdesk",
+  "/admin/research-areas",
+]);
 
 export function isOfficeRole(role: Role) {
   return (officeRoles as readonly string[]).includes(role);
@@ -22,12 +72,78 @@ export function menuHrefs(role: Role) {
   return portalGroups[role].flatMap((group) => group.items.map((item) => item.href));
 }
 
-export function effectiveMenus(
-  user: { role: Role; identifier: string; menus: string[] | null } | undefined,
-) {
+export function dashboardHrefs(role: Role) {
+  return menuHrefs(role).filter((href) => href.endsWith("/dashboard"));
+}
+
+export function menuActionKey(href: string, action: MenuActionKind) {
+  return `${href}#${action}`;
+}
+
+export function parseMenuActionKey(
+  value: string,
+): { href: string; action: MenuActionKind } | null {
+  const hash = value.indexOf("#");
+  if (hash < 1) return null;
+  const href = value.slice(0, hash);
+  const action = value.slice(hash + 1);
+  if (!(menuActionKinds as readonly string[]).includes(action)) return null;
+  return { href, action: action as MenuActionKind };
+}
+
+export function isMenuActionKey(value: string) {
+  return parseMenuActionKey(value) !== null;
+}
+
+export function actionsForMenu(href: string, role: Role): MenuActionKind[] {
+  if (!isOfficeRole(role)) return [];
+  if (href.endsWith("/dashboard")) return [];
+  const kinds: MenuActionKind[] = ["edit", "approve"];
+  if (!skipExportMenus.has(href)) kinds.push("export");
+  if (uploadMenus.has(href)) kinds.push("upload");
+  return kinds;
+}
+
+type MenuHolder = {
+  role: Role;
+  identifier: string;
+  menus?: string[] | null;
+};
+
+export function resolvedMenus(user: MenuHolder | null | undefined): string[] | null {
   if (!user) return [];
   if (isPrincipalAdmin(user)) return null;
-  return user.menus;
+  if (Array.isArray(user.menus)) return user.menus;
+  if (user.role === "scholar" || user.role === "supervisor") return menuHrefs(user.role);
+  return dashboardHrefs(user.role);
+}
+
+export function effectiveMenus(user: MenuHolder | undefined) {
+  return resolvedMenus(user);
+}
+
+export function matchMenuHref(pathname: string, role: Role) {
+  return (
+    menuHrefs(role)
+      .slice()
+      .sort((left, right) => right.length - left.length)
+      .find((href) => pathname === href || pathname.startsWith(`${href}/`)) ?? null
+  );
+}
+
+export function canMenuAction(
+  user: MenuHolder | null | undefined,
+  href: string | null,
+  action: MenuActionKind,
+) {
+  if (!user || !href) return false;
+  if (isPrincipalAdmin(user)) return true;
+  const menus = resolvedMenus(user);
+  if (menus === null) return true;
+  if (menus.includes(menuActionKey(href, action))) return true;
+  // Rights saved before sub-menu rights existed keep add/edit and approve on granted menus.
+  const legacy = !menus.includes(rightsMarker);
+  return legacy && (action === "edit" || action === "approve") && menus.includes(href);
 }
 
 export const scholarPreAdmissionHrefs = [
@@ -68,48 +184,42 @@ export function canOpenMenu(
 ) {
   if (role === "scholar" && !scholarMenuOpen(pathname, admitted)) return false;
   const allowed = menus ?? menuHrefs(role);
-  const match = menuHrefs(role)
-    .slice()
-    .sort((left, right) => right.length - left.length)
-    .find((href) => pathname === href || pathname.startsWith(`${href}/`));
+  const match = matchMenuHref(pathname, role);
   if (!match) return false;
   return match.endsWith("/dashboard") || allowed.includes(match);
 }
 
 export function storedMenus(role: Role, selected: readonly string[]) {
   const catalog = menuHrefs(role);
-  const chosen = catalog.filter(
+  const pages = catalog.filter(
     (href) => href.endsWith("/dashboard") || selected.includes(href),
   );
-  return chosen.length === catalog.length ? null : chosen;
+  const actions = selected.filter((item) => {
+    const parsed = parseMenuActionKey(item);
+    return parsed !== null && pages.includes(parsed.href);
+  });
+  return [...pages, ...actions, rightsMarker];
 }
 
 export function defaultMenuHrefs(role: Role) {
-  const catalog = menuHrefs(role);
-  if (role === "staff") {
-    return catalog.filter(
-      (href) =>
-        href.endsWith("/dashboard") ||
-        (officeWorkHrefs as readonly string[]).includes(href),
-    );
-  }
-  if (role === "dean") {
-    return catalog.filter(
-      (href) =>
-        href.endsWith("/dashboard") ||
-        (officeWorkHrefs as readonly string[]).includes(href) ||
-        href === "/admin/admission-archive",
-    );
-  }
-  return catalog;
+  if (role === "scholar" || role === "supervisor") return menuHrefs(role);
+  return dashboardHrefs(role);
 }
 
 export function menuLabels(role: Role, menus: string[] | null) {
   if (menus === null) return null;
   const catalog = portalGroups[role].flatMap((group) => group.items);
-  return menus
-    .filter((href) => !href.endsWith("/dashboard"))
-    .map((href) => catalog.find((item) => item.href === href)?.label ?? href);
+  return menus.flatMap((item) => {
+    if (item.endsWith("/dashboard") || item === rightsMarker) return [];
+    const action = parseMenuActionKey(item);
+    if (action) {
+      const parent = catalog.find((entry) => entry.href === action.href);
+      if (!parent) return [];
+      return [`${parent.label} · ${menuActionCopy[action.action]}`];
+    }
+    const page = catalog.find((entry) => entry.href === item);
+    return [page?.label ?? item];
+  });
 }
 
 export function adminActionBlock() {
