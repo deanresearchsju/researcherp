@@ -282,11 +282,11 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
     role === "scholar"
       ? admitted
         ? [
-            ["/scholar/records/payment-history", "Payment history"],
+            ["/scholar/fee", "Fee and payments"],
             ["/scholar/rac", "Present RAC"],
             ["/scholar/course-work", "Course work"],
             ["/scholar/records/publications", "Add a publication"],
-            ["/scholar/records/six-month-report", "Six-month report"],
+            ["/scholar/reports", "Six-month report"],
           ]
         : [["/scholar/dashboard#admission", "Admission application"]]
       : role === "supervisor"
@@ -326,7 +326,7 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
                 ["/admin/transfers", "Transfer a supervisor"],
                 ["/admin/rac", "RAC decisions"],
                 ["/admin/payments", "Payment approvals"],
-                ["/admin/records/payment-history", "All payments"],
+                ["/admin/fee", "Fee collection"],
                 ["/admin/promotions", "Promote a semester"],
                 ["/admin/results", "Course results"],
               ];

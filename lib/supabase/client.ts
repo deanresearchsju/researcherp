@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { fetchWithTimeout } from "@/lib/supabase/timeout";
 import type { Database } from "@/types/database";
 
 let browserClient: SupabaseClient<Database> | null = null;
@@ -12,12 +13,14 @@ export function createSupabase(): SupabaseClient<Database> | null {
   if (typeof window === "undefined") {
     return createClient<Database>(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: fetchWithTimeout },
     });
   }
 
   if (!browserClient) {
     browserClient = createClient<Database>(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: fetchWithTimeout },
     });
   }
   return browserClient;

@@ -16,6 +16,7 @@ import {
 import { formatNetQualification } from "@/lib/net-exam";
 import { currentApplications, type StoredApplication } from "@/lib/records";
 import { scholarSemesterLabel } from "@/lib/scholar-identity";
+import { liveMilestones } from "@/lib/scholar-report";
 import { currentScholarRecords } from "@/lib/scholar-records";
 import type { Json } from "@/types/database";
 
@@ -520,8 +521,27 @@ function scholarWideRow(
   const allotments = currentAllotments();
   const quotas = currentQuotas();
   const allocations = currentOffice()?.allocations ?? [];
+  const row = scholarDownloadRow(scholar, allotments, quotas, allocations);
+  // Milestone columns come from the scholar's ERP records once they have loaded.
+  const milestones = liveMilestones(scholar);
+  if (milestones) {
+    const cells: [string, string][] = [
+      ["1st DC", milestones.firstDc],
+      ["2nd DC", milestones.secondDc],
+      ["Confirmation", milestones.confirmation],
+      ["Colloquium 1", milestones.colloquium1],
+      ["Colloquium 2", milestones.colloquium2],
+      ["Synopsis", milestones.synopsis],
+      ["Thesis", milestones.thesis],
+      ["Viva", milestones.viva],
+    ];
+    cells.forEach(([header, value]) => {
+      const index = (scholarDownloadHeaders as readonly string[]).indexOf(header);
+      if (index >= 0) row[index] = value;
+    });
+  }
   return [
-    ...scholarDownloadRow(scholar, allotments, quotas, allocations),
+    ...row,
     ...scholarApplicationCells(scholarSignInId(scholar), scholar.name, applications),
   ];
 }

@@ -22,7 +22,7 @@ import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-re
 import { guideOptions, scholarRows, type GuideOption } from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
-function useRecords(kind: "payment" | "six_month_report" | "publication") {
+function useRecords(kind: "payment" | "six_month_report" | "publication" | "personal_details") {
   return useSyncExternalStore(
     (onChange) => subscribeScholarRecords(kind, onChange),
     () => currentScholarRecords(kind),
@@ -66,6 +66,7 @@ export function useScholarReports():
   const payments = useRecords("payment");
   const sixMonth = useRecords("six_month_report");
   const publications = useRecords("publication");
+  const personal = useRecords("personal_details");
 
   return useMemo(() => {
     if (!doctoral || !office) return { ready: false as const };
@@ -75,6 +76,7 @@ export function useScholarReports():
       payments: payments?.records ?? [],
       sixMonth: sixMonth?.records ?? [],
       publications: publications?.records ?? [],
+      personal: personal?.records ?? [],
       today: clientToday(),
     };
     const reports = scholarRows(office.allocations, allotments).map((row) =>
@@ -101,5 +103,6 @@ export function useScholarReports():
     payments,
     sixMonth,
     publications,
+    personal,
   ]);
 }

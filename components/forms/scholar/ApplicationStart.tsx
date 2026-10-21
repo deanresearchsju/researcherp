@@ -15,11 +15,11 @@ import { scholarFormCopy } from "@/data/forms";
 import { phdWindowCopy } from "@/data/home";
 import { university } from "@/lib/constants";
 import {
-  currentOffice,
+  currentSiteSettings,
   defaultSiteSettings,
   formatPhdSession,
   parsePhdSession,
-  subscribeOffice,
+  subscribeSiteSettings,
 } from "@/lib/office";
 import { hasAnyOpenVacancy, loadVacancies, type Vacancy } from "@/lib/vacancies";
 
@@ -48,8 +48,8 @@ export function ApplicationStart({
   });
   const [busy, setBusy] = useState(false);
   const [vacancyError, setVacancyError] = useState<string | null>(null);
-  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
-  const settings = office?.settings ?? defaultSiteSettings;
+  const loaded = useSyncExternalStore(subscribeSiteSettings, currentSiteSettings, () => null);
+  const settings = loaded ?? defaultSiteSettings;
   const session = parsePhdSession(settings.admissionSession);
   const sessionLabel = formatPhdSession(session.month, session.year);
 
@@ -67,13 +67,13 @@ export function ApplicationStart({
       setBusy(false);
     }
   }
-  if (office && !office.settings.phdOpen) {
+  if (loaded && !loaded.phdOpen) {
     return (
       <ApplicationsClosed
         title="Admissions are currently closed"
         detail={
-          office.settings.deadline.trim()
-            ? `${phdWindowCopy.closedDetail} ${office.settings.deadlineLabel} ${office.settings.deadline}.`
+          loaded.deadline.trim()
+            ? `${phdWindowCopy.closedDetail} ${loaded.deadlineLabel} ${loaded.deadline}.`
             : phdWindowCopy.closedDetail
         }
       />

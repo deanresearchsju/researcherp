@@ -54,6 +54,14 @@ export function subscribePortraits(onChange: () => void) {
   return () => listeners.delete(onChange);
 }
 
+/** The application-photo index, loading it when needed. */
+export async function ensurePortraits() {
+  if (memory) return memory;
+  const loaded = await loadStoredApplications();
+  publish(indexRecords(loaded.records));
+  return memory ?? { byKey: {} };
+}
+
 export function portraitFor(
   index: PortraitIndex | null,
   identifier: string,

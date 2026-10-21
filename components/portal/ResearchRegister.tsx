@@ -10,6 +10,7 @@ import { FormDialog, PageTitle } from "@/components/portal/Desk";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ScholarRegisterEditor } from "@/components/portal/RegisterEditors";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,9 @@ import { registrationCopy } from "@/data/registration";
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { useCanMenuAction } from "@/lib/use-menu-action";
+import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { currentOffice, subscribeOffice } from "@/lib/office";
+import { liveMilestones } from "@/lib/scholar-report";
 import {
   matchPhdApplication,
   scholarWideDownloadRow,
@@ -122,12 +125,15 @@ export function ResearchRegister() {
     currentApplications,
     () => null,
   );
+  // Milestone columns are filled from each scholar's ERP records.
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
   const [query, setQuery] = useState("");
   const [batchId, setBatchId] = useState("");
   const [department, setDepartment] = useState("");
   const [guide, setGuide] = useState("");
   const [researchArea, setResearchArea] = useState("");
   const [allotId, setAllotId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{
     application: StoredApplication;
     personId: string;
@@ -168,6 +174,8 @@ export function ResearchRegister() {
     .map((scholar) => scholarWideDownloadRow(scholar, storedApplications));
   const allotScholar =
     researchRegister.scholars.find((scholar) => scholar.id === allotId) ?? null;
+  const editScholar =
+    researchRegister.scholars.find((scholar) => scholar.id === editId) ?? null;
 
   async function saveViewedApplication(next: {
     applicantName: string;
@@ -360,6 +368,7 @@ export function ResearchRegister() {
                 "Confirmation",
                 "Colloquium 1",
                 "Colloquium 2",
+                "Colloquium attendance",
                 "Synopsis",
                 "Thesis",
                 "Viva",
@@ -377,6 +386,7 @@ export function ResearchRegister() {
               const registration = registrationOf(scholar, shownAllotments);
               const savedNumber = registrationIsSaved(scholar, shownAllotments);
               const canAllot = session?.role === "admin" || session?.role === "staff";
+              const milestones = doctoral ? liveMilestones(scholar, doctoral) : null;
               return (
                 <tr key={scholar.id} className="border-t border-border align-top">
                   <td className="px-3 py-3">{scholar.serialNo}</td>
@@ -399,14 +409,21 @@ export function ResearchRegister() {
                   <td className="px-3 py-3">
                     {blank(supervisorForGuide(scholar.guideName)?.researchArea ?? "")}
                   </td>
-                  <td className="px-3 py-3">{blank(scholar.firstDc)}</td>
-                  <td className="px-3 py-3">{blank(scholar.secondDc)}</td>
-                  <td className="px-3 py-3">{blank(scholar.confirmation)}</td>
-                  <td className="px-3 py-3">{blank(scholar.colloquium1)}</td>
-                  <td className="px-3 py-3">{blank(scholar.colloquium2)}</td>
-                  <td className="px-3 py-3">{blank(scholar.synopsis)}</td>
-                  <td className="px-3 py-3">{blank(scholar.thesis)}</td>
-                  <td className="px-3 py-3">{blank(scholar.viva)}</td>
+                  {[
+                    milestones?.firstDc ?? scholar.firstDc,
+                    milestones?.secondDc ?? scholar.secondDc,
+                    milestones?.confirmation ?? scholar.confirmation,
+                    milestones?.colloquium1 ?? scholar.colloquium1,
+                    milestones?.colloquium2 ?? scholar.colloquium2,
+                    milestones?.colloquium ?? "",
+                    milestones?.synopsis ?? scholar.synopsis,
+                    milestones?.thesis ?? scholar.thesis,
+                    milestones?.viva ?? scholar.viva,
+                  ].map((value, index) => (
+                    <td key={index} className="px-3 py-3 whitespace-nowrap">
+                      {blank(value)}
+                    </td>
+                  ))}
                   <td className="px-3 py-3">
                     <div className="flex gap-2">
                       <Button
@@ -442,6 +459,19 @@ export function ResearchRegister() {
                           Download
                         </Button>
                       ) : null}
+                      {canAllot ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setNotice(null);
+                            setEditId(scholar.id);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      ) : null}
                       {savedNumber && session?.role === "admin" ? (
                         <Button
                           type="button"
@@ -469,6 +499,17 @@ export function ResearchRegister() {
           </tbody>
         </table>
       </div>
+      {editScholar ? (
+        <ScholarRegisterEditor
+          key={editScholar.id}
+          scholar={editScholar}
+          onClose={() => setEditId(null)}
+          onDone={(message) => {
+            setEditId(null);
+            setNotice(message);
+          }}
+        />
+      ) : null}
       {viewing ? (
         <ApplicationViewer
           application={viewing.application}

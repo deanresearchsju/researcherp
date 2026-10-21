@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PublicForms } from "@/components/forms/PublicForms";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { downloads } from "@/data/downloads";
 import { pageHeroes } from "@/data/page-heroes";
@@ -18,7 +19,7 @@ export default function DownloadsPage() {
     <>
       <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
       <ul className="mx-auto w-full max-w-6xl divide-y divide-border px-4 py-8 sm:px-6 lg:px-8">
-        {downloads.map((item) => (
+        {downloads.filter((item) => item.href).map((item) => (
           <li
             key={item.id}
             className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
@@ -37,6 +38,7 @@ export default function DownloadsPage() {
             ) : null}
           </li>
         ))}
+        <PublicForms />
       </ul>
     </>
   );

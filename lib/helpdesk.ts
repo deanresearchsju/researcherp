@@ -68,8 +68,28 @@ function writeLocal(items: HelpdeskMessage[]) {
   window.localStorage.setItem(storageKeys.helpdesk, JSON.stringify(items));
 }
 
+const noMessages: HelpdeskMessage[] = [];
+let cachedRaw: string | null = null;
+let cachedMessages: HelpdeskMessage[] = noMessages;
+
+/** Stable snapshot for useSyncExternalStore: the same array until the stored text changes. */
 export function localHelpdeskMessages() {
-  return readLocal();
+  if (typeof window === "undefined") return noMessages;
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(storageKeys.helpdesk);
+  } catch {
+    return noMessages;
+  }
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedMessages = readLocal();
+  }
+  return cachedMessages;
+}
+
+export function serverHelpdeskMessages() {
+  return noMessages;
 }
 
 export function subscribeHelpdesk(onStoreChange: () => void) {

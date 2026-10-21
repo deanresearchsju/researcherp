@@ -27,7 +27,7 @@ import { ApplicationsClosed } from "@/components/forms/ApplicationsClosed";
 import { supervisorEnclosures } from "@/data/documents";
 import { supervisorDeclaration } from "@/data/declarations";
 import { supervisorFormCopy } from "@/data/forms";
-import { currentOffice, subscribeOffice, supervisorApplicationsOpen } from "@/lib/office";
+import { currentSiteSettings, subscribeSiteSettings, supervisorApplicationsOpen } from "@/lib/office";
 import {
   attachmentFiles,
   attachmentNames,
@@ -208,7 +208,7 @@ export function SupervisorApplication() {
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
   const [issued, setIssued] = useState<SupervisorReceipt | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  const siteSettings = useSyncExternalStore(subscribeSiteSettings, currentSiteSettings, () => null);
 
   const form = useForm<SupervisorFormValues>({
     resolver: zodResolver(supervisorSchema),
@@ -363,7 +363,7 @@ export function SupervisorApplication() {
     return <SupervisorReceiptView receipt={issued} />;
   }
 
-  if (office && !office.settings.supervisorOpen) {
+  if (siteSettings && !siteSettings.supervisorOpen) {
     return (
       <ApplicationsClosed
         title="Supervisor applications are closed"

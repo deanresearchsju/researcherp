@@ -12,7 +12,7 @@ function sizeRule(file: File, ruleKey: FileLimitKey) {
       return {
         minBytes: fileLimits.photo.minBytes,
         maxBytes: fileLimits.photo.maxBytes,
-        label: fileLimits.photo.label,
+        label: "JPG or PNG, up to 200 KB",
       };
     }
     if (file.type === "application/pdf") {
@@ -48,6 +48,11 @@ export function fileSizeError(file: File, ruleKey: FileLimitKey) {
 export function fileError(file: File | null, ruleKey: FileLimitKey, required: boolean) {
   if (!file) return required ? "Upload this document." : null;
   return fileTypeError(file, ruleKey) ?? fileSizeError(file, ruleKey);
+}
+
+/** Largest size an image may be for this rule (an image sent as a document counts as a photo). */
+export function imageLimitFor(ruleKey: FileLimitKey) {
+  return ruleKey === "document" ? fileLimits.photo.maxBytes : fileLimits[ruleKey].maxBytes;
 }
 
 export function takeFile(file: File | null): StoredFile | null {
@@ -88,11 +93,13 @@ export async function compressImage(file: File, maxBytes: number): Promise<File>
   if (!file.type.startsWith("image/")) return file;
   if (file.size <= maxBytes) return file;
   const bitmap = await createImageBitmap(file);
-  let width = bitmap.width;
-  let height = bitmap.height;
+  // Camera photos are many megapixels; start from a sensible size so compression succeeds.
+  const start = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  let width = bitmap.width * start;
+  let height = bitmap.height * start;
   let quality = 0.9;
   let lastBlob: Blob | null = null;
-  for (let attempt = 0; attempt < 14; attempt += 1) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(width));
     canvas.height = Math.max(1, Math.round(height));

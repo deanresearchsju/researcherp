@@ -406,6 +406,49 @@ export type Database = {
         };
         Relationships: [];
       };
+      portal_forms: {
+        Row: {
+          id: string;
+          title: string;
+          category: string;
+          audience: string[];
+          file_name: string;
+          file_type: string;
+          file_size: number;
+          file_data: string;
+          complete: boolean;
+          uploaded_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          category?: string;
+          audience?: string[];
+          file_name: string;
+          file_type: string;
+          file_size?: number;
+          file_data: string;
+          complete?: boolean;
+          uploaded_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          category?: string;
+          audience?: string[];
+          file_name?: string;
+          file_type?: string;
+          file_size?: number;
+          file_data?: string;
+          complete?: boolean;
+          uploaded_by?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       thesis_panels: {
         Row: { id: string; payload: Json; updated_at: string };
         Insert: { id: string; payload: Json; updated_at?: string };

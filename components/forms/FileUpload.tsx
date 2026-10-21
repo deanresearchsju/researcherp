@@ -12,6 +12,7 @@ import {
   fileError,
   fileSizeError,
   fileTypeError,
+  imageLimitFor,
   releaseFile,
   takeFile,
   type StoredFile,
@@ -48,7 +49,7 @@ export function FileUpload({
 
   async function acceptImage(file: File) {
     try {
-      const compressed = await compressImage(file, rule.maxBytes);
+      const compressed = await compressImage(file, imageLimitFor(acceptRule));
       const message = fileError(compressed, acceptRule, true);
       if (message) {
         setPickError(message);

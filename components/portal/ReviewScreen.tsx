@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { menuByKind, scholarRecordMenus } from "@/data/scholar-records";
+import { menuByKind } from "@/data/scholar-records";
 import { formatIsoDate } from "@/lib/dates";
 import { currentOffice, sameId, subscribeOffice } from "@/lib/office";
 import { scholarBySignIn, scholarsGuidedBy, sameGuide } from "@/lib/register";
@@ -27,7 +27,6 @@ import {
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
 
-const reviewMenus = scholarRecordMenus.filter((menu) => menu.needsSupervisor);
 
 export function ReviewScreen() {
   const session = usePortalSession();
@@ -239,9 +238,6 @@ export function ReviewScreen() {
           </ul>
         </DeskSection>
       )}
-      <p className="text-xs text-muted-foreground">
-        Menus covered: {reviewMenus.map((menu) => menu.label).join(", ")}.
-      </p>
     </DeskPage>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { compressImage } from "@/lib/files";
@@ -80,9 +81,10 @@ export function ImageCropper({
     }
   }
 
-  return (
+  // Above the ERP dialogs (z-200), so it also works when opened from inside one.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-purple-deep/70 p-4"
+      className="fixed inset-0 z-[450] grid place-items-center bg-purple-deep/70 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="crop-title"
@@ -163,6 +165,7 @@ export function ImageCropper({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

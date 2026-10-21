@@ -78,6 +78,31 @@ export function subscribeProfilePhoto(
   return () => listeners.delete(onChange);
 }
 
+/** Photos for many people at once, by profile-photo key; missing people are absent. */
+export async function fetchProfilePhotos(role: Role, identifiers: readonly string[]) {
+  const keys = [...new Set(identifiers.filter((id) => id.trim()).map((id) => profilePhotoKey(role, id)))];
+  const found = new Map<string, string>();
+  const supabase = createSupabase();
+  if (supabase) {
+    for (let start = 0; start < keys.length; start += 80) {
+      const { data, error } = await supabase
+        .from("profile_photos")
+        .select("id, photo")
+        .in("id", keys.slice(start, start + 80));
+      if (error) break;
+      (data ?? []).forEach((row) => {
+        if (row.photo?.startsWith("data:")) found.set(row.id, row.photo);
+      });
+    }
+  }
+  keys.forEach((key) => {
+    if (found.has(key)) return;
+    const local = readBrowser(key);
+    if (local) found.set(key, local);
+  });
+  return found;
+}
+
 export async function saveProfilePhoto(role: Role, identifier: string, photo: string) {
   const key = profilePhotoKey(role, identifier);
   const supabase = createSupabase();

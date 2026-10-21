@@ -4,6 +4,7 @@ import {
   type ResearchSupervisor,
 } from "@/data/research-register";
 import { adminActionBlock, officeWriteBlock, registrationWriteBlock } from "@/lib/access";
+import { readPreviewSession } from "@/lib/auth";
 import { storageKeys, studyModes } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
@@ -68,6 +69,60 @@ export type FeeReminder = {
   sentBy: string;
 };
 
+/** Scholar register fields the office may correct. */
+export const scholarEditFields = [
+  "name",
+  "fileNumber",
+  "applicationNumber",
+  "department",
+  "batchId",
+  "phone",
+  "email",
+  "title",
+  "category",
+  "institution",
+  "guideName",
+  "firstDc",
+  "secondDc",
+  "confirmation",
+  "colloquium1",
+  "colloquium2",
+  "synopsis",
+  "thesis",
+  "viva",
+] as const;
+export type ScholarEditField = (typeof scholarEditFields)[number];
+
+/** Supervisor register fields the office may correct. */
+export const supervisorEditFields = [
+  "name",
+  "supervisorId",
+  "department",
+  "designation",
+  "researchArea",
+  "campus",
+  "phone",
+  "email",
+] as const;
+export type SupervisorEditField = (typeof supervisorEditFields)[number];
+
+/** Office corrections laid over the register as it was first loaded. */
+export type ScholarEdit = {
+  scholarId: string;
+  fields: Partial<Record<ScholarEditField, string>>;
+  editedOn: string;
+  editedBy: string;
+};
+
+export type SupervisorEdit = {
+  /** Original supervisor ID, or the original name when there was no ID. */
+  key: string;
+  fields: Partial<Record<SupervisorEditField, string>>;
+  onVacancyList?: boolean;
+  editedOn: string;
+  editedBy: string;
+};
+
 export type RegisterLoad = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
@@ -75,6 +130,8 @@ export type RegisterLoad = {
   exits: SupervisorExit[];
   passedOut: PassedOutScholar[];
   reminders: FeeReminder[];
+  scholarEdits: ScholarEdit[];
+  supervisorEdits: SupervisorEdit[];
   source: "database" | "browser";
   updatedAt: string | null;
   detail: string | null;
@@ -183,6 +240,99 @@ function parsePassedOut(value: unknown): PassedOutScholar[] {
   });
 }
 
+function parseFields<K extends string>(value: unknown, keys: readonly K[]) {
+  const fields: Partial<Record<K, string>> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fields;
+  const row = value as Record<string, unknown>;
+  keys.forEach((key) => {
+    if (typeof row[key] === "string") fields[key] = (row[key] as string).trim();
+  });
+  return fields;
+}
+
+function parseScholarEdits(value: unknown): ScholarEdit[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.scholarId)) return [];
+    return [
+      {
+        scholarId: text(row.scholarId),
+        fields: parseFields(row.fields, scholarEditFields),
+        editedOn: text(row.editedOn),
+        editedBy: text(row.editedBy),
+      },
+    ];
+  });
+}
+
+function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.key)) return [];
+    return [
+      {
+        key: text(row.key),
+        fields: parseFields(row.fields, supervisorEditFields),
+        ...(typeof row.onVacancyList === "boolean" ? { onVacancyList: row.onVacancyList } : {}),
+        editedOn: text(row.editedOn),
+        editedBy: text(row.editedBy),
+      },
+    ];
+  });
+}
+
+// The register exactly as shipped, so corrections are always laid over the original values.
+const originalScholars = researchRegister.scholars.map((scholar) => ({ ...scholar }));
+const originalSupervisors = researchRegister.supervisors.map((supervisor) => ({
+  ...supervisor,
+}));
+
+export function supervisorEditKey(supervisor: Pick<ResearchSupervisor, "supervisorId" | "name">) {
+  return supervisor.supervisorId.trim() || supervisor.name.trim();
+}
+
+/**
+ * Lays the office's corrections over the register in place, so every screen and the sign-in
+ * check read the corrected details. Renaming a supervisor carries the new name to their scholars.
+ */
+export function applyRegisterEdits(
+  scholarEdits: readonly ScholarEdit[],
+  supervisorEdits: readonly SupervisorEdit[],
+) {
+  const renamed: { from: string; to: string }[] = [];
+  researchRegister.supervisors.forEach((supervisor, index) => {
+    const original = originalSupervisors[index];
+    const edit = supervisorEdits.find((item) => sameKey(item.key, supervisorEditKey(original)));
+    Object.assign(supervisor, original, edit?.fields ?? {});
+    if (edit?.onVacancyList !== undefined) supervisor.onVacancyList = edit.onVacancyList;
+    if (edit?.fields.name && edit.fields.name !== original.name) {
+      renamed.push({ from: original.name, to: edit.fields.name });
+    }
+  });
+  researchRegister.scholars.forEach((scholar, index) => {
+    const original = originalScholars[index];
+    const edit = scholarEdits.find((item) => item.scholarId === original.id);
+    Object.assign(scholar, original, edit?.fields ?? {});
+    if (!edit?.fields.guideName) {
+      const move = renamed.find((item) => sameGuide(item.from, original.guideName));
+      if (move) scholar.guideName = move.to;
+    }
+  });
+}
+
+/** Server side: applies the corrections saved in the research_register row. */
+export function applyRegisterPayload(payload: unknown) {
+  const row = payloadOf(payload);
+  applyRegisterEdits(
+    parseScholarEdits(row?.scholarEdits),
+    parseSupervisorEdits(row?.supervisorEdits),
+  );
+}
+
 type StoredRegister = {
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
@@ -190,6 +340,8 @@ type StoredRegister = {
   exits: SupervisorExit[];
   passedOut: PassedOutScholar[];
   reminders: FeeReminder[];
+  scholarEdits: ScholarEdit[];
+  supervisorEdits: SupervisorEdit[];
 };
 
 const emptyStored = (): StoredRegister => ({
@@ -199,6 +351,8 @@ const emptyStored = (): StoredRegister => ({
   exits: [],
   passedOut: [],
   reminders: [],
+  scholarEdits: [],
+  supervisorEdits: [],
 });
 
 function readStored(): StoredRegister {
@@ -223,6 +377,8 @@ function readStored(): StoredRegister {
       exits: parseExits(record.exits),
       passedOut: parsePassedOut(record.passedOut),
       reminders: parseReminders(record.reminders),
+      scholarEdits: parseScholarEdits(record.scholarEdits),
+      supervisorEdits: parseSupervisorEdits(record.supervisorEdits),
     };
   } catch {
     return emptyStored();
@@ -264,6 +420,8 @@ export async function loadRegister(): Promise<RegisterLoad> {
     exits: parseExits(payload?.exits),
     passedOut: parsePassedOut(payload?.passedOut),
     reminders: parseReminders(payload?.reminders),
+    scholarEdits: parseScholarEdits(payload?.scholarEdits),
+    supervisorEdits: parseSupervisorEdits(payload?.supervisorEdits),
     source: "database",
     updatedAt: data?.updated_at ?? null,
     detail: null,
@@ -282,6 +440,7 @@ let loading = false;
 const listeners = new Set<() => void>();
 
 function publish(next: RegisterLoad) {
+  applyRegisterEdits(next.scholarEdits, next.supervisorEdits);
   memory = next;
   listeners.forEach((listener) => listener());
 }
@@ -291,9 +450,8 @@ export function subscribeRegister(onChange: () => void) {
   if (!memory && !loading) {
     loading = true;
     void loadRegister().then((value) => {
-      memory = value;
       loading = false;
-      listeners.forEach((listener) => listener());
+      publish(value);
     });
   }
   return () => listeners.delete(onChange);
@@ -448,29 +606,137 @@ export function scholarSignInId(scholar: ResearchScholar) {
 export function scholarBySignIn(identifier: string) {
   const id = identifier.trim().toLowerCase();
   if (!id) return null;
-  return (
-    researchRegister.scholars.find((scholar) =>
-      [
-        scholar.email,
-        scholar.applicationNumber,
-        scholar.registrationNumber,
-        scholar.fileNumber,
-        scholar.id,
-      ].some((value) => value.toLowerCase() === id),
-    ) ?? null
+  const keys = (scholar: ResearchScholar) => [
+    scholar.email,
+    scholar.applicationNumber,
+    scholar.registrationNumber,
+    scholar.fileNumber,
+    scholar.id,
+  ];
+  const matches = (scholar: ResearchScholar) =>
+    keys(scholar).some((value) => value.trim().toLowerCase() === id);
+  // A corrected email or number still finds the scholar by the one they first signed in with.
+  const index = researchRegister.scholars.findIndex(
+    (scholar, at) => matches(scholar) || matches(originalScholars[at]),
   );
+  return index >= 0 ? researchRegister.scholars[index] : null;
 }
 
 export function supervisorBySignIn(identifier: string) {
   const id = identifier.trim().toLowerCase();
   if (!id) return null;
-  return (
-    researchRegister.supervisors.find((supervisor) =>
-      [supervisor.email, supervisor.supervisorId, supervisor.name].some(
-        (value) => value.trim().toLowerCase() === id,
-      ),
-    ) ?? supervisorForGuide(identifier)
+  const matches = (supervisor: ResearchSupervisor) =>
+    [supervisor.email, supervisor.supervisorId, supervisor.name].some(
+      (value) => value.trim().toLowerCase() === id,
+    );
+  const index = researchRegister.supervisors.findIndex(
+    (supervisor, at) => matches(supervisor) || matches(originalSupervisors[at]),
   );
+  return index >= 0 ? researchRegister.supervisors[index] : supervisorForGuide(identifier);
+}
+
+/** The edit key from the supervisor as first loaded, even after the ID or name is corrected. */
+export function originalSupervisorKey(supervisor: ResearchSupervisor) {
+  const original =
+    originalSupervisors.find((item) => item.serialNo === supervisor.serialNo) ?? supervisor;
+  return supervisorEditKey(original);
+}
+
+/** The scholar as first loaded, before any office correction. */
+export function originalScholar(scholarId: string) {
+  return originalScholars.find((scholar) => scholar.id === scholarId) ?? null;
+}
+
+function editedFields<K extends string>(
+  original: Record<K, unknown>,
+  next: Partial<Record<K, string>>,
+  keys: readonly K[],
+) {
+  const fields: Partial<Record<K, string>> = {};
+  keys.forEach((key) => {
+    const value = next[key];
+    if (value === undefined) return;
+    if (value.trim() !== String(original[key] ?? "").trim()) fields[key] = value.trim();
+  });
+  return fields;
+}
+
+function editor() {
+  const session = readPreviewSession();
+  return session ? session.name.trim() || session.identifier : "";
+}
+
+/** Saves the office's correction of a scholar's register details. */
+export async function saveScholarEdit(
+  scholarId: string,
+  next: Partial<Record<ScholarEditField, string>>,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const original = originalScholar(scholarId);
+  if (!original) return { ok: false as const, message: "That scholar is not on the register." };
+  if ((next.name ?? original.name).trim().length < 2) {
+    return { ok: false as const, message: "Enter the scholar's name." };
+  }
+  const email = (next.email ?? "").trim().toLowerCase();
+  if (
+    email &&
+    researchRegister.scholars.some(
+      (item) => item.id !== scholarId && item.email.trim().toLowerCase() === email,
+    )
+  ) {
+    return { ok: false as const, message: "Another scholar on the register has that email." };
+  }
+  const current = memory ?? (await loadRegister());
+  const fields = editedFields(original, next, scholarEditFields);
+  const rest = current.scholarEdits.filter((item) => item.scholarId !== scholarId);
+  const scholarEdits =
+    Object.keys(fields).length > 0
+      ? [...rest, { scholarId, fields, editedOn: new Date().toISOString(), editedBy: editor() }]
+      : rest;
+  return persistRegister({ ...current, scholarEdits });
+}
+
+/** Saves the office's correction of a supervisor's register details. */
+export async function saveSupervisorEdit(
+  key: string,
+  next: Partial<Record<SupervisorEditField, string>>,
+  onVacancyList: boolean,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const original = originalSupervisors.find((item) => sameKey(supervisorEditKey(item), key));
+  if (!original) {
+    return { ok: false as const, message: "That supervisor is not on the register." };
+  }
+  if ((next.name ?? original.name).trim().length < 3) {
+    return { ok: false as const, message: "Enter the supervisor's name." };
+  }
+  const current = memory ?? (await loadRegister());
+  const fields = editedFields(original, next, supervisorEditFields);
+  const rest = current.supervisorEdits.filter((item) => !sameKey(item.key, key));
+  const changed = Object.keys(fields).length > 0 || onVacancyList !== original.onVacancyList;
+  const supervisorEdits = changed
+    ? [
+        ...rest,
+        {
+          key: supervisorEditKey(original),
+          fields,
+          ...(onVacancyList !== original.onVacancyList ? { onVacancyList } : {}),
+          editedOn: new Date().toISOString(),
+          editedBy: editor(),
+        },
+      ]
+    : rest;
+  return persistRegister({ ...current, supervisorEdits });
+}
+
+export function scholarEditOf(scholarId: string) {
+  return memory?.scholarEdits.find((item) => item.scholarId === scholarId) ?? null;
+}
+
+export function supervisorEditOf(key: string) {
+  return memory?.supervisorEdits.find((item) => sameKey(item.key, key)) ?? null;
 }
 
 export function supervisorForAllotment(allotment: GuideAllotment) {
@@ -732,6 +998,8 @@ async function persistRegister(next: RegisterLoad) {
     exits: next.exits ?? [],
     passedOut: next.passedOut ?? [],
     reminders: next.reminders ?? [],
+    scholarEdits: next.scholarEdits ?? [],
+    supervisorEdits: next.supervisorEdits ?? [],
   };
   const supabase = createSupabase();
   if (supabase && next.source === "database") {

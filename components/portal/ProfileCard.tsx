@@ -6,7 +6,8 @@ import { useSyncExternalStore } from "react";
 
 import { university, fileLimits } from "@/lib/constants";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
-import { fileError, fileToDataUrl } from "@/lib/files";
+import { ImageCropper } from "@/components/forms/ImageCropper";
+import { cropAspectFor, fileError, fileToDataUrl, fileTypeError } from "@/lib/files";
 import {
   allocationFor,
   currentOffice,
@@ -189,10 +190,23 @@ export function ProfileCard({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<File | null>(null);
   const shown = photo || (identifier ? portraitFor(portraits, identifier, name) : null);
   const officeCanChange = own?.role === "admin" && view?.role === role;
   const canSet = ready && identifier && !photo && !officeCanChange;
   const canChange = ready && identifier && officeCanChange;
+
+  // A chosen photo opens the crop window first; the cropped photo is resized to the limit.
+  function onPick(file: File | undefined) {
+    if (!file || !identifier) return;
+    const problem = fileTypeError(file, "photo");
+    if (problem) {
+      setNotice(problem);
+      return;
+    }
+    setNotice(null);
+    setPending(file);
+  }
 
   async function onFile(file: File | undefined) {
     if (!file || !identifier) return;
@@ -263,10 +277,26 @@ export function ProfileCard({
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   event.target.value = "";
-                  void onFile(file);
+                  onPick(file);
                 }}
               />
             </label>
+          ) : null}
+          {pending ? (
+            <ImageCropper
+              file={pending}
+              aspect={cropAspectFor("photo") ?? 3.5 / 4.5}
+              maxBytes={fileLimits.photo.maxBytes}
+              onCancel={() => setPending(null)}
+              onConfirm={(cropped) => {
+                setPending(null);
+                void onFile(cropped);
+              }}
+              onError={(message) => {
+                setPending(null);
+                setNotice(message);
+              }}
+            />
           ) : null}
         </div>
         <div className="min-w-0 flex-1 sm:pb-1">
@@ -309,12 +339,6 @@ export function ProfileCard({
         ))}
       </dl>
       {role === "scholar" ? <GuideBlock identifier={identifier} /> : null}
-      {canSet ? (
-        <p className="px-5 pb-4 text-xs text-muted-foreground sm:px-7">
-          Add your photo once with the camera button. {fileLimits.photo.label}. A later
-          change is made by the research office.
-        </p>
-      ) : null}
       {notice ? (
         <p role="status" className="px-5 pb-4 text-sm text-secondary sm:px-7">
           {notice}
@@ -385,6 +409,18 @@ export function ProfilePhotoChange({
   identifier: string;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<File | null>(null);
+
+  function onPick(file: File | undefined) {
+    if (!file) return;
+    const problem = fileTypeError(file, "photo");
+    if (problem) {
+      setNotice(problem);
+      return;
+    }
+    setNotice(null);
+    setPending(file);
+  }
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -414,10 +450,26 @@ export function ProfilePhotoChange({
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          void onFile(file);
+          onPick(file);
         }}
       />
       {notice ? <span className="text-xs text-secondary">{notice}</span> : null}
+      {pending ? (
+        <ImageCropper
+          file={pending}
+          aspect={cropAspectFor("photo") ?? 3.5 / 4.5}
+          maxBytes={fileLimits.photo.maxBytes}
+          onCancel={() => setPending(null)}
+          onConfirm={(cropped) => {
+            setPending(null);
+            void onFile(cropped);
+          }}
+          onError={(message) => {
+            setPending(null);
+            setNotice(message);
+          }}
+        />
+      ) : null}
     </label>
   );
 }

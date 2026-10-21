@@ -1,14 +1,17 @@
-import { researchRegister } from "@/data/research-register";
+import { researchRegister, type ResearchScholar } from "@/data/research-register";
 import { isPartTimeMode } from "@/lib/constants";
+import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
   attendanceKey,
   colloquiumMarked,
+  currentDoctoral,
   enrollmentFor,
   latestCommittee,
   latestPlagiarism,
   latestSynopsis,
   latestThesis,
   latestViva,
+  lettersOf,
   reportPeriodsFor,
   resultFor,
   scholarSemester,
@@ -18,7 +21,14 @@ import {
 } from "@/lib/doctoral";
 import { feeLedger } from "@/lib/fee-ledger";
 import { racStanding, sameId, type RacProposal } from "@/lib/office";
-import { batchOf, scholarBySignIn } from "@/lib/register";
+import {
+  batchOf,
+  originalScholar,
+  scholarBySignIn,
+  scholarSignInId,
+  supervisorForGuide,
+} from "@/lib/register";
+import { researchTitleOf } from "@/lib/research-title";
 import type { ScholarRecord } from "@/lib/scholar-records";
 import type { ScholarRow } from "@/lib/supervision";
 
@@ -58,6 +68,11 @@ export type ScholarReport = {
   mode: StudyMode;
   guideName: string;
   guideIdentifier: string;
+  /** Research title as fixed by the committees (or the register for earlier batches). */
+  title: string;
+  titleStage: string;
+  /** Area of research: the guide's area on the supervisor register. */
+  researchArea: string;
   email: string;
   phone: string;
   semester: number;
@@ -88,6 +103,8 @@ export type ReportSources = {
   payments: readonly ScholarRecord[];
   sixMonth: readonly ScholarRecord[];
   publications: readonly ScholarRecord[];
+  /** Scholar information entered by the office (area of research and more). */
+  personal?: readonly ScholarRecord[];
   today: string;
 };
 
@@ -225,6 +242,7 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
     latestPlagiarism(doctoral, identifier, "synopsis");
   const viva = latestViva(doctoral, identifier);
   const ledger = feeLedger(identifier, row.name, sources.payments, today);
+  const researchTitle = researchTitleOf(doctoral, identifier);
   const paid = ledger.plan
     .filter((year) => year.status !== "Upcoming")
     .reduce((sum, year) => sum + year.paid, 0);
@@ -238,6 +256,14 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
     mode,
     guideName: row.currentName,
     guideIdentifier: row.currentIdentifier,
+    title: researchTitle.title,
+    titleStage: researchTitle.stage,
+    researchArea:
+      mineRecords(sources.personal ?? [])
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+        ?.payload.researchArea?.trim() ||
+      supervisorForGuide(row.currentName || register?.guideName || "")?.researchArea ||
+      "",
     email: register?.email || (identifier.includes("@") ? identifier : ""),
     phone: register?.phone || "",
     semester: scholarSemester(doctoral, identifier),
@@ -286,6 +312,134 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
     feeBalance: ledger.outstanding,
   };
   return { ...base, stage: stageOf(base) };
+}
+
+export type RegisterMilestones = {
+  firstDc: string;
+  secondDc: string;
+  confirmation: string;
+  colloquium1: string;
+  colloquium2: string;
+  colloquium: string;
+  synopsis: string;
+  thesis: string;
+  viva: string;
+};
+
+function when(value: string) {
+  const text = value.trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? formatIsoDate(text.slice(0, 10)) : text;
+}
+
+function joined(...parts: string[]) {
+  return parts.filter((part) => part.trim()).join(" · ");
+}
+
+/**
+ * The register's milestone columns, filled from the scholar's ERP records (committees,
+ * confirmation letter, colloquium attendance, synopsis, thesis, viva). The register's own entry
+ * is used only where the ERP has nothing yet.
+ */
+export function registerMilestones(
+  scholar: ResearchScholar,
+  doctoral: DoctoralState,
+  keys: readonly string[],
+  today: string,
+): RegisterMilestones {
+  const live = keys.filter((key) => key.trim());
+  const find = <T,>(read: (key: string) => T | null | undefined) => {
+    for (const key of live) {
+      const found = read(key);
+      if (found) return found;
+    }
+    return null;
+  };
+  const committee = (kind: "first" | "second", register: string) => {
+    const report = find((key) => latestCommittee(doctoral, kind, key));
+    if (report?.status === "Approved") {
+      return joined("Held", when(report.meetingOn || report.decidedOn));
+    }
+    if (report) return report.status === "Rejected" ? "Returned" : "Report submitted";
+    return register.trim();
+  };
+  const decision = (
+    item: { status: string; decidedOn: string; createdAt: string } | null,
+    register: string,
+  ) => {
+    if (!item) return register.trim();
+    if (item.status === "Approved") return joined("Approved", when(item.decidedOn));
+    if (item.status === "Rejected") return "Returned";
+    return joined("Submitted", when(item.createdAt));
+  };
+
+  const letter = lettersOf(doctoral, "scholar", live)
+    .filter((item) => item.kind === "confirmation")
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const second = find((key) => latestCommittee(doctoral, "second", key));
+  const confirmation = letter
+    ? joined("Letter issued", letter.refNo, when(letter.issuedOn))
+    : scholar.confirmation.trim() ||
+      (second?.status === "Approved" ? "Letter due" : "");
+
+  // Colloquia attended: those in the register first, then each marked present in the ERP.
+  const attendedOn = [
+    scholar.colloquium1.trim(),
+    scholar.colloquium2.trim(),
+    ...doctoral.colloquia
+      .filter(
+        (item) =>
+          colloquiumMarked(item) &&
+          live.some((key) => item.attendance[attendanceKey("scholar", key)] === "Present"),
+      )
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((item) => joined(item.name, when(item.date))),
+  ].filter(Boolean);
+  const mode = studyModeOf(live[0] ?? scholar.id, doctoral);
+  const standing = live.length
+    ? colloquiumStanding(doctoral.colloquia, live[0], mode, today)
+    : null;
+
+  const viva = find((key) => latestViva(doctoral, key));
+  return {
+    firstDc: committee("first", scholar.firstDc),
+    secondDc: committee("second", scholar.secondDc),
+    confirmation,
+    colloquium1: attendedOn[0] ?? "",
+    colloquium2: attendedOn[1] ?? "",
+    colloquium: standing
+      ? `${standing.attended} of ${standing.required} · ${standing.status}`
+      : "",
+    synopsis: decision(find((key) => latestSynopsis(doctoral, key)), scholar.synopsis),
+    thesis: decision(find((key) => latestThesis(doctoral, key)), scholar.thesis),
+    viva: viva
+      ? joined(viva.status === "Scheduled" ? "Scheduled" : viva.status, when(viva.scheduledOn))
+      : scholar.viva.trim(),
+  };
+}
+
+/** Every key the scholar's ERP records may be filed under. */
+export function registerScholarKeys(scholar: ResearchScholar) {
+  const original = originalScholar(scholar.id);
+  return [
+    ...new Set(
+      [
+        scholarSignInId(scholar),
+        scholar.email,
+        scholar.registrationNumber,
+        scholar.applicationNumber,
+        scholar.fileNumber,
+        scholar.id,
+        original?.email ?? "",
+      ].filter((key) => key.trim()),
+    ),
+  ];
+}
+
+/** Milestones from the loaded ERP records; null until they have loaded. */
+export function liveMilestones(scholar: ResearchScholar, doctoral = currentDoctoral()) {
+  return doctoral
+    ? registerMilestones(scholar, doctoral, registerScholarKeys(scholar), clientToday())
+    : null;
 }
 
 export function batchNames() {

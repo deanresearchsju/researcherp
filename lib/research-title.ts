@@ -5,6 +5,7 @@ import {
   type DoctoralState,
 } from "@/lib/doctoral";
 import { sameId } from "@/lib/office";
+import { scholarBySignIn } from "@/lib/register";
 import type { ScholarRecord } from "@/lib/scholar-records";
 
 export type TitleStage = "Not fixed" | "Proposed" | "Provisional" | "Final" | "Locked";
@@ -37,7 +38,23 @@ export function researchTitleOf(
   const secondApproved = second?.status === "Approved";
   const locked = synopsisSubmitted(state, identifier);
 
+  // Scholars admitted before the ERP: the register holds the title their committees fixed.
+  const registered = scholarBySignIn(identifier);
+  const registerTitle = registered?.title.trim() ?? "";
+  if (!first && !second && registerTitle && !locked) {
+    const finalised = Boolean(registered?.secondDc.trim());
+    return {
+      title: registerTitle,
+      stage: finalised ? "Final" : "Provisional",
+      note: finalised ? "As in the scholar register" : "As in the scholar register · finalised at the second committee",
+      changeBlock: finalised
+        ? null
+        : "The title is finalised at the second doctoral committee. Propose the final title in that report.",
+    };
+  }
+
   let title = "";
+  if (!first && !second) title = registerTitle;
   if (firstApproved && first.researchTitle) title = first.researchTitle;
   if (secondApproved && second.researchTitle) title = second.researchTitle;
   if (secondApproved) {

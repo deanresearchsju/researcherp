@@ -2,8 +2,10 @@
 
 import {
   BookOpenCheck,
+  BookText,
   ClipboardList,
   GraduationCap,
+  Images,
   IndianRupee,
   Layers,
   ListChecks,
@@ -16,6 +18,8 @@ import {
 import { useState } from "react";
 
 import { PageTitle } from "@/components/portal/Desk";
+import { Button } from "@/components/ui/button";
+import { downloadScholarPhotos } from "@/lib/photo-zip";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { alertsOf, batchNames, type ScholarReport } from "@/lib/scholar-report";
 import { sameGuide } from "@/lib/register";
@@ -59,6 +63,8 @@ const reports: ReportDefinition[] = [
         "Subject",
         "Mode",
         "Supervisor",
+        "Research title",
+        "Area of research",
         "Semester",
         "Email",
         "Phone",
@@ -70,9 +76,39 @@ const reports: ReportDefinition[] = [
         row.subject,
         row.mode,
         row.guideName,
+        row.title,
+        row.researchArea,
         row.semester ? n(row.semester) : "",
         row.email,
         row.phone,
+      ]),
+    }),
+  },
+  {
+    id: "titles",
+    group: "Scholars",
+    title: "Research titles & areas",
+    icon: BookText,
+    build: (rows) => ({
+      headers: [
+        "Scholar",
+        "Registration No.",
+        "Batch",
+        "Subject",
+        "Supervisor",
+        "Research title",
+        "Title status",
+        "Area of research",
+      ],
+      rows: rows.map((row) => [
+        row.name,
+        row.registration,
+        row.batchName,
+        row.subject,
+        row.guideName,
+        row.title,
+        row.title ? row.titleStage : "Not fixed",
+        row.researchArea,
       ]),
     }),
   },
@@ -505,6 +541,8 @@ export function ReportsScreen() {
   const [guide, setGuide] = useState("");
   const [mode, setMode] = useState("");
   const [subject, setSubject] = useState("");
+  const [photoBusy, setPhotoBusy] = useState<string | null>(null);
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null);
 
   if (!data.ready)
     return <p className="text-sm text-muted-foreground">Loading reports…</p>;
@@ -526,9 +564,53 @@ export function ReportsScreen() {
     .map((value) => value.split("\u001f").join(", "))
     .join(" · ");
 
+  // Photos of the scholars in the current filter, batch by batch, named by registration number.
+  async function downloadPhotos() {
+    setPhotoNotice(null);
+    setPhotoBusy("Preparing photos…");
+    try {
+      const result = await downloadScholarPhotos(
+        scoped,
+        batch ? batch.split("\u001f").join(" ") : "all batches",
+        (done, total) => setPhotoBusy(`Photos ${done}/${total}`),
+      );
+      setPhotoNotice(
+        `${result.included} photo${result.included === 1 ? "" : "s"} downloaded.${
+          result.missing ? ` ${result.missing} scholar${result.missing === 1 ? " has" : "s have"} no photo yet (see photo-list.csv).` : ""
+        }`,
+      );
+    } catch {
+      setPhotoNotice("The photos could not be prepared. Check the connection and try again.");
+    } finally {
+      setPhotoBusy(null);
+    }
+  }
+
   return (
     <section className="space-y-5">
-      <PageTitle kicker="Center for Research" title="Reports" />
+      <PageTitle
+        kicker="Center for Research"
+        title="Reports"
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={photoBusy !== null || scoped.length === 0}
+            onClick={() => void downloadPhotos()}
+          >
+            <Images className="size-4" aria-hidden="true" />
+            {photoBusy ?? "Photos ZIP"}
+          </Button>
+        }
+      />
+      {photoNotice ? (
+        <p
+          role="status"
+          className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-primary"
+        >
+          {photoNotice}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-4">
         {[
           ["Active scholars", n(data.reports.length)],

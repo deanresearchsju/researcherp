@@ -94,7 +94,8 @@ function statusVariant(status: ScholarRecord["status"]) {
   return "purple" as const;
 }
 
-function RecordForm({
+export function RecordForm({
+  officeEntry = false,
   menu,
   scholarIdentifier,
   scholarName,
@@ -105,6 +106,8 @@ function RecordForm({
   onClose,
   onDone,
 }: {
+  /** Saved by the research office already approved, which locks it. */
+  officeEntry?: boolean;
   prefill?: Record<string, string>;
   menu: ScholarRecordMenu;
   scholarIdentifier: string;
@@ -128,13 +131,16 @@ function RecordForm({
       : { ...defaults, ...registerDefaults, ...prefill },
   });
   const doi = useWatch({ control: form.control, name: "doi" });
+  // The office may record entries (such as fees paid before the ERP) without a receipt, and a
+  // correction keeps the file already on the record.
+  const fileRequired = menu.fileRequired && !officeEntry && !existing?.fileName;
   const [file, setFile] = useState<StoredFile | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(values: Record<string, string>) {
-    const problem = fileError(file?.file ?? null, menu.fileRule, menu.fileRequired);
+    const problem = fileError(file?.file ?? null, menu.fileRule, fileRequired);
     setFileMessage(problem);
     if (problem) return;
     setBusy(true);
@@ -150,6 +156,7 @@ function RecordForm({
         fileData: fileData || existing?.fileData || null,
         supervisorIdentifier,
         supervisorName,
+        ...(officeEntry ? { status: "Approved" as const } : {}),
       },
       existing?.id,
     );
@@ -161,11 +168,15 @@ function RecordForm({
     if (!menu.single) form.reset(defaults);
     setFile(null);
     onDone(
-      menu.needsSupervisor
-        ? "Submitted. Your supervisor reviews it first, then the research office."
-        : existing
-          ? "Updated. The research office will review it again."
-          : "Submitted. The research office will review it.",
+      officeEntry
+        ? menu.kind === "payment"
+          ? "Payment recorded and verified. Only the administrator can change it now."
+          : "Saved and locked. Only the administrator can change it now."
+        : menu.needsSupervisor
+          ? "Submitted. Your supervisor reviews it first, then the research office."
+          : existing
+            ? "Updated. The research office will review it again."
+            : "Submitted. The research office will review it.",
     );
   }
 
@@ -233,7 +244,7 @@ function RecordForm({
           <FormField
             label={menu.fileLabel}
             htmlFor={`${menu.kind}-file`}
-            required={menu.fileRequired}
+            required={fileRequired}
             error={fileMessage ?? undefined}
             className="sm:col-span-2"
           >

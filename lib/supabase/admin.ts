@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { fetchWithTimeout } from "@/lib/supabase/timeout";
 import type { Database } from "@/types/database";
 
 export function createAdminSupabase(): SupabaseClient<Database> | null {
@@ -9,6 +10,7 @@ export function createAdminSupabase(): SupabaseClient<Database> | null {
   if (!url || !key) return null;
   return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: fetchWithTimeout },
   });
 }
 

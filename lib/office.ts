@@ -86,7 +86,7 @@ export function formatPhdSession(month: string, year: string) {
 
 export function openPhdSession() {
   return parsePhdSession(
-    currentOffice()?.settings.admissionSession ?? defaultSiteSettings.admissionSession,
+    currentSiteSettings()?.admissionSession ?? defaultSiteSettings.admissionSession,
   );
 }
 
@@ -436,6 +436,38 @@ export function subscribeOffice(onChange: () => void) {
     });
   }
   return () => listeners.delete(onChange);
+}
+
+let settingsMemory: SiteSettings | null = null;
+let settingsLoading = false;
+
+/** Site settings alone (null until loaded), for public pages that need no office records. */
+export function currentSiteSettings() {
+  return memory?.settings ?? settingsMemory;
+}
+
+export function subscribeSiteSettings(onChange: () => void) {
+  listeners.add(onChange);
+  if (!memory && !settingsMemory && !settingsLoading) {
+    settingsLoading = true;
+    void loadSiteSettings().then((value) => {
+      settingsLoading = false;
+      settingsMemory = value;
+      listeners.forEach((listener) => listener());
+    });
+  }
+  return () => listeners.delete(onChange);
+}
+
+async function loadSiteSettings(): Promise<SiteSettings> {
+  const supabase = createSupabase();
+  if (!supabase) return readSettings();
+  const { data } = await supabase
+    .from("site_settings")
+    .select("*")
+    .eq("id", "office")
+    .maybeSingle();
+  return data ? settingsFromRow(data) : readSettings();
 }
 
 export function refreshOffice() {
@@ -1084,9 +1116,9 @@ export async function decideRac(
 }
 
 export function phdApplicationsOpen() {
-  return currentOffice()?.settings.phdOpen ?? defaultSiteSettings.phdOpen;
+  return currentSiteSettings()?.phdOpen ?? defaultSiteSettings.phdOpen;
 }
 
 export function supervisorApplicationsOpen() {
-  return currentOffice()?.settings.supervisorOpen ?? defaultSiteSettings.supervisorOpen;
+  return currentSiteSettings()?.supervisorOpen ?? defaultSiteSettings.supervisorOpen;
 }

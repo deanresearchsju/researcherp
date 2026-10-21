@@ -9,7 +9,7 @@ export const registrationCopy = {
   saveOne: "Save number",
   locked: "Saved · locked",
   allot: "Allot",
-  edit: "Edit",
+  edit: "Change number",
   cancelEdit: "Cancel",
   saved: "Registration numbers for this batch are saved.",
   empty: "Choose a batch to allot registration numbers.",

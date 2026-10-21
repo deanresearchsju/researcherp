@@ -602,11 +602,6 @@ function ScholarCourseWork({
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Papers 1 and 2 are common to all scholars; papers 3 and 4 are the major and
-              allied papers. The second doctoral committee (Ph.D. confirmation) opens
-              after all four are cleared.
-            </p>
           </div>
           <DeskTable
             headers={["Subject code", "Subject", "Semester", "Attempts", "COE", "Status"]}

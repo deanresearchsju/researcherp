@@ -23,6 +23,8 @@ import {
   supervisorWideHeaders,
 } from "@/lib/person-file";
 import { useCanMenuAction } from "@/lib/use-menu-action";
+import { usePreviewSession } from "@/lib/use-preview-session";
+import { SupervisorRegisterEditor } from "@/components/portal/RegisterEditors";
 import {
   currentQuotas,
   currentStandings,
@@ -131,7 +133,12 @@ export function SupervisorRegister({
   } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<ResearchSupervisor | null>(null);
   const canExport = useCanMenuAction("export");
+  const session = usePreviewSession();
+  const canEdit = session?.role === "admin" || session?.role === "staff";
+  const onRegister = (supervisor: ResearchSupervisor) =>
+    researchRegister.supervisors.includes(supervisor);
   const [saving, setSaving] = useState(false);
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
   const standings = useSyncExternalStore(
@@ -547,6 +554,19 @@ export function SupervisorRegister({
                         >
                           {applicationReviewCopy.view}
                         </Button>
+                        {canEdit && onRegister(supervisor) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setNotice(null);
+                              setEditing(supervisor);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           size="sm"
@@ -582,6 +602,19 @@ export function SupervisorRegister({
                         >
                           {applicationReviewCopy.view}
                         </Button>
+                        {canEdit && onRegister(supervisor) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setNotice(null);
+                              setEditing(supervisor);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           size="sm"
@@ -630,6 +663,17 @@ export function SupervisorRegister({
           </tbody>
         </table>
       </div>
+      {editing ? (
+        <SupervisorRegisterEditor
+          key={editing.serialNo}
+          supervisor={editing}
+          onClose={() => setEditing(null)}
+          onDone={(message) => {
+            setEditing(null);
+            setNotice(message);
+          }}
+        />
+      ) : null}
       {viewing ? (
         <ApplicationViewer
           application={viewing.application}

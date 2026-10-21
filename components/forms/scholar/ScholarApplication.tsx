@@ -48,7 +48,7 @@ import {
   referenceDate,
 } from "@/lib/constants";
 import { formatNetQualification } from "@/lib/net-exam";
-import { currentOffice, formatPhdSession, parsePhdSession } from "@/lib/office";
+import { currentSiteSettings, formatPhdSession, parsePhdSession } from "@/lib/office";
 import { attachmentFiles, attachmentNames, savePhdApplication } from "@/lib/records";
 import {
   blankScholar,
@@ -222,7 +222,7 @@ export function ScholarApplication() {
       setReceipt(found.receipt);
       return;
     }
-    const open = parsePhdSession(currentOffice()?.settings.admissionSession ?? "");
+    const open = parsePhdSession(currentSiteSettings()?.admissionSession ?? "");
     const values: ScholarFormValues = {
       ...(found.kind === "draft" ? found.values : blankScholar()),
       mobile: start.mobile,

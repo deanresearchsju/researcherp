@@ -90,14 +90,28 @@ export function subscribeScholarRecords(kind: ScholarRecordKind, onChange: () =>
   set.add(onChange);
   listeners.set(kind, set);
   if (!caches.has(kind) && !loading.has(kind)) {
-    loading.add(kind);
-    void loadScholarRecords(kind).then((value) => {
-      caches.set(kind, value);
-      loading.delete(kind);
-      notify(kind);
+    // One request fills every kind, so the next page opens without waiting.
+    const pending = scholarRecordKinds.filter(
+      (item) => !caches.has(item) && !loading.has(item),
+    );
+    pending.forEach((item) => loading.add(item));
+    void loadAllScholarRecords().then((loads) => {
+      pending.forEach((item) => {
+        loading.delete(item);
+        if (!caches.has(item)) caches.set(item, loads.get(item)!);
+        notify(item);
+      });
     });
   }
   return () => set.delete(onChange);
+}
+
+/** Starts loading every record kind; used to warm the portal after sign-in. */
+export function preloadScholarRecords() {
+  const missing = scholarRecordKinds.find((kind) => !caches.has(kind) && !loading.has(kind));
+  if (!missing) return;
+  const unsubscribe = subscribeScholarRecords(missing, () => undefined);
+  unsubscribe();
 }
 
 export function currentScholarRecords(kind: ScholarRecordKind) {
@@ -200,48 +214,62 @@ function mapRow(row: RecordRow): ScholarRecord | null {
   };
 }
 
-export async function loadScholarRecords(
-  kind: ScholarRecordKind,
-): Promise<ScholarRecordLoad> {
+const pageSize = 1000;
+
+/** Every record kind in one request (files are fetched only when opened). */
+async function loadAllScholarRecords(): Promise<Map<ScholarRecordKind, ScholarRecordLoad>> {
+  const browserRecords = readBrowserRecords();
+  const byKind = (
+    records: readonly ScholarRecord[],
+    source: ScholarRecordLoad["source"],
+    detail: string | null,
+  ) =>
+    new Map(
+      scholarRecordKinds.map((kind) => [
+        kind,
+        { records: records.filter((record) => record.kind === kind), source, detail },
+      ]),
+    );
   const supabase = createSupabase();
-  if (!supabase) {
-    return {
-      records: readBrowserRecords().filter((record) => record.kind === kind),
-      source: "browser",
-      detail: null,
-    };
+  if (!supabase) return byKind(browserRecords, "browser", null);
+
+  // The database returns at most 1,000 rows a request, so read page by page.
+  async function readPages(columns: string) {
+    const rows: RecordRow[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const page = await supabase!
+        .from("scholar_records")
+        .select(columns)
+        .order("created_at", { ascending: false })
+        .order("id")
+        .range(from, from + pageSize - 1)
+        .returns<RecordRow[]>();
+      if (page.error) return { data: null, error: page.error };
+      rows.push(...(page.data ?? []));
+      if ((page.data ?? []).length < pageSize) return { data: rows, error: null };
+    }
   }
 
-  const extended = await supabase
-    .from("scholar_records")
-    .select(
-      "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",
-    )
-    .eq("kind", kind)
-    .order("created_at", { ascending: false });
+  const extended = await readPages(
+    "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",
+  );
 
   const fallback =
     extended.error || !extended.data
-      ? await supabase
-          .from("scholar_records")
-          .select(
-            "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
-          )
-          .eq("kind", kind)
-          .order("created_at", { ascending: false })
+      ? await readPages(
+          "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at",
+        )
       : null;
 
   const data = extended.data ?? fallback?.data ?? null;
   const missingTable = Boolean(extended.error && fallback?.error);
 
   if (missingTable || !data) {
-    return {
-      records: readBrowserRecords().filter((record) => record.kind === kind),
-      source: "browser",
-      detail: extended.error
-        ? "The scholar record table is not in the database yet."
-        : null,
-    };
+    return byKind(
+      browserRecords,
+      "browser",
+      extended.error ? "The scholar record table is not in the database yet." : null,
+    );
   }
 
   const remote = data.flatMap((row) => {
@@ -249,15 +277,14 @@ export async function loadScholarRecords(
     return record ? [record] : [];
   });
   const remoteIds = new Set(remote.map((record) => record.id));
-  const localExtras = readBrowserRecords().filter(
-    (record) =>
-      record.kind === kind && record.id.startsWith("local-") && !remoteIds.has(record.id),
+  const localExtras = browserRecords.filter(
+    (record) => record.id.startsWith("local-") && !remoteIds.has(record.id),
   );
-  return {
-    records: [...localExtras, ...remote],
-    source: "database",
-    detail: extended.error ? officeSqlHint : null,
-  };
+  return byKind(
+    [...localExtras, ...remote],
+    "database",
+    extended.error ? officeSqlHint : null,
+  );
 }
 
 export type RecordDraft = {
@@ -280,7 +307,8 @@ function recordById(kind: ScholarRecordKind, id: string) {
   );
 }
 
-const lockedMessage = "This record is approved and cannot be changed.";
+const lockedMessage =
+  "This record is approved and locked. Only the administrator can correct it.";
 
 /** A scholar's new submission goes to the supervisor first when the menu needs one. */
 async function announceSubmission(draft: RecordDraft, resubmitted: boolean) {
@@ -340,7 +368,9 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     }
   }
   if (existingId && recordById(draft.kind, existingId)?.status === "Approved") {
-    return { ok: false as const, message: lockedMessage };
+    // A locked record changes only by the administrator's correction.
+    const signer = readPreviewSession();
+    if (signer?.role !== "admin") return { ok: false as const, message: lockedMessage };
   }
   if (draft.kind === "title_change") {
     const doctoral = currentDoctoral();
@@ -381,10 +411,14 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
       supervisor_identifier: draft.supervisorIdentifier ?? "",
       supervisor_name: draft.supervisorName ?? "",
     };
+    // Lists load without file contents, so an edit with no new file keeps the stored one.
+    const { file_name: _keptName, file_data: _keptData, ...withoutFile } = columns;
+    void _keptName;
+    void _keptData;
     const query = existingId
       ? supabase
           .from("scholar_records")
-          .update(columns)
+          .update(draft.fileData ? columns : withoutFile)
           .eq("id", existingId)
           .select(
             "id, kind, scholar_identifier, scholar_name, status, payload, file_name, created_at, supervisor_identifier, supervisor_name",

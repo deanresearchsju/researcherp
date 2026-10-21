@@ -50,6 +50,7 @@ import { university } from "@/lib/constants";
 import { closeOfficeView } from "@/lib/office-view";
 import { useOfficeView, usePreviewSession } from "@/lib/use-preview-session";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
+import { warmPortalData } from "@/lib/portal-warm";
 import { cn } from "@/lib/utils";
 import type { PortalNavGroup, Role } from "@/types";
 
@@ -378,6 +379,11 @@ export function PortalShell({
   useEffect(() => {
     if (ready && session?.mustReset && !viewing) router.replace("/login/reset");
   }, [ready, session, router, viewing]);
+
+  const sessionRole = session && !session.mustReset ? session.role : null;
+  useEffect(() => {
+    if (ready && sessionRole) warmPortalData(sessionRole);
+  }, [ready, sessionRole]);
 
   function signOut() {
     closeOfficeView();

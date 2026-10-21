@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
-import { scholarSignInId, scholarsGuidedBy } from "@/lib/register";
+import { applyRegisterPayload, scholarSignInId, scholarsGuidedBy } from "@/lib/register";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import {
   activeIndex,
@@ -126,6 +126,12 @@ async function guides(
   ) {
     return true;
   }
+  const { data: register } = await supabase
+    .from("research_register")
+    .select("payload")
+    .eq("id", "register")
+    .maybeSingle();
+  applyRegisterPayload(register?.payload ?? null);
   return scholarsGuidedBy(supervisor.name, supervisor.identifier).some((scholar) =>
     [
       scholarSignInId(scholar),

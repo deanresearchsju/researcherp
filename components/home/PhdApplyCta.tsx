@@ -6,12 +6,12 @@ import { useSyncExternalStore } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { phdWindowCopy } from "@/data/home";
 import { heroCopy } from "@/data/sections";
-import { currentOffice, defaultSiteSettings, subscribeOffice } from "@/lib/office";
+import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
 
 export function PhdApplyCta() {
   const settings = useSyncExternalStore(
-    subscribeOffice,
-    () => currentOffice()?.settings ?? defaultSiteSettings,
+    subscribeSiteSettings,
+    () => currentSiteSettings() ?? defaultSiteSettings,
     () => defaultSiteSettings,
   );
 

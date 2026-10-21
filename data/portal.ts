@@ -104,6 +104,7 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.registers,
     items: [
       { label: "Scholar register", href: "/admin/register", ready: true },
+      { label: "Scholar information", href: "/admin/scholar-info", ready: true },
       { label: "Supervisor register", href: "/admin/supervisors", ready: true },
       { label: "Passed-out scholars", href: "/admin/passed-out", ready: true },
     ],
@@ -147,6 +148,7 @@ const adminGroups: PortalNavGroup[] = [
     items: [
       { label: "Letters", href: "/admin/letters", ready: true },
       { label: "Reports & downloads", href: "/admin/erp-reports", ready: true },
+      { label: "Forms & formats", href: "/admin/forms", ready: true },
     ],
   },
   {
@@ -188,6 +190,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
         record("scholar", "hall-ticket", "Hall ticket"),
         { label: "Fee", href: "/scholar/fee", ready: true },
         { label: "Approved documents", href: "/scholar/approved", ready: true },
+        { label: "Forms & formats", href: "/scholar/forms", ready: true },
       ],
     },
     {
@@ -230,6 +233,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
         { label: "Thesis evaluators", href: "/supervisor/evaluators", ready: true },
         { label: "Approved documents", href: "/supervisor/approved", ready: true },
         { label: "Colloquium", href: "/supervisor/colloquium", ready: true },
+        { label: "Forms & formats", href: "/supervisor/forms", ready: true },
       ],
     },
   ],

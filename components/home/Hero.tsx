@@ -8,13 +8,13 @@ import { useSyncExternalStore } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { researchPage } from "@/data/research-home";
 import { heroCopy } from "@/data/sections";
-import { currentOffice, defaultSiteSettings, subscribeOffice } from "@/lib/office";
+import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
 import { cn } from "@/lib/utils";
 
 export function Hero() {
   const settings = useSyncExternalStore(
-    subscribeOffice,
-    () => currentOffice()?.settings ?? defaultSiteSettings,
+    subscribeSiteSettings,
+    () => currentSiteSettings() ?? defaultSiteSettings,
     () => defaultSiteSettings,
   );
   const applyHref = settings.phdOpen ? heroCopy.primaryHref : "/admission";

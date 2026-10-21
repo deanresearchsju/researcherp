@@ -11,7 +11,7 @@ import {
   scholarMayUsePortal,
   supervisorMayUsePortal,
 } from "@/lib/portal-access";
-import { scholarBySignIn, supervisorBySignIn } from "@/lib/register";
+import { applyRegisterPayload, scholarBySignIn, supervisorBySignIn } from "@/lib/register";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { portalAuthClient } from "@/lib/supabase/admin";
 import { isRetiredSignIn } from "@/lib/users";
@@ -30,11 +30,11 @@ async function portalGate(
   identifier: string,
 ) {
   if (role === "scholar") {
-    const { data } = await supabase
-      .from("admission_office")
-      .select("payload")
-      .eq("id", "office")
-      .maybeSingle();
+    const [{ data }, { data: register }] = await Promise.all([
+      supabase.from("admission_office").select("payload").eq("id", "office").maybeSingle(),
+      supabase.from("research_register").select("payload").eq("id", "register").maybeSingle(),
+    ]);
+    applyRegisterPayload(register?.payload ?? null);
     const cases = parseLetterCases((data?.payload ?? null) as Json);
     if (scholarMayUsePortal(identifier, Boolean(scholarBySignIn(identifier)), cases)) {
       return null;
@@ -50,6 +50,7 @@ async function portalGate(
     supabase.from("supervisor_applications").select("email").eq("status", "Approved"),
   ]);
   const payload = register?.payload;
+  applyRegisterPayload(payload ?? null);
   const standings = parseSupervisorStandings(
     payload &&
       typeof payload === "object" &&
