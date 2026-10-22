@@ -5,9 +5,19 @@ import type { ReactNode } from "react";
 
 import { Container } from "@/components/ui/container";
 
+const heroPhotos = ["/assets/hero-1.jpeg", "/assets/hero-2.jpeg"] as const;
+
+/** The two banner photos alternate by page, so each page always shows the same one. */
+function heroPhotoFor(title: string) {
+  let sum = 0;
+  for (const character of title) sum += character.charCodeAt(0);
+  return heroPhotos[sum % heroPhotos.length];
+}
+
 type PageHeaderProps = {
   eyebrow: string;
   title: string;
+  /** Accepted for older callers; the banner shows the title only. */
   summary?: string;
   children?: ReactNode;
 };
@@ -16,7 +26,7 @@ type PageHeaderProps = {
  * Banner at the top of every inner page of the public website: a full-width campus image
  * with the page title, and a breadcrumb bar underneath.
  */
-export function PageHeader({ eyebrow, title, summary, children }: PageHeaderProps) {
+export function PageHeader({ eyebrow, title, children }: PageHeaderProps) {
   return (
     <>
       <section
@@ -24,12 +34,12 @@ export function PageHeader({ eyebrow, title, summary, children }: PageHeaderProp
         aria-labelledby="page-hero-title"
       >
         <Image
-          src="/pic.jpeg"
+          src={heroPhotoFor(title)}
           alt=""
           fill
           priority
           sizes="100vw"
-          className="-z-20 object-cover object-[center_35%]"
+          className="-z-20 object-cover object-[center_30%]"
         />
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-purple-deep via-purple-deep/90 to-purple-deep/55" />
         <Container className="py-12 sm:py-16 lg:py-20">
@@ -43,11 +53,6 @@ export function PageHeader({ eyebrow, title, summary, children }: PageHeaderProp
             {title}
           </h1>
           <div className="mt-5 h-[3px] w-20 bg-accent" />
-          {summary ? (
-            <p className="mt-5 max-w-2xl text-base leading-7 text-primary-foreground/85">
-              {summary}
-            </p>
-          ) : null}
         </Container>
         <div className="h-1 bg-accent" />
       </section>

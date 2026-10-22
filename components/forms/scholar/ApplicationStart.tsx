@@ -8,12 +8,13 @@ import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
 import { ApplicationsClosed } from "@/components/forms/ApplicationsClosed";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { scholarFormCopy } from "@/data/forms";
 import { phdWindowCopy } from "@/data/home";
 import { university } from "@/lib/constants";
+import { inputRules, masked } from "@/lib/input-rules";
 import {
   currentSiteSettings,
   defaultSiteSettings,
@@ -48,7 +49,11 @@ export function ApplicationStart({
   });
   const [busy, setBusy] = useState(false);
   const [vacancyError, setVacancyError] = useState<string | null>(null);
-  const loaded = useSyncExternalStore(subscribeSiteSettings, currentSiteSettings, () => null);
+  const loaded = useSyncExternalStore(
+    subscribeSiteSettings,
+    currentSiteSettings,
+    () => null,
+  );
   const settings = loaded ?? defaultSiteSettings;
   const session = parsePhdSession(settings.admissionSession);
   const sessionLabel = formatPhdSession(session.month, session.year);
@@ -104,9 +109,7 @@ export function ApplicationStart({
         >
           <Input
             id="start-mobile"
-            inputMode="numeric"
-            autoComplete="tel"
-            {...form.register("mobile")}
+            {...masked(form.register("mobile"), inputRules.mobile)}
           />
         </FormField>
         <FormField
@@ -115,12 +118,7 @@ export function ApplicationStart({
           required
           error={form.formState.errors.email?.message}
         >
-          <Input
-            id="start-email"
-            type="email"
-            autoComplete="email"
-            {...form.register("email")}
-          />
+          <Input id="start-email" {...masked(form.register("email"), inputRules.email)} />
         </FormField>
       </div>
       {vacancyError ? (
@@ -137,11 +135,12 @@ export function ApplicationStart({
       >
         {busy ? "Opening…" : "Apply"}
       </Button>
-      <p className="mt-4 text-sm">
-        <Link href="/apply/status" className="font-semibold text-secondary underline">
-          {scholarFormCopy.track}
-        </Link>
-      </p>
+      <Link
+        href="/apply/status"
+        className={buttonVariants({ variant: "outline", className: "mt-4 w-full" })}
+      >
+        {scholarFormCopy.track}
+      </Link>
     </form>
   );
 }

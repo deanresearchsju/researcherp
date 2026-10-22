@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   AdmissionLetter,
+  ApprovalSheet,
   AttendanceSheet,
   InterviewSheet,
   ProvisionalSheet,
@@ -43,6 +44,9 @@ import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import {
   admissionCompleted,
   admissionFileFrozen,
+  approvalBodies,
+  approvalState,
+  provisionalListKey,
   applyVacancySelection,
   archiveSessionLabel,
   archiveYearOf,
@@ -70,11 +74,13 @@ import {
   sessionIsSet,
   stepCompletionBlock,
   stepIsBlocked,
+  stepStaysOpen,
   subscribeAdmission,
   totalMarks,
   verificationBlock,
   waitlistFor,
   waitlistOrder,
+  withEntranceScores,
   type AdmissionCase,
   type AttendanceMark,
   type CheckMark,
@@ -85,14 +91,22 @@ import {
   campusFor,
   hallTicketNumber,
   hallTicketSerial,
+  assignInterviewPanels,
   emptyExpert,
-  panelFor,
+  newPanelId,
+  schoolNameFromLabel,
+  registrationBlock,
+  registrationNumberTaken,
+  type ApprovalRecord,
   type InterviewExpert,
   type InterviewPanel,
 } from "@/lib/admission";
+import { researchRegister } from "@/data/research-register";
 import { downloadHallTickets } from "@/lib/hall-ticket-pdf";
+import { suggestRegistration } from "@/lib/registration-format";
+import { mailSummary, sendMailEvent, type MailResult } from "@/lib/mail-client";
 import { recordAudit } from "@/lib/audit";
-import { clientToday } from "@/lib/dates";
+import { clientToday, formatIsoDate } from "@/lib/dates";
 import { feeLedger } from "@/lib/fee-ledger";
 import { compressImage, fileToDataUrl } from "@/lib/files";
 import { filterMatches } from "@/lib/list-filter";
@@ -115,16 +129,23 @@ import { phdReceiptFromApplication } from "@/lib/scholar-progress";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { useCanMenuAction } from "@/lib/use-menu-action";
 import { usePreviewSession } from "@/lib/use-preview-session";
-import { createPortalUser, currentPortalUsers, subscribePortalUsers } from "@/lib/users";
+import {
+  createPortalUser,
+  currentPortalUsers,
+  subscribePortalUsers,
+  updatePortalUser,
+} from "@/lib/users";
 import { cn } from "@/lib/utils";
-import type { Vacancy } from "@/lib/vacancies";
+import { vacancySchoolName, type Vacancy } from "@/lib/vacancies";
+import { schools as schoolCatalogue } from "@/data/schools";
 
 type Step = SelectionStepId;
 
 type Sheet =
   | null
   | { kind: "attendance" }
-  | { kind: "interview" }
+  | { kind: "interview"; panelId?: string }
+  | { kind: "approval" }
   | { kind: "provisional" }
   | { kind: "letters"; applicationIds: string[] };
 
@@ -299,7 +320,11 @@ export function AdmissionDesk({
     { name: string; identifier: string; password: string }[]
   >([]);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [finalStep, setFinalStep] = useState<"certificates" | "fees" | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [registrationDrafts, setRegistrationDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const [releasingId, setReleasingId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string[] | null>(null);
   const [confirmStep, setConfirmStep] = useState(false);
@@ -312,7 +337,12 @@ export function AdmissionDesk({
   } | null>(null);
   const [scheduleDraft, setScheduleDraft] = useState<EntranceSchedule | null>(null);
   const [qualifyingDraft, setQualifyingDraft] = useState<string | null>(null);
-  const [panelDialog, setPanelDialog] = useState<string | null>(null);
+  const [approvalNames, setApprovalNames] = useState<{
+    preparedBy: string;
+    verifiedBy: string;
+  } | null>(null);
+  const [recordingApproval, setRecordingApproval] = useState(false);
+  const [panelDialog, setPanelDialog] = useState<{ id: string | null } | null>(null);
   const [campusDialog, setCampusDialog] = useState<
     | null
     | { mode: "add" }
@@ -326,7 +356,11 @@ export function AdmissionDesk({
 
   const officeFile = store;
   const progress = officeFile.progress;
-  const step: Step = progress.current;
+  // Reporting and Admission are open together; the office moves between them until the
+  // admission session is closed.
+  const step: Step = finalStep ?? progress.current;
+  const currentStepInfo =
+    selectionSteps.find((item) => item.id === progress.current) ?? selectionSteps[0];
   const stepIndex = selectionSteps.findIndex((item) => item.id === step);
   const stepInfo = selectionSteps[stepIndex] ?? selectionSteps[0];
   const isAdmin = session?.role === "admin";
@@ -336,8 +370,11 @@ export function AdmissionDesk({
   const phdApplications = storedApplications
     ? storedApplications.filter((row) => row.kind === "phd")
     : applications;
-  const cases = mergeApplications(officeFile.cases, phdApplications).filter(
-    (row) => isLiveAdmissionCase(row, archiveKeys) && !row.sessionClosed,
+  const cases = withEntranceScores(
+    mergeApplications(officeFile.cases, phdApplications).filter(
+      (row) => isLiveAdmissionCase(row, archiveKeys) && !row.sessionClosed,
+    ),
+    officeFile.entranceScores,
   );
   const sessionName = progress.entrance.session
     ? archiveSessionLabel(progress.entrance.session, archiveYearOf(progress.entrance))
@@ -366,6 +403,7 @@ export function AdmissionDesk({
     letter = officeFile.letter,
     nextProgress = progress,
     adminOnly = false,
+    optimistic = false,
   ) {
     const blocked = adminOnly ? adminActionBlock() : officeWriteBlock();
     if (blocked) {
@@ -380,6 +418,7 @@ export function AdmissionDesk({
       cases: keepHiddenCases(nextCases, officeFile.cases, archiveKeys),
       letter,
       progress: nextProgress,
+      ...(optimistic ? { optimistic: { onFail: setNotice } } : {}),
     });
     if (!saved.ok) setNotice(saved.message);
     return saved.ok;
@@ -419,7 +458,16 @@ export function AdmissionDesk({
     const onlyUnlock =
       Object.keys(patch).length === 1 &&
       Object.prototype.hasOwnProperty.call(patch, "correctionOpen");
-    if (admissionFileFrozen(current) && !onlyUnlock) {
+    const registrationOnly =
+      Object.keys(patch).length > 0 &&
+      Object.keys(patch).every(
+        (key) =>
+          key === "registrationNo" ||
+          key === "registrationOn" ||
+          // Documents marked Missing are ticked Received once handed over.
+          (key === "checks" && current.verification === "Approved"),
+      );
+    if (admissionFileFrozen(current) && !onlyUnlock && !registrationOnly) {
       setNotice(admissionLockCopy.blocked);
       return false;
     }
@@ -435,7 +483,8 @@ export function AdmissionDesk({
       if (allocation) await removeAllocation(allocation);
     }
     const nextCases = cases.map((row) => (row.applicationId === id ? nextRow : row));
-    return commit(nextCases, officeFile.letter, progress, onlyUnlock);
+    const tickOnly = Object.keys(patch).every((key) => key === "checks") && !dropped;
+    return commit(nextCases, officeFile.letter, progress, onlyUnlock, tickOnly);
   }
 
   async function persistCases(nextCases: AdmissionCase[], nextProgress = progress) {
@@ -515,7 +564,68 @@ export function AdmissionDesk({
       );
       if (saved.ok) created.push({ name: displayName(row), identifier, password });
     }
-    if (created.length) setIssued((current) => [...created, ...current]);
+    if (created.length) {
+      setIssued((current) => [...created, ...current]);
+      const total: MailResult = { ok: true, sent: 0, failed: 0, configured: true };
+      for (const item of created) {
+        const result = await sendMailEvent({
+          event: "credentials",
+          role: "scholar",
+          identifier: item.identifier,
+          password: item.password,
+        });
+        total.sent += result.sent;
+        total.failed += result.failed;
+        total.configured = result.configured;
+      }
+      setNotice(
+        `${created.length} sign-in(s) created.${mailSummary(total, "Sign-in details")}`,
+      );
+    }
+  }
+
+  /** Gives an admitted scholar a fresh first sign-in password (shown once below). */
+  async function issueNewPassword(row: AdmissionCase) {
+    const identifier = row.email.trim();
+    if (!identifier) {
+      setNotice("This candidate has no email address to sign in with.");
+      return;
+    }
+    const password = uniqueIssuedPassword();
+    const existing = users?.users.find(
+      (user) =>
+        user.role === "scholar" &&
+        user.identifier.toLowerCase() === identifier.toLowerCase(),
+    );
+    setBusy(true);
+    const saved = existing
+      ? await updatePortalUser(
+          existing,
+          { name: existing.name, password, mustReset: true, menus: existing.menus },
+          users?.source ?? "browser",
+        )
+      : await createPortalUser(
+          { role: "scholar", name: displayName(row), identifier, password, menus: null },
+          users?.source ?? "browser",
+        );
+    setBusy(false);
+    if (!saved.ok) {
+      setNotice("The new password could not be saved. Try again.");
+      return;
+    }
+    setIssued((current) => [
+      { name: displayName(row), identifier, password },
+      ...current.filter((item) => item.identifier !== identifier),
+    ]);
+    const mailed = await sendMailEvent({
+      event: "credentials",
+      role: "scholar",
+      identifier,
+      password,
+    });
+    setNotice(
+      `New first sign-in password issued for ${displayName(row)}.${mailSummary(mailed, "Sign-in details")}${mailed.sent > 0 ? "" : " Share it once."}`,
+    );
   }
 
   async function approveVerification(chosen: readonly AdmissionCase[]) {
@@ -533,9 +643,9 @@ export function AdmissionDesk({
     }
     const changed = await applyToRows(
       readyRows,
-      (row) => ({ ...row, verification: "Approved" }),
+      (row) => ({ ...row, verification: "Approved", checklistSubmittedOn: today }),
       () => "Admitted",
-      "Documents verified and portal sign-in opened",
+      "Checklist submitted and ERP access opened",
     );
     if (changed === 0) return;
     await issueSignIns(readyRows);
@@ -548,6 +658,13 @@ export function AdmissionDesk({
 
   async function issueLetters(chosen: readonly AdmissionCase[]) {
     const fresh = chosen.filter((row) => !row.letterIssued || !row.letterNo);
+    // New letters wait for the approval of the list; reprints of issued letters do not.
+    if (fresh.length > 0 && approvalState(progress, cases) !== "approved") {
+      setNotice(
+        "Get the list approved by the Research Advisory Board or the Vice Chancellor and record the approval before issuing letters.",
+      );
+      return;
+    }
     let serial = nextLetterNo(cases);
     const numbers = new Map(fresh.map((row) => [row.applicationId, serial++]));
     if (fresh.length > 0) {
@@ -563,6 +680,13 @@ export function AdmissionDesk({
         "Provisional letters issued",
       );
       if (changed === 0) return;
+      const mailed = await sendMailEvent({
+        event: "selection-letter",
+        applicationNos: fresh.map((row) => row.applicationNo),
+      });
+      setNotice(
+        `Provisional letters issued: ${changed}.${mailSummary(mailed, "Letter notice")}`,
+      );
     }
     setSheet({ kind: "letters", applicationIds: chosen.map((row) => row.applicationId) });
   }
@@ -664,8 +788,12 @@ export function AdmissionDesk({
         subject: "entrance",
         detail: `${changed} hall ticket(s) for ${sessionName}`,
       });
+      const mailed = await sendMailEvent({
+        event: "hall-ticket",
+        applicationNos: ready.map((row) => row.applicationNo),
+      });
       setNotice(
-        `${changed} hall ticket(s) generated. Candidates can download them from Track application.${noCampus.length > 0 ? ` ${noCampus.length} still need a campus.` : ""}`,
+        `${changed} hall ticket(s) generated. Candidates can download them from Track application.${noCampus.length > 0 ? ` ${noCampus.length} still need a campus.` : ""}${mailSummary(mailed, "Hall ticket notice")}`,
       );
     }
   }
@@ -801,35 +929,60 @@ export function AdmissionDesk({
       );
     }
     if (sheet.kind === "interview") {
-      const present = cases
-        .filter((row) => row.shortlisted && row.attendance === "Present")
-        .sort((a, b) => (a.hallTicketNo || "~").localeCompare(b.hallTicketNo || "~"));
-      const subjects = [...new Set(present.map((row) => row.department))].sort((a, b) =>
-        a.localeCompare(b),
+      const present = cases.filter(
+        (row) => row.shortlisted && row.attendance === "Present",
+      );
+      const groups = assignInterviewPanels(
+        progress.entrance.panels,
+        present,
+        schoolOfSubject,
+      ).filter(
+        (item) =>
+          item.rows.length > 0 && (!sheet.panelId || item.panel?.id === sheet.panelId),
       );
       return (
         <div>
           <div className="no-print mb-4 flex gap-2">
             {back}
             <Button type="button" onClick={() => window.print()}>
-              Print interview sheets
+              Print interview sheet{groups.length === 1 ? "" : "s"}
             </Button>
           </div>
-          {subjects.length === 0 ? (
+          {groups.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No candidate is marked present.
+              No candidate is on this panel yet.
             </p>
           ) : null}
-          {subjects.map((subject) => (
-            <div key={subject} style={{ breakAfter: "page" }}>
+          {groups.map((group) => (
+            <div key={group.panel?.id ?? "unassigned"} style={{ breakAfter: "page" }}>
               <InterviewSheet
-                rows={present.filter((row) => row.department === subject)}
+                rows={group.rows}
                 schedule={progress.entrance}
-                department={subject}
-                panel={panelFor(progress.entrance, subject)}
+                panel={group.panel}
               />
             </div>
           ))}
+        </div>
+      );
+    }
+    if (sheet.kind === "approval") {
+      return (
+        <div>
+          <div className="no-print mb-4 flex gap-2">
+            {back}
+            <Button type="button" onClick={() => window.print()}>
+              Print approval sheet
+            </Button>
+          </div>
+          <ApprovalSheet
+            rows={orderedProvisional}
+            waiting={waitlistOrder(cases)}
+            sessionLabel={sessionName}
+            preparedBy={progress.approval.preparedBy}
+            verifiedBy={progress.approval.verifiedBy}
+            deanName={officeFile.letter.deanName}
+            deanTitle={officeFile.letter.deanTitle}
+          />
         </div>
       );
     }
@@ -876,10 +1029,28 @@ export function AdmissionDesk({
 
   /* ---------- rows of the open step ---------- */
 
+  /** The school a subject belongs to: from the vacancy list first, then the school catalogue. */
+  function schoolOfSubject(subject: string) {
+    const vacancy = vacancies.find((item) => sameSubject(item.department, subject));
+    return (vacancy ? vacancySchoolName(vacancy) : "") || schoolNameFromLabel(subject);
+  }
+
+  const attendancePresent = cases.filter(
+    (row) => row.shortlisted && row.attendance === "Present",
+  );
+
   const stepRows: AdmissionCase[] = (() => {
     switch (step) {
       case "applications":
-        return cases.filter((row) => !admissionCompleted(row) || row.correctionOpen);
+        // Applications whose fee the office approved on the Applications page.
+        return cases.filter(
+          (row) =>
+            (!admissionCompleted(row) || row.correctionOpen) &&
+            (row.payment === "Approved" ||
+              Boolean(row.scrutiny) ||
+              row.shortlisted ||
+              row.selected),
+        );
       case "shortlist":
         return cases.filter(
           (row) => (row.scrutiny === "Eligible" || row.shortlisted) && !row.reporting,
@@ -1244,18 +1415,6 @@ export function AdmissionDesk({
           )}
         </div>
         {bulkBar(visible, [
-          {
-            label: "Verify application fee",
-            variant: "outline",
-            run: (chosen) =>
-              void applyToRows(
-                chosen,
-                (row) =>
-                  row.payment === "Approved" ? null : { ...row, payment: "Approved" },
-                undefined,
-                "Application fee verified",
-              ),
-          },
           {
             label: "Mark eligible",
             run: (chosen) => {
@@ -1938,80 +2097,178 @@ export function AdmissionDesk({
   }
 
   function marksBody() {
-    const subjects = [...new Set(stepRows.map((row) => row.department))].sort((a, b) =>
-      a.localeCompare(b),
-    );
+    const panels = progress.entrance.panels;
+    const groups = assignInterviewPanels(panels, stepRows, schoolOfSubject);
+    const unassigned = groups.find((item) => item.panel === null)?.rows ?? [];
+    // Strength by school and subject, to plan how many panels each needs.
+    const strength = new Map<string, Map<string, number>>();
+    stepRows.forEach((row) => {
+      const school = schoolOfSubject(row.department) || "School not recorded";
+      const bySubject = strength.get(school) ?? new Map<string, number>();
+      bySubject.set(row.department, (bySubject.get(row.department) ?? 0) + 1);
+      strength.set(school, bySubject);
+    });
     return (
       <>
-        <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+        <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-semibold text-primary">Interview panels</h3>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={subjects.length === 0}
-              data-readonly-allow
-              onClick={() => setSheet({ kind: "interview" })}
-            >
-              Print interview sheets
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {canWrite ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="gold"
+                  disabled={stepRows.length === 0}
+                  onClick={() => setPanelDialog({ id: null })}
+                >
+                  Add panel
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={stepRows.length === 0 || panels.length === 0}
+                data-readonly-allow
+                onClick={() => setSheet({ kind: "interview" })}
+              >
+                Print all sheets
+              </Button>
+            </div>
           </div>
-          {subjects.length === 0 ? (
+          {stepRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No candidate is marked present.
             </p>
           ) : (
-            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {subjects.map((subject) => {
-                const panel = panelFor(progress.entrance, subject);
-                const named = panel?.experts.filter((item) => item.name).length ?? 0;
-                return (
-                  <li
-                    key={subject}
-                    className="flex items-start justify-between gap-2 rounded-lg border border-border bg-card p-3 text-sm"
+            <>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[...strength.entries()].map(([school, subjects]) => (
+                  <div
+                    key={school}
+                    className="rounded-lg border border-border bg-card p-3 text-xs"
                   >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-primary">{subject}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {stepRows.filter((row) => row.department === subject).length}{" "}
-                        candidate(s)
-                        {panel?.date
-                          ? ` · ${panel.date.split("-").reverse().join("/")}`
-                          : ""}
-                      </p>
-                      {named > 0 ? (
-                        <p className="mt-1 text-xs">
-                          {panel?.experts
-                            .map((item) => item.name)
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      ) : (
-                        <Badge variant="maroon">Experts not set</Badge>
-                      )}
-                    </div>
-                    {canWrite ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setPanelDialog(subject)}
-                      >
-                        {named > 0 ? "Edit" : "Add experts"}
-                      </Button>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                    <p className="font-semibold text-primary">
+                      {school} ·{" "}
+                      {[...subjects.values()].reduce((sum, value) => sum + value, 0)}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      {[...subjects.entries()]
+                        .map(([subject, value]) => `${subject} (${value})`)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {panels.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add a panel for each group of candidates: choose the school and
+                  subjects, the number of candidates it takes, and its two experts.
+                </p>
+              ) : (
+                <ul className="grid gap-2 lg:grid-cols-2">
+                  {groups
+                    .filter((item) => item.panel)
+                    .map(({ panel, rows }) => {
+                      if (!panel) return null;
+                      const named = panel.experts.filter((item) => item.name).length;
+                      return (
+                        <li
+                          key={panel.id}
+                          className="space-y-2 rounded-lg border border-border bg-card p-3 text-sm"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-primary">{panel.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {panel.school || "Any school"} ·{" "}
+                                {panel.subjects.length > 0
+                                  ? panel.subjects.join(", ")
+                                  : "all subjects"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {rows.length}
+                                {panel.strength > 0 ? ` of ${panel.strength}` : ""}{" "}
+                                candidate(s)
+                                {panel.date
+                                  ? ` · ${panel.date.split("-").reverse().join("/")}`
+                                  : ""}
+                                {panel.venue ? ` · ${panel.venue}` : ""}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={rows.length === 0}
+                                data-readonly-allow
+                                onClick={() =>
+                                  setSheet({ kind: "interview", panelId: panel.id })
+                                }
+                              >
+                                Print
+                              </Button>
+                              {canWrite ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setPanelDialog({ id: panel.id })}
+                                >
+                                  Edit
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          {named === 2 ? (
+                            <p className="text-xs">
+                              {panel.experts.map((item) => item.name).join(" · ")}
+                            </p>
+                          ) : (
+                            <Badge variant="maroon">Experts not set</Badge>
+                          )}
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+              {unassigned.length > 0 && panels.length > 0 ? (
+                <p
+                  role="status"
+                  className="rounded-lg border border-secondary/30 bg-secondary/10 px-3 py-2 text-sm text-secondary"
+                >
+                  {unassigned.length} candidate(s) are not on any panel (
+                  {[...new Set(unassigned.map((row) => row.department))].join(", ")}). Add
+                  a panel for their school or subject, or raise a panel&apos;s strength.
+                </p>
+              ) : null}
+            </>
           )}
         </div>
-        <EntranceMarksScreen embedded locked={!canWrite} />
+        <EntranceMarksScreen
+          embedded
+          locked={!canWrite}
+          panels={
+            panels.length > 0
+              ? groups.map((group) => ({
+                  id: group.panel?.id ?? "unassigned",
+                  name: group.panel?.name ?? "Not on a panel",
+                  experts: group.panel
+                    ? group.panel.experts
+                        .map((item) => item.name)
+                        .filter(Boolean)
+                        .join(" · ")
+                    : "",
+                  applicationIds: group.rows.map((row) => row.applicationId),
+                }))
+              : []
+          }
+        />
       </>
     );
   }
-
   function selectionBody() {
     const qualifying =
       qualifyingDraft ??
@@ -2172,9 +2429,143 @@ export function AdmissionDesk({
     );
   }
 
+  /** Approval of the provisional list: print the sheet, then record the approval. */
+  function approvalPanel() {
+    const state = approvalState(progress, cases);
+    const approval = progress.approval;
+    const names = approvalNames ?? {
+      preparedBy:
+        approval.preparedBy || (session ? session.name.trim() || session.identifier : ""),
+      verifiedBy: approval.verifiedBy,
+    };
+    const namesChanged =
+      names.preparedBy.trim() !== approval.preparedBy ||
+      names.verifiedBy.trim() !== approval.verifiedBy;
+    const unguided = orderedProvisional.filter((item) => !item.row.guideName).length;
+    return (
+      <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold text-primary">
+            Approval of the list · Research Advisory Board / Vice Chancellor
+          </h3>
+          {state === "approved" ? (
+            <Badge variant="gold">
+              Approved by {approval.body}
+              {approval.approvedOn
+                ? ` · ${approval.approvedOn.split("-").reverse().join("/")}`
+                : ""}
+              {approval.reference ? ` · ${approval.reference}` : ""}
+            </Badge>
+          ) : state === "outdated" ? (
+            <Badge variant="maroon">List changed after approval</Badge>
+          ) : (
+            <Badge variant="maroon">Not approved yet</Badge>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold text-primary">Prepared by</span>
+            <Input
+              value={names.preparedBy}
+              disabled={!canWrite}
+              onChange={(event) =>
+                setApprovalNames({ ...names, preparedBy: event.target.value })
+              }
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold text-primary">Verified by</span>
+            <Input
+              value={names.verifiedBy}
+              disabled={!canWrite}
+              onChange={(event) =>
+                setApprovalNames({ ...names, verifiedBy: event.target.value })
+              }
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canWrite && (namesChanged || !approval.preparedBy) ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                void persistProgress(
+                  {
+                    ...progress,
+                    approval: {
+                      ...approval,
+                      preparedBy: names.preparedBy.trim(),
+                      verifiedBy: names.verifiedBy.trim(),
+                    },
+                  },
+                  "Names for the approval sheet saved.",
+                ).then(() => setApprovalNames(null))
+              }
+            >
+              Save names
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={orderedProvisional.length === 0 || busy}
+            data-readonly-allow
+            onClick={() => {
+              // The names typed above are saved first, so they print on the sheet.
+              if (canWrite && (namesChanged || !approval.preparedBy)) {
+                void persistProgress(
+                  {
+                    ...progress,
+                    approval: {
+                      ...approval,
+                      preparedBy: names.preparedBy.trim(),
+                      verifiedBy: names.verifiedBy.trim(),
+                    },
+                  },
+                  "Names for the approval sheet saved.",
+                ).then((ok) => {
+                  setApprovalNames(null);
+                  if (ok) setSheet({ kind: "approval" });
+                });
+                return;
+              }
+              setSheet({ kind: "approval" });
+            }}
+          >
+            Print approval sheet
+          </Button>
+          {canWrite ? (
+            <Button
+              type="button"
+              variant="gold"
+              disabled={busy || orderedProvisional.length === 0}
+              onClick={() => {
+                if (unguided > 0) {
+                  setNotice(`Allot a guide to ${unguided} selected candidate(s) first.`);
+                  return;
+                }
+                setRecordingApproval(true);
+              }}
+            >
+              {state === "approved" ? "Record approval again" : "Record approval"}
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Print the sheet, get it approved and signed, then record the approval. If the
+          Board or the Vice Chancellor asks for a change, make it here, print the revised
+          sheet and record the approval again. Letters can be issued only after this.
+        </p>
+      </div>
+    );
+  }
+
   function provisionalBody() {
     return (
       <>
+        {approvalPanel()}
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -2215,10 +2606,20 @@ export function AdmissionDesk({
   }
 
   function letterBody() {
+    const approved = approvalState(progress, cases) === "approved";
     return (
       <>
+        {approvalPanel()}
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">Report by {officeFile.letter.reportBy}</Badge>
+          <Button
+            type="button"
+            variant="outline"
+            data-readonly-allow
+            onClick={() => setSheet({ kind: "provisional" })}
+          >
+            Print provisional & waiting list
+          </Button>
           {canWrite ? (
             <Button
               type="button"
@@ -2268,7 +2669,7 @@ export function AdmissionDesk({
                   type="button"
                   size="sm"
                   variant={row.letterIssued ? "outline" : "default"}
-                  disabled={busy || (!row.letterIssued && !canWrite)}
+                  disabled={busy || (!row.letterIssued && (!canWrite || !approved))}
                   data-readonly-allow={row.letterIssued ? true : undefined}
                   onClick={() => void issueLetters([row])}
                 >
@@ -2292,7 +2693,7 @@ export function AdmissionDesk({
           visible.filter((row) => row.selected),
           [
             {
-              label: "Approve verification & open sign-in",
+              label: "Submit checklist & open ERP access",
               run: (chosen) => void approveVerification(chosen),
             },
           ],
@@ -2453,19 +2854,174 @@ export function AdmissionDesk({
     );
   }
 
+  async function saveRegistration(row: AdmissionCase, tuitionApproved: boolean) {
+    const number = (registrationDrafts[row.applicationId] ?? row.registrationNo).trim();
+    const blocked = registrationBlock(row, tuitionApproved);
+    if (blocked) {
+      setNotice(blocked);
+      return;
+    }
+    if (number.length < 8 || number.length > 20) {
+      setNotice("Enter a registration number of 8 to 20 characters.");
+      return;
+    }
+    const onRegister = researchRegister.scholars.some(
+      (item) => item.registrationNumber.trim().toLowerCase() === number.toLowerCase(),
+    );
+    if (onRegister || registrationNumberTaken(cases, row, number)) {
+      setNotice("That registration number is already allotted.");
+      return;
+    }
+    if (row.registrationNo && row.registrationNo !== number && !isAdmin) {
+      setNotice("Only an administrator can change an allotted registration number.");
+      return;
+    }
+    setBusy(true);
+    const saved = await commitRow(row.applicationId, {
+      registrationNo: number,
+      registrationOn: row.registrationOn || today,
+    });
+    setBusy(false);
+    if (!saved) return;
+    setRegistrationDrafts((current) => {
+      const next = { ...current };
+      delete next[row.applicationId];
+      return next;
+    });
+    setNotice(`Registration number allotted to ${displayName(row)}.`);
+  }
+
+  function tuitionApprovedFor(row: AdmissionCase) {
+    const first = feeLedger(row.email, displayName(row), feeLoad?.records ?? [], today)
+      .plan[0];
+    return Boolean(first && first.paid > 0);
+  }
+
+  /** Numbers already in use: the register, every admission file, and the drafts on screen. */
+  function takenRegistrations(extra: readonly string[] = []) {
+    return [
+      ...researchRegister.scholars.map((item) => item.registrationNumber),
+      ...cases.map((item) => item.registrationNo),
+      ...extra,
+    ].filter(Boolean);
+  }
+
+  /** Fills the numbers of every scholar whose tuition receipt is approved, by the register format. */
+  function generateRegistrations() {
+    const rows = visible.filter(
+      (row) =>
+        row.verification === "Approved" && !row.registrationNo && tuitionApprovedFor(row),
+    );
+    if (rows.length === 0) {
+      setNotice("No scholar is waiting for a registration number.");
+      return;
+    }
+    const drafts: Record<string, string> = {};
+    const gaps = new Set<string>();
+    const used: string[] = [];
+    for (const row of rows) {
+      const suggestion = suggestRegistration(row, {
+        schoolName: schoolOfSubject(row.department),
+        schedule: progress.entrance,
+        taken: takenRegistrations(used),
+      });
+      if (suggestion.ok) {
+        drafts[row.applicationId] = suggestion.number;
+        used.push(suggestion.number);
+      } else {
+        suggestion.missing.forEach((item) => gaps.add(item));
+      }
+    }
+    setRegistrationDrafts((current) => ({ ...current, ...drafts }));
+    const made = Object.keys(drafts).length;
+    setNotice(
+      `${made} registration number(s) prepared; check them and press Allot all.` +
+        (gaps.size > 0
+          ? ` ${rows.length - made} could not be prepared. Needed: ${[...gaps].join("; ")}.`
+          : ""),
+    );
+  }
+
+  async function allotAllRegistrations() {
+    const rows = visible.filter(
+      (row) =>
+        registrationDrafts[row.applicationId] &&
+        !row.registrationNo &&
+        registrationBlock(row, tuitionApprovedFor(row)) === null,
+    );
+    if (rows.length === 0) {
+      setNotice("Prepare the registration numbers first.");
+      return;
+    }
+    const numbers = rows.map((row) => registrationDrafts[row.applicationId].trim());
+    const clash = numbers.find(
+      (number, index) =>
+        numbers.indexOf(number) !== index ||
+        takenRegistrations().some((item) => item.toLowerCase() === number.toLowerCase()),
+    );
+    if (clash) {
+      setNotice(`${clash} is already allotted. Prepare the numbers again.`);
+      return;
+    }
+    const byId = new Map(rows.map((row, index) => [row.applicationId, numbers[index]]));
+    setBusy(true);
+    const saved = await commit(
+      cases.map((row) =>
+        byId.has(row.applicationId)
+          ? {
+              ...row,
+              registrationNo: byId.get(row.applicationId) ?? "",
+              registrationOn: today,
+            }
+          : row,
+      ),
+    );
+    setBusy(false);
+    if (!saved) return;
+    setRegistrationDrafts({});
+    setNotice(`Registration numbers allotted to ${rows.length} scholar(s).`);
+  }
+
   function feesBody() {
     return (
       <>
+        <p className="text-sm leading-6 text-muted-foreground">
+          After the checklist is submitted the scholar signs in, pays the tuition fee and
+          attaches the receipt under Fee. Approve the receipt in Fee collection, then
+          allot the registration numbers here. A number is built as year, session, the
+          guide&apos;s campus code, mode of study, school code, department code and roll
+          number.
+        </p>
+        {canWrite ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={generateRegistrations}
+            >
+              Prepare registration numbers
+            </Button>
+            <Button
+              type="button"
+              variant="gold"
+              disabled={busy || Object.keys(registrationDrafts).length === 0}
+              onClick={() => void allotAllRegistrations()}
+            >
+              Allot all
+            </Button>
+          </div>
+        ) : null}
         <Rows
           rows={visible}
           empty="No admitted scholar yet."
           headers={[
             "Candidate",
-            "Sign-in",
-            "Year 1 fee",
+            "Checklist",
+            "Tuition fee",
             "Paid",
             "Balance",
-            "Guide shown",
+            "Registration No.",
           ]}
           render={(row) => {
             const ledger = feeLedger(
@@ -2475,18 +3031,79 @@ export function AdmissionDesk({
               today,
             );
             const first = ledger.plan[0];
+            const approved = Boolean(first && first.paid > 0);
+            const waiting = Boolean(first && first.pending > 0);
+            const block = registrationBlock(row, approved);
+            const draft = registrationDrafts[row.applicationId] ?? row.registrationNo;
+            const editable =
+              canWrite && block === null && (!row.registrationNo || isAdmin);
             return (
               <>
-                <td className="px-3 py-2 font-medium text-primary">{displayName(row)}</td>
-                <td className="px-3 py-2">{row.email || "—"}</td>
-                <td className="px-3 py-2">₹{first?.amount ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <p className="font-medium text-primary">{displayName(row)}</p>
+                  <p className="text-xs text-muted-foreground">{row.email || "—"}</p>
+                  {canWrite && row.verification === "Approved" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mt-1"
+                      disabled={busy}
+                      onClick={() => void issueNewPassword(row)}
+                    >
+                      New sign-in password
+                    </Button>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2">
+                  <Badge variant={row.verification === "Approved" ? "gold" : "outline"}>
+                    {row.verification === "Approved" ? "Submitted" : "Pending"}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2">
+                  <Badge variant={approved ? "gold" : waiting ? "purple" : "outline"}>
+                    {approved
+                      ? "Receipt approved"
+                      : waiting
+                        ? "Receipt awaiting approval"
+                        : "Not paid"}
+                  </Badge>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Year 1 ₹{first?.amount ?? "—"}
+                  </p>
+                </td>
                 <td className="px-3 py-2">₹{first?.paid ?? 0}</td>
                 <td className="px-3 py-2">₹{first?.balance ?? "—"}</td>
-                <td className="px-3 py-2">
-                  {first && first.paid > 0 ? (
-                    <Badge variant="gold">{row.guideName || "Shown"}</Badge>
+                <td className="min-w-[14rem] px-3 py-2">
+                  {editable ? (
+                    <div className="flex gap-2">
+                      <Input
+                        value={draft}
+                        maxLength={20}
+                        aria-label={`Registration number for ${displayName(row)}`}
+                        onChange={(event) =>
+                          setRegistrationDrafts((current) => ({
+                            ...current,
+                            [row.applicationId]: event.target.value
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9/-]/g, ""),
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="gold"
+                        disabled={busy || draft.trim() === row.registrationNo}
+                        onClick={() => void saveRegistration(row, approved)}
+                      >
+                        Allot
+                      </Button>
+                    </div>
+                  ) : row.registrationNo ? (
+                    <span className="font-mono text-sm">{row.registrationNo}</span>
                   ) : (
-                    <Badge variant="outline">After first payment</Badge>
+                    <span className="text-xs text-muted-foreground">{block}</span>
                   )}
                 </td>
               </>
@@ -2606,8 +3223,10 @@ export function AdmissionDesk({
       {issued.length > 0 ? (
         <div className="rounded-xl border border-accent/50 bg-accent/10 p-3 text-sm">
           <p className="font-semibold text-primary">
-            First sign-in for newly admitted scholars. Share each password once; the
-            scholar sets a new one at the first sign-in.
+            First sign-in for newly admitted scholars. Share each password once; it is not
+            shown again after you leave this page (use New sign-in password in the
+            Admission step to issue another). The scholar sets a new one at the first
+            sign-in.
           </p>
           <ul className="mt-2 grid gap-1 sm:grid-cols-2">
             {issued.map((item) => (
@@ -2620,6 +3239,50 @@ export function AdmissionDesk({
       ) : null}
 
       <Stepper current={step} completed={progress.completed} />
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Open stages">
+        {stepStaysOpen(progress.current) ? null : (
+          <Button
+            type="button"
+            size="sm"
+            variant={finalStep === null ? "default" : "outline"}
+            aria-pressed={finalStep === null}
+            data-readonly-allow
+            onClick={() => {
+              setFinalStep(null);
+              setQuery("");
+              setDepartment("");
+              setSelectedIds([]);
+            }}
+          >
+            Current step: {currentStepInfo.label}
+          </Button>
+        )}
+        {(
+          [
+            ["certificates", "Reporting & documents"],
+            ["fees", "Fee & registration number"],
+          ] as const
+        ).map(([id, label]) => (
+          <Button
+            key={id}
+            type="button"
+            size="sm"
+            variant={step === id ? "default" : "outline"}
+            aria-pressed={step === id}
+            data-readonly-allow
+            onClick={() => {
+              setFinalStep(
+                stepStaysOpen(progress.current) && id === progress.current ? null : id,
+              );
+              setQuery("");
+              setDepartment("");
+              setSelectedIds([]);
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
         <header className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-primary to-purple-deep px-5 py-4 text-primary-foreground">
@@ -2670,7 +3333,7 @@ export function AdmissionDesk({
           ) : null}
           {body}
         </div>
-        {step !== "fees" ? (
+        {!stepStaysOpen(step) ? (
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/40 px-5 py-4">
             <p
               className={cn(
@@ -2782,27 +3445,72 @@ export function AdmissionDesk({
         />
       ) : null}
 
+      {recordingApproval ? (
+        <ApprovalDialog
+          busy={busy}
+          initial={progress.approval}
+          today={today}
+          onClose={() => setRecordingApproval(false)}
+          onSave={(values) => {
+            void persistProgress(
+              {
+                ...progress,
+                approval: {
+                  ...progress.approval,
+                  ...values,
+                  recordedBy: session ? session.name.trim() || session.identifier : "",
+                  listKey: provisionalListKey(cases),
+                },
+              },
+              `Approval by the ${values.body} recorded. The letters can be issued.`,
+            ).then((ok) => {
+              if (ok) setRecordingApproval(false);
+            });
+          }}
+        />
+      ) : null}
+
       {panelDialog ? (
         <PanelDialog
-          department={panelDialog}
-          panel={panelFor(progress.entrance, panelDialog)}
+          panel={
+            progress.entrance.panels.find((item) => item.id === panelDialog.id) ?? null
+          }
+          nextName={`Panel ${progress.entrance.panels.length + 1}`}
           defaultDate={progress.entrance.date}
+          presentSubjects={[...new Set(attendancePresent.map((row) => row.department))]
+            .sort((a, b) => a.localeCompare(b))
+            .map((subject) => ({
+              subject,
+              school: schoolOfSubject(subject),
+              count: attendancePresent.filter((row) => row.department === subject).length,
+            }))}
           busy={busy}
           onClose={() => setPanelDialog(null)}
-          onSave={(panel) => {
-            const others = progress.entrance.panels.filter(
-              (item) => !sameDepartment(item.department, panel.department),
-            );
+          onRemove={(id) => {
             void saveEntrancePatch(
-              { panels: [...others, panel] },
-              `Interview panel for ${panel.department} saved.`,
+              { panels: progress.entrance.panels.filter((item) => item.id !== id) },
+              "Interview panel removed.",
+            ).then((ok) => {
+              if (ok) setPanelDialog(null);
+            });
+          }}
+          onSave={(panel) => {
+            const exists = progress.entrance.panels.some((item) => item.id === panel.id);
+            void saveEntrancePatch(
+              {
+                panels: exists
+                  ? progress.entrance.panels.map((item) =>
+                      item.id === panel.id ? panel : item,
+                    )
+                  : [...progress.entrance.panels, panel],
+              },
+              `${panel.name} saved.`,
             ).then((ok) => {
               if (ok) setPanelDialog(null);
             });
           }}
         />
       ) : null}
-
       {campusDialog ? (
         <CampusDialog
           state={campusDialog}
@@ -2855,11 +3563,22 @@ export function AdmissionDesk({
         >
           <VerifyPanel
             row={verifying}
-            locked={!canWrite || admissionFileFrozen(verifying) || busy}
+            locked={!canWrite || busy}
             onMark={(id, mark) => {
               const checks = { ...verifying.checks };
               if (mark === "") delete checks[id];
               else checks[id] = mark;
+              void commitRow(verifying.applicationId, { checks });
+            }}
+            onTickAll={() => {
+              const checks = { ...verifying.checks };
+              for (const item of admissionChecklist) {
+                if (item.required && checks[item.id] !== "Not applicable") {
+                  checks[item.id] = "Received";
+                } else if (checks[item.id] === "Submitted") {
+                  checks[item.id] = "Received";
+                }
+              }
               void commitRow(verifying.applicationId, { checks });
             }}
             onApprove={() => {
@@ -3118,26 +3837,125 @@ function RejectDialog({
   );
 }
 
-function PanelDialog({
-  department,
-  panel,
-  defaultDate,
+function ApprovalDialog({
   busy,
+  initial,
+  today,
   onClose,
   onSave,
 }: {
-  department: string;
+  busy: boolean;
+  initial: ApprovalRecord;
+  today: string;
+  onClose: () => void;
+  onSave: (values: {
+    body: (typeof approvalBodies)[number];
+    reference: string;
+    approvedOn: string;
+  }) => void;
+}) {
+  const [body, setBody] = useState<(typeof approvalBodies)[number]>(
+    initial.body || approvalBodies[0],
+  );
+  const [reference, setReference] = useState(initial.reference);
+  const [approvedOn, setApprovedOn] = useState(initial.approvedOn || today);
+  const [error, setError] = useState("");
+  return (
+    <FormDialog
+      title="Record approval of the list"
+      submitLabel="Record approval"
+      size="sm"
+      busy={busy}
+      onClose={onClose}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!approvedOn || approvedOn > today) {
+          setError("Enter the date of approval (not a future date).");
+          return;
+        }
+        onSave({ body, reference: reference.trim(), approvedOn });
+      }}
+    >
+      <div className="space-y-3 text-sm">
+        <label className="grid gap-1">
+          <span className="font-semibold text-primary">Approved by</span>
+          <NativeSelect
+            value={body}
+            onChange={(event) =>
+              setBody(event.target.value as (typeof approvalBodies)[number])
+            }
+          >
+            {approvalBodies.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+        <label className="grid gap-1">
+          <span className="font-semibold text-primary">Minutes / reference no.</span>
+          <Input
+            value={reference}
+            onChange={(event) => setReference(event.target.value)}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="font-semibold text-primary">Date of approval</span>
+          <Input
+            type="date"
+            max={today}
+            value={approvedOn}
+            onChange={(event) => setApprovedOn(event.target.value)}
+          />
+        </label>
+        {error ? <p className="text-secondary">{error}</p> : null}
+      </div>
+    </FormDialog>
+  );
+}
+
+function PanelDialog({
+  panel,
+  nextName,
+  defaultDate,
+  presentSubjects,
+  busy,
+  onClose,
+  onSave,
+  onRemove,
+}: {
   panel: InterviewPanel | null;
+  nextName: string;
   defaultDate: string;
+  presentSubjects: { subject: string; school: string; count: number }[];
   busy: boolean;
   onClose: () => void;
   onSave: (panel: InterviewPanel) => void;
+  onRemove: (id: string) => void;
 }) {
+  const [name, setName] = useState(panel?.name ?? nextName);
+  const [school, setSchool] = useState(panel?.school ?? "");
+  const [subjects, setSubjects] = useState<string[]>(panel?.subjects ?? []);
+  const [strength, setStrength] = useState(panel?.strength ? String(panel.strength) : "");
   const [date, setDate] = useState(panel?.date || defaultDate);
+  const [venue, setVenue] = useState(panel?.venue ?? "");
   const [experts, setExperts] = useState<[InterviewExpert, InterviewExpert]>(
     panel?.experts ?? [{ ...emptyExpert }, { ...emptyExpert }],
   );
   const [error, setError] = useState("");
+
+  const schoolNames = [
+    ...new Set([
+      ...schoolCatalogue.map((item) => item.name),
+      ...presentSubjects.map((item) => item.school).filter(Boolean),
+    ]),
+  ];
+  const choices = presentSubjects.filter(
+    (item) => !school || sameDepartment(item.school, school),
+  );
+  const covered = choices
+    .filter((item) => subjects.length === 0 || subjects.includes(item.subject))
+    .reduce((sum, item) => sum + item.count, 0);
 
   function update(index: 0 | 1, field: keyof InterviewExpert, value: string) {
     setExperts((current) => {
@@ -3153,20 +3971,50 @@ function PanelDialog({
 
   return (
     <FormDialog
-      title={`Interview panel · ${department}`}
+      title={panel ? `Edit · ${panel.name}` : "Add interview panel"}
       submitLabel="Save panel"
       size="lg"
       busy={busy}
       onClose={onClose}
+      extraActions={
+        panel ? (
+          <Button
+            type="button"
+            variant="maroon"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm(`Remove ${panel.name}?`)) onRemove(panel.id);
+            }}
+          >
+            Remove panel
+          </Button>
+        ) : null
+      }
       onSubmit={(event) => {
         event.preventDefault();
+        if (name.trim().length < 2) {
+          setError("Enter the panel name.");
+          return;
+        }
         if (experts.some((item) => item.name.trim().length < 3)) {
           setError("Enter the name of both experts.");
           return;
         }
+        const limit = strength.trim() === "" ? 0 : Number(strength);
+        if (!Number.isInteger(limit) || limit < 0 || limit > 500) {
+          setError("Enter how many candidates the panel takes, or leave it blank.");
+          return;
+        }
         onSave({
-          department,
+          id: panel?.id ?? newPanelId(),
+          name: name.trim(),
+          school,
+          subjects: subjects.filter((subject) =>
+            choices.some((item) => item.subject === subject),
+          ),
+          strength: limit,
           date,
+          venue: venue.trim(),
           experts: experts.map((item) => ({
             name: item.name.trim(),
             designation: item.designation.trim(),
@@ -3176,14 +4024,98 @@ function PanelDialog({
       }}
     >
       <div className="space-y-4 text-sm">
-        <label className="grid max-w-xs gap-1">
-          <span className="font-semibold text-primary">Date of interview</span>
-          <Input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="font-semibold text-primary">Panel name</span>
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="grid gap-1">
+            <span className="font-semibold text-primary">School</span>
+            <NativeSelect
+              value={school}
+              onChange={(event) => {
+                setSchool(event.target.value);
+                setSubjects([]);
+              }}
+            >
+              <option value="">Any school</option>
+              {schoolNames.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        </div>
+        <fieldset className="space-y-2 rounded-xl border border-border p-3">
+          <legend className="px-1 font-semibold text-primary">
+            Subjects (leave all unticked for every subject of the school)
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {choices.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No present candidate in this school.
+              </p>
+            ) : null}
+            {choices.map((item) => {
+              const checked = subjects.includes(item.subject);
+              return (
+                <label
+                  key={item.subject}
+                  className={cn(
+                    "inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs",
+                    checked
+                      ? "border-primary bg-primary/10 font-semibold text-primary"
+                      : "border-border bg-card",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={checked}
+                    onChange={() =>
+                      setSubjects((current) =>
+                        current.includes(item.subject)
+                          ? current.filter((value) => value !== item.subject)
+                          : [...current, item.subject],
+                      )
+                    }
+                  />
+                  {item.subject} ({item.count})
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {covered} candidate(s) match this panel.
+          </p>
+        </fieldset>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-semibold text-primary">Candidates it takes</span>
+            <Input
+              inputMode="numeric"
+              placeholder="No limit"
+              value={strength}
+              onChange={(event) => {
+                setStrength(event.target.value.replace(/\D/g, "").slice(0, 3));
+                setError("");
+              }}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="font-semibold text-primary">Date of interview</span>
+            <Input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="font-semibold text-primary">Hall / room</span>
+            <Input value={venue} onChange={(event) => setVenue(event.target.value)} />
+          </label>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {([0, 1] as const).map((index) => (
             <fieldset
@@ -3218,7 +4150,6 @@ function PanelDialog({
     </FormDialog>
   );
 }
-
 function SignatureSlot({
   title,
   name,
@@ -3540,20 +4471,23 @@ function VerifyPanel({
   row,
   locked,
   onMark,
+  onTickAll,
   onApprove,
 }: {
   row: AdmissionCase;
   locked: boolean;
   onMark: (id: string, mark: CheckMark | "") => void;
+  onTickAll: () => void;
   onApprove: () => void;
 }) {
   const block = verificationBlock(row);
   const missing = missingItems(row);
+  const submitted = row.verification === "Approved";
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 text-sm">
-        <Badge variant={row.verification === "Approved" ? "gold" : "outline"}>
-          {row.verification === "Approved" ? "Verified" : "Pending verification"}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant={submitted ? "gold" : "outline"}>
+          {submitted ? "Checklist submitted" : "Checklist pending"}
         </Badge>
         <Badge variant="outline">Guide {row.guideName || "not allotted"}</Badge>
         {row.feeReceiptName ? (
@@ -3562,51 +4496,68 @@ function VerifyPanel({
             <ViewFilesButton fileName={row.feeReceiptName} data={row.feeReceiptData} />
           </span>
         ) : null}
+        {!submitted && !locked ? (
+          <Button type="button" size="sm" variant="outline" onClick={onTickAll}>
+            Tick all required
+          </Button>
+        ) : null}
       </div>
       <div className="divide-y divide-border rounded-xl border border-border">
         {admissionChecklist.map((item) => {
           const upload = row.uploads[item.id];
+          const mark = row.checks[item.id] ?? "";
+          const box = (label: string, value: CheckMark) => (
+            <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={mark === value}
+                disabled={locked || (submitted && mark !== "Missing")}
+                aria-label={`${label}: ${item.title}`}
+                onChange={(event) => onMark(item.id, event.target.checked ? value : "")}
+              />
+              {label}
+            </label>
+          );
           return (
             <div
               key={item.id}
-              className="grid gap-2 px-3 py-2 sm:grid-cols-[1fr_auto_11rem] sm:items-center"
+              className="grid gap-2 px-3 py-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"
             >
               <p className="text-sm">
                 {item.title}
                 {item.required ? <span className="text-secondary"> *</span> : null}
+                {mark === "Submitted" ? (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Uploaded by the scholar; tick Received once checked.
+                  </span>
+                ) : null}
               </p>
               <div>
                 {upload ? (
                   <ViewFilesButton fileName={upload.fileName} data={upload.fileData} />
                 ) : null}
               </div>
-              <NativeSelect
-                value={row.checks[item.id] ?? ""}
-                disabled={locked}
-                onChange={(event) =>
-                  onMark(item.id, event.target.value as CheckMark | "")
-                }
-                aria-label={item.title}
-              >
-                <option value="">Not reviewed</option>
-                <option value="Received">Received</option>
-                <option value="Missing">Missing</option>
-                <option value="Submitted">Submitted</option>
-                <option value="Not applicable">Not applicable</option>
-              </NativeSelect>
+              <div className="flex flex-wrap items-center gap-3">
+                {box("Received", "Received")}
+                {item.required ? null : box("Not applicable", "Not applicable")}
+                {box("Missing", "Missing")}
+              </div>
             </div>
           );
         })}
       </div>
       {missing.length > 0 ? (
         <p className="text-sm text-secondary">
-          Missing: {missing.map((item) => item.title).join("; ")}.
+          Missing: {missing.map((item) => item.title).join("; ")}. The scholar sees these
+          under the admission file.
         </p>
       ) : null}
-      {row.verification !== "Approved" ? (
+      {!submitted ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className={cn("text-sm", block ? "text-secondary" : "text-primary")}>
-            {block ?? "All documents are in order."}
+            {block ??
+              "Every document is ticked. Submitting opens the scholar's ERP access to pay the tuition fee."}
           </p>
           <Button
             type="button"
@@ -3614,10 +4565,19 @@ function VerifyPanel({
             disabled={locked || block !== null}
             onClick={onApprove}
           >
-            Approve & open sign-in
+            Submit checklist & open ERP access
           </Button>
         </div>
-      ) : null}
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Submitted
+          {row.checklistSubmittedOn
+            ? ` on ${formatIsoDate(row.checklistSubmittedOn)}`
+            : ""}
+          . The scholar can now sign in, pay the tuition fee and upload the receipt; the
+          registration number follows its approval (Admission step).
+        </p>
+      )}
     </div>
   );
 }

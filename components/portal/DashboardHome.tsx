@@ -318,7 +318,6 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
                 ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
                 ["/admin/applications", "Applications"],
                 ["/admin/admission", "Selection"],
-                ["/admin/allocations", "Allot a scholar"],
                 ["/admin/registration-numbers", registrationCopy.menu],
                 ["/admin/admission-archive", admissionArchiveCopy.menu],
                 ["/admin/register", "Scholar register"],

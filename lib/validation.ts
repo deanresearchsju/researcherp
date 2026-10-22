@@ -31,18 +31,44 @@ const oneOf = (values: readonly string[], message: string) =>
     .trim()
     .refine((value) => values.includes(value), message);
 
-const addressSchema = z.object({
-  door: z.string().trim().min(1, "Enter the door number."),
-  street: z.string().trim().min(1, "Enter the street."),
-  city: z.string().trim().min(1, "Enter the city."),
-  district: z.string().trim().min(1, "Enter the district."),
-  state: z.string().trim().min(1, "Enter the state."),
-  pin: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z0-9 -]{4,10}$/, "Enter a valid pin code."),
-  country: z.string().trim().min(2, "Enter the country."),
-});
+/** A year of passing or award: four digits, not in the future. */
+export function isValidYear(value: string) {
+  const text = value.trim();
+  return /^(19|20)\d{2}$/.test(text) && Number(text) <= new Date().getFullYear();
+}
+
+/** Percentage (0 to 100) or CGPA, with up to two decimals. */
+export function isValidScore(value: string) {
+  const text = value.trim();
+  return /^\d{1,3}(\.\d{1,2})?$/.test(text) && Number(text) > 0 && Number(text) <= 100;
+}
+
+const addressSchema = z
+  .object({
+    door: z.string().trim().min(1, "Enter the door number.").max(60),
+    street: z.string().trim().min(1, "Enter the street.").max(120),
+    city: z.string().trim().min(1, "Enter the city.").max(80),
+    district: z.string().trim().min(1, "Enter the district.").max(80),
+    state: z.string().trim().min(1, "Enter the state.").max(80),
+    pin: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9 -]{4,10}$/, "Enter a valid pin code."),
+    country: z.string().trim().min(2, "Enter the country."),
+  })
+  .superRefine((value, ctx) => {
+    // Indian addresses carry a six-digit pin code.
+    if (
+      value.country.trim().toLowerCase() === "india" &&
+      !/^\d{6}$/.test(value.pin.trim())
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Enter the 6-digit pin code.",
+        path: ["pin"],
+      });
+    }
+  });
 
 const looseAddress = z.object({
   door: z.string(),
@@ -59,11 +85,11 @@ const educationSchema = z.object({
   specialisation: z.string().trim().min(1, "Enter the specialisation."),
   institution: z.string().trim().min(1, "Enter the institution name."),
   university: z.string().trim().min(1, "Enter the university."),
-  year: z
+  year: z.string().trim().refine(isValidYear, "Enter a valid 4-digit year of passing."),
+  score: z
     .string()
     .trim()
-    .regex(/^(19|20)\d{2}$/, "Enter the year of passing."),
-  score: z.string().trim().min(1, "Enter the percentage or CGPA."),
+    .refine(isValidScore, "Enter the percentage (up to 100) or CGPA, e.g. 72.5."),
 });
 
 const experienceRow = z.object({
@@ -128,7 +154,12 @@ export const scholarSchema = z
       .trim()
       .regex(/^(19|20)\d{2}$/, "The admission year is not open."),
     title: oneOf(titles, "Select a title."),
-    fullName: z.string().trim().min(2, "Enter your full name.").max(120),
+    fullName: z
+      .string()
+      .trim()
+      .min(2, "Enter your full name.")
+      .max(120)
+      .regex(/^[\p{L} .'-]+$/u, "Use letters, spaces, and . ' - only."),
     dateOfBirth: z.string().refine(isPastDate, "Enter a valid past date of birth."),
     gender: oneOf(genders, "Select a gender."),
     nationality: z.string().trim().min(2, "Select Indian or Non-Indian.").max(60),
@@ -144,6 +175,10 @@ export const scholarSchema = z
       .string()
       .trim()
       .min(1, "Select a subject that currently has a vacancy."),
+    interdisciplinary: z
+      .string()
+      .refine((value): boolean => value === "Yes" || value === "No", "Select Yes or No."),
+    interdisciplinaryNote: z.string().trim().max(200),
     ug: educationSchema,
     pg: educationSchema,
     netQualified: z
@@ -162,7 +197,7 @@ export const scholarSchema = z
     setRoll: z.string(),
     setYear: z.string(),
     setAgency: z.string(),
-    email: z.string().trim().email("Enter a valid email address."),
+    email: z.string().trim().max(120).email("Enter a valid email address."),
     mobile: z
       .string()
       .trim()
@@ -178,10 +213,19 @@ export const scholarSchema = z
       .max(researchAreaLimit, `Use ${researchAreaLimit} characters or fewer.`),
     outline: z.string(),
     paymentMode: oneOf(paymentModes, "Select UPI or Net Banking."),
-    transactionNumber: z.string().trim().min(4, "Enter the transaction number.").max(40),
+    transactionNumber: z
+      .string()
+      .trim()
+      .min(4, "Enter the transaction number.")
+      .max(40)
+      .regex(/^[A-Za-z0-9/-]+$/, "Use letters and digits only."),
     paymentDate: z.string().refine(isOnOrBefore, "Enter the date of payment."),
     agree: z.boolean().refine((value) => value, "Confirm the declaration to submit."),
-    applicantName: z.string().trim().min(2, "Enter the applicant name."),
+    applicantName: z
+      .string()
+      .trim()
+      .min(2, "Enter the applicant name.")
+      .regex(/^[\p{L} .'-]+$/u, "Use letters, spaces, and . ' - only."),
   })
   .superRefine((value, ctx) => {
     if (value.nationality === "Non-Indian" && value.country.trim().length < 2) {
@@ -189,6 +233,13 @@ export const scholarSchema = z
         code: "custom",
         message: "Select the country.",
         path: ["country"],
+      });
+    }
+    if (value.interdisciplinary === "Yes" && value.interdisciplinaryNote.length < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Name the other discipline(s) your research draws on.",
+        path: ["interdisciplinaryNote"],
       });
     }
     if (communityNeedsName(value.community) && value.communityName.trim().length < 2) {
@@ -217,10 +268,10 @@ export const scholarSchema = z
           path: [paths.roll],
         });
       }
-      if (!/^(19|20)\d{2}$/.test(year.trim())) {
+      if (!isValidYear(year)) {
         ctx.addIssue({
           code: "custom",
-          message: "Enter the year of passing.",
+          message: "Enter a valid 4-digit year of passing.",
           path: [paths.year],
         });
       }
@@ -321,8 +372,19 @@ const requiredQualification = qualificationRow.superRefine((row, ctx) => {
     [],
     ctx,
   );
-  if (row.year.trim() && !/^(19|20)\d{2}$/.test(row.year.trim())) {
-    ctx.addIssue({ code: "custom", message: "Enter a 4-digit year.", path: ["year"] });
+  if (row.year.trim() && !isValidYear(row.year)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a valid 4-digit year.",
+      path: ["year"],
+    });
+  }
+  if (row.percentage.trim() && !isValidScore(row.percentage)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter the percentage (up to 100), e.g. 72.5.",
+      path: ["percentage"],
+    });
   }
 });
 
@@ -337,8 +399,6 @@ export const supervisorSchema = z
     department: z.string().trim().min(2, "Enter the department."),
     sex: oneOf(sexes, "Select sex."),
     dateOfBirth: z.string().refine(isPastDate, "Enter a valid past date of birth."),
-    religion: z.string().trim().min(2, "Enter religion."),
-    community: z.string().trim().min(1, "Enter community."),
     state: z.string().trim().min(2, "Enter the state."),
     nationality: z.string().trim().min(2, "Enter nationality."),
     permanent: addressSchema,
@@ -348,21 +408,24 @@ export const supervisorSchema = z
       .string()
       .trim()
       .regex(/^[6-9]\d{9}$/, "Enter a 10-digit contact number."),
-    email: z.string().trim().email("Enter a valid email address."),
+    email: z.string().trim().max(120).email("Enter a valid email address."),
     postgraduate: requiredQualification,
     mphil: qualificationRow,
     phd: requiredQualification,
     phdAwardYear: z
       .string()
       .trim()
-      .regex(/^(19|20)\d{2}$/, "Enter the Ph.D. year of award."),
+      .refine(isValidYear, "Enter the Ph.D. year of award (4 digits)."),
     dlitt: qualificationRow,
-    faculty: z.string().trim().min(2, "Enter the faculty."),
+    faculty: z.string().trim().min(2, "Select or enter the school."),
     subject: z.string().trim().min(2, "Enter the subject."),
     expertise: z.string().trim().min(2, "Enter the area of expertise."),
     appointmentDate: z
       .string()
-      .refine((value) => isValidIsoDate(value), "Enter the date of appointment."),
+      .refine(
+        (value) => isValidIsoDate(value) && isOnOrBefore(value),
+        "Enter the date of appointment (not a future date).",
+      ),
     publications: z
       .array(publicationRow)
       .min(5, "Add the best 5 post-doctoral publications."),
@@ -372,8 +435,8 @@ export const supervisorSchema = z
     postMonths: z.string().regex(/^(0?[0-9]|1[0-1])$/, "Enter 0 to 11 months."),
     researchYears: z.string().regex(/^\d{1,2}$/, "Enter years."),
     researchMonths: z.string().regex(/^(0?[0-9]|1[0-1])$/, "Enter 0 to 11 months."),
-    proposedDepartment: z.string().trim().min(2, "Enter the department."),
-    recognisedElsewhere: oneOf(yesNo, "Select Yes or No."),
+    // Kept for applications submitted earlier; the form no longer asks for it.
+    recognisedElsewhere: z.string(),
     recognitionDetails: z.string(),
     otherInformation: z.string(),
     place: z.string().trim().min(2, "Enter the place."),
@@ -438,10 +501,10 @@ export const supervisorSchema = z
         ["publications", index],
         ctx,
       );
-      if (row.year.trim() && !/^(19|20)\d{2}$/.test(row.year.trim())) {
+      if (row.year.trim() && !isValidYear(row.year)) {
         ctx.addIssue({
           code: "custom",
-          message: "Enter a 4-digit year.",
+          message: "Enter a valid 4-digit year.",
           path: ["publications", index, "year"],
         });
       }
@@ -470,16 +533,6 @@ export const supervisorSchema = z
         });
       }
     });
-    if (
-      value.recognisedElsewhere === "Yes" &&
-      value.recognitionDetails.trim().length < 3
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Enter the university or institute and the details of recognition.",
-        path: ["recognitionDetails"],
-      });
-    }
   });
 
 export type SupervisorFormValues = z.infer<typeof supervisorSchema>;

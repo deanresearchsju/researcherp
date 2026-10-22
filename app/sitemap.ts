@@ -15,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/apply",
     "/apply/status",
     "/supervisor-recognition/apply",
+    "/supervisor-recognition/status",
     "/login/scholar",
     "/login/supervisor",
     "/login/admin",

@@ -7,7 +7,7 @@ import { phdSheetCopy } from "@/data/phd-application-sheet";
 import { applicationFeeInr, university } from "@/lib/constants";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
-import type { PhdReceipt } from "@/lib/scholar-progress";
+import { subjectLine, type PhdReceipt } from "@/lib/scholar-progress";
 import { cn, formatInr } from "@/lib/utils";
 
 const enclosedDocuments = scholarDocuments.filter(
@@ -206,7 +206,7 @@ export function PhdApplicationSheet({
             <Numbered n={6}>
               <div className="grid grid-cols-2">
                 <Cell label={phdSheetCopy.discipline} value={values.school} />
-                <Cell label={phdSheetCopy.specialization} value={values.specialization} />
+                <Cell label={phdSheetCopy.specialization} value={subjectLine(values)} />
               </div>
             </Numbered>
             <Numbered n={7}>

@@ -400,7 +400,8 @@ export function ApplicationViewer({
   const waiting = useMemo(() => {
     if (application.kind !== "supervisor") return [];
     if (application.status === "Approved" || application.status === "Rejected") return [];
-    if (application.status === "Accepted") return ["Approved", "Rejected"] as const;
+    // Approval is recorded from Applications once the RAB / Vice Chancellor has approved.
+    if (application.status === "Accepted") return ["Rejected"] as const;
     return ["Accepted", "Rejected"] as const;
   }, [application.kind, application.status]);
 
@@ -593,11 +594,6 @@ export function ApplicationViewer({
             {waiting.some((item) => item === "Accepted") ? (
               <Button type="button" variant="gold" onClick={() => setAction("Accepted")}>
                 {applicationReviewCopy.accept}
-              </Button>
-            ) : null}
-            {waiting.some((item) => item === "Approved") ? (
-              <Button type="button" variant="gold" onClick={() => setAction("Approved")}>
-                {applicationReviewCopy.approve}
               </Button>
             ) : null}
             <Button type="button" variant="maroon" onClick={() => setAction("Rejected")}>

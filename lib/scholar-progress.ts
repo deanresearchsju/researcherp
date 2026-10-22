@@ -51,6 +51,8 @@ export function blankScholar(): ScholarFormValues {
     studyMode: "",
     school: "",
     specialization: "",
+    interdisciplinary: "",
+    interdisciplinaryNote: "",
     ug: emptyEducation(),
     pg: emptyEducation(),
     netQualified: "",
@@ -75,6 +77,18 @@ export function blankScholar(): ScholarFormValues {
     agree: false,
     applicantName: "",
   };
+}
+
+/** The subject, with the interdisciplinary note when the research draws on other disciplines. */
+export function subjectLine(
+  values: Pick<
+    ScholarFormValues,
+    "specialization" | "interdisciplinary" | "interdisciplinaryNote"
+  >,
+) {
+  return values.interdisciplinary === "Yes" && values.interdisciplinaryNote
+    ? `${values.specialization} (interdisciplinary: ${values.interdisciplinaryNote})`
+    : values.specialization;
 }
 
 export function mergeScholarValues(partial: unknown): ScholarFormValues {

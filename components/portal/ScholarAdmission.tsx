@@ -13,12 +13,15 @@ import {
   admissionCompleted,
   currentAdmission,
   missingItems,
+  missingDocumentsDue,
+  MISSING_DOCUMENT_DAYS,
   provisionalOrder,
   saveAdmission,
   scholarAdmissionWriteBlock,
   subscribeAdmission,
   type AdmissionCase,
 } from "@/lib/admission";
+import { formatIsoDate } from "@/lib/dates";
 import { fileToDataUrl, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
 import { scholarBySignIn } from "@/lib/register";
@@ -193,6 +196,24 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
         ) : null}
       </div>
 
+      {missing.length > 0 && row.verification === "Approved" ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm leading-6 text-secondary"
+        >
+          <p className="font-semibold">Documents pending</p>
+          <p className="mt-1">
+            Kindly submit the following documents to the Research Office within{" "}
+            {MISSING_DOCUMENT_DAYS} days
+            {missingDocumentsDue(row)
+              ? ` (by ${formatIsoDate(missingDocumentsDue(row))})`
+              : ""}
+            : {missing.map((item) => item.title).join("; ")}. This reminder stays here
+            until the office records them as received.
+          </p>
+        </div>
+      ) : null}
+
       <section className="rounded-xl border border-border p-4">
         <h2 className="font-semibold">Where the application stands</h2>
         <ul className="mt-2 list-disc pl-5 text-sm leading-6">
@@ -255,17 +276,40 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
 
       {row.selected ? (
         <section className="rounded-xl border border-border p-4">
-          <h2 className="font-semibold">Fee</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Pay the annual research fee under Fee in this portal and upload the receipt
-            there. The research office verifies it.
-          </p>
-          <Link
-            href="/scholar/fee"
-            className="mt-3 inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
-          >
-            Go to Fee
-          </Link>
+          <h2 className="font-semibold">Tuition fee and registration number</h2>
+          {row.verification !== "Approved" ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              The tuition fee opens once the research office has checked your original
+              certificates and submitted your admission checklist.
+            </p>
+          ) : (
+            <>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6">
+                <li>Admission checklist submitted by the research office.</li>
+                <li>
+                  Pay the tuition fee and upload the receipt under Fee. The research
+                  office approves it.
+                </li>
+                <li>
+                  {row.registrationNo ? (
+                    <>
+                      Registration number: <strong>{row.registrationNo}</strong>
+                    </>
+                  ) : (
+                    "Your registration number is allotted after the receipt is approved."
+                  )}
+                </li>
+              </ol>
+              {row.registrationNo ? null : (
+                <Link
+                  href="/scholar/fee"
+                  className="mt-3 inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
+                >
+                  Go to Fee
+                </Link>
+              )}
+            </>
+          )}
         </section>
       ) : null}
 

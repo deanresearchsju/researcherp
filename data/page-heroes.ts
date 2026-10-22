@@ -56,6 +56,11 @@ export const pageHeroes = {
     title: "Supervisor recognition",
     summary: "Apply for recognition as a research supervisor of St. Joseph University.",
   },
+  supervisorStatus: {
+    eyebrow: "Supervisors",
+    title: "Supervisor application status",
+    summary: "Track a recognition application and download the recognition letter.",
+  },
   terms: {
     eyebrow: "Legal",
     title: "Terms",

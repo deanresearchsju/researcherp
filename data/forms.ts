@@ -30,12 +30,25 @@ export const scholarFormCopy = {
   noVacancy:
     "Ph.D. applications can be submitted only when a school and subject currently have a vacancy.",
   track: "Track application",
+  trackResultPending:
+    "Your application is under review. The result will be published here once the selection list is approved.",
   trackSelected:
-    "You have been selected. Collect your provisional admission letter and submit your original documents at the Center for Research. Portal sign-in opens after the documents are verified.",
+    "Congratulations! You have been provisionally selected for admission to the Ph.D. programme.",
+  trackSelectedNext:
+    "Please submit your original documents at the Center for Research. Portal sign-in opens after the documents are verified.",
+  trackSelectedLetterWaiting:
+    "Your provisional selection letter will appear here once the office issues it.",
   trackAdmitted:
     "Your documents are verified and you are admitted. Sign in to the scholar ERP portal with the sign-in details given by the office, and pay the fee under Fee.",
   trackWaiting:
     "You are on the waiting list for your subject. If a selected candidate does not report, the next candidate on the waiting list is offered the seat and the research office will write to you.",
+  letterReady:
+    "Your provisional selection letter is ready. Please download it and report to the office of the Dean on or before the date stated in the letter.",
+  letterDownload: "Download provisional selection letter",
+  trackShortlisted:
+    "You are shortlisted for the entrance test. Your hall ticket will appear here once the research office publishes it.",
+  trackShortlistedTicket:
+    "You are shortlisted for the entrance test. Download your hall ticket above and carry it to the examination hall.",
   trackNotReported:
     "The provisional admission was cancelled because the candidate did not report or declined the seat.",
   hallTicketReady:

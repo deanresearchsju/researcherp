@@ -13,6 +13,7 @@ import {
   admissionCaseForIdentifier,
   archivedKeys,
   currentAdmission,
+  approvalState,
   displayName,
   isLiveAdmissionCase,
   provisionalOrder,
@@ -222,6 +223,18 @@ export function LettersScreen({ only }: { only?: LetterKind }) {
 
   const today = clientToday();
   const rows = rowsFor(kind, doctoral, admission, today);
+  // Provisional letters wait for the Research Advisory Board / Vice Chancellor approval.
+  const awaitingApproval =
+    kind === "provisional" &&
+    admission !== null &&
+    approvalState(
+      admission.progress,
+      admission.cases.filter(
+        (row) =>
+          isLiveAdmissionCase(row, archivedKeys(admission.archived)) &&
+          !row.sessionClosed,
+      ),
+    ) !== "approved";
   const shown = rows.filter(
     (row) =>
       filterMatches(status, row.letter ? "Issued" : "Ready to issue") &&
@@ -351,6 +364,12 @@ export function LettersScreen({ only }: { only?: LetterKind }) {
                           type="button"
                           size="sm"
                           variant="gold"
+                          disabled={awaitingApproval}
+                          title={
+                            awaitingApproval
+                              ? "The list must be approved by the Research Advisory Board or the Vice Chancellor first."
+                              : undefined
+                          }
                           onClick={() => {
                             setNotice(null);
                             setComposing({ draft: row.draft(), reissue: false });
@@ -374,6 +393,15 @@ export function LettersScreen({ only }: { only?: LetterKind }) {
   return (
     <section className="space-y-5">
       {only ? null : <PageTitle kicker="Center for Research" title="Letters" />}
+      {awaitingApproval ? (
+        <p
+          role="status"
+          className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-2 text-sm font-medium text-secondary"
+        >
+          Provisional letters open after the Research Advisory Board or the Vice
+          Chancellor approves the list (Selection, Guide step).
+        </p>
+      ) : null}
       {notice ? (
         <p
           role="status"

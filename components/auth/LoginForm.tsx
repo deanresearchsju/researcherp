@@ -33,7 +33,15 @@ export function LoginForm({ role }: LoginFormProps) {
   const schema = useMemo(
     () =>
       z.object({
-        identifier: z.string().trim().min(3, profile.identifierError).max(120),
+        identifier: z
+          .string()
+          .trim()
+          .min(3, profile.identifierError)
+          .max(120)
+          .refine(
+            (value) => role !== "scholar" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+            profile.identifierError,
+          ),
         password: z.string().min(6, "Password must be at least 6 characters.").max(128),
         remember: z.boolean(),
         captcha: z
@@ -45,7 +53,7 @@ export function LoginForm({ role }: LoginFormProps) {
             "That answer does not match. Refresh the challenge and try again.",
           ),
       }),
-    [challenge, profile.identifierError],
+    [challenge, profile.identifierError, role],
   );
 
   type FormValues = z.infer<typeof schema>;
@@ -207,6 +215,17 @@ export function LoginForm({ role }: LoginFormProps) {
               >
                 {profile.footnote.label}
               </Link>
+              {profile.footnote.secondary ? (
+                <>
+                  {" · "}
+                  <Link
+                    href={profile.footnote.secondary.href}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {profile.footnote.secondary.label}
+                  </Link>
+                </>
+              ) : null}
             </p>
           ) : null}
         </form>

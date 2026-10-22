@@ -203,8 +203,6 @@ export function SupervisorApplicationSheet({ receipt }: { receipt: SupervisorRec
             </Numbered>
             <Numbered n={next()}>
               <div className="grid grid-cols-4">
-                <Cell label={supervisorSheetCopy.religion} value={values.religion} />
-                <Cell label={supervisorSheetCopy.community} value={values.community} />
                 <Cell label={supervisorSheetCopy.state} value={values.state} />
                 <Cell
                   label={supervisorSheetCopy.nationality}
@@ -297,10 +295,6 @@ export function SupervisorApplicationSheet({ receipt }: { receipt: SupervisorRec
                 <Cell
                   label={supervisorSheetCopy.remaining}
                   value={remaining || supervisorSheetCopy.none}
-                />
-                <Cell
-                  label={supervisorSheetCopy.proposed}
-                  value={values.proposedDepartment}
                 />
               </div>
             </Numbered>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { ApplicantAlert } from "@/components/forms/scholar/ApplicantAlert";
 import { ClientGate } from "@/components/forms/ClientGate";
 import { ScholarApplication } from "@/components/forms/scholar/ScholarApplication";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -19,6 +20,7 @@ export default function ApplyPage() {
     <>
       <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
       <Container className="py-8 sm:py-10">
+        <ApplicantAlert className="mb-6" />
         <ClientGate>
           <ScholarApplication />
         </ClientGate>

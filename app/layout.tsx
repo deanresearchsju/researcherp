@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
+import { PrintFit } from "@/components/layout/PrintFit";
 import { university } from "@/lib/constants";
 
 import "./globals.css";
@@ -47,10 +48,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} h-full antialiased`}
-    >
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-background font-sans text-foreground">
         <a
           href="#main"
@@ -58,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
+        <PrintFit />
         {children}
       </body>
     </html>

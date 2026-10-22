@@ -21,7 +21,7 @@ import { applicationFeeInr, isPartTimeMode, paymentStatus } from "@/lib/constant
 import { formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
-import type { PhdReceipt } from "@/lib/scholar-progress";
+import { subjectLine, type PhdReceipt } from "@/lib/scholar-progress";
 import { formatInr } from "@/lib/utils";
 
 function addressOf(address: PhdReceipt["values"]["communication"]) {
@@ -151,7 +151,7 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
               <PrintCell label="Programme" value={values.programme} />
               <PrintCell label="Mode of study" value={values.studyMode} />
               <PrintCell label="School" value={values.school} />
-              <PrintCell label="Subject" value={values.specialization} />
+              <PrintCell label="Subject" value={subjectLine(values)} />
             </PrintGrid>
           </PrintSection>
 

@@ -1,4 +1,5 @@
 import {
+  currentAdmission,
   displayName,
   modeLabel,
   type AdmissionCase,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/doctoral";
 import { currentAllotments, registrationOf, scholarBySignIn } from "@/lib/register";
 import type { StoredApplication } from "@/lib/records";
+import { recognitionOf } from "@/lib/supervisor-approval";
 
 const pad = (value: number, size = 3) => String(value).padStart(size, "0");
 
@@ -43,11 +45,20 @@ export function subjectCode(subject: string) {
 
 function registrationNo(identifier: string) {
   const scholar = scholarBySignIn(identifier);
-  return scholar
-    ? registrationOf(scholar, currentAllotments()) ||
-        scholar.registrationNumber ||
-        scholar.fileNumber
-    : "";
+  if (scholar) {
+    return (
+      registrationOf(scholar, currentAllotments()) ||
+      scholar.registrationNumber ||
+      scholar.fileNumber
+    );
+  }
+  // Scholars admitted through the Selection desk carry their number on the admission file.
+  const admitted = currentAdmission()?.cases.find(
+    (row) =>
+      row.email.trim().toLowerCase() === identifier.trim().toLowerCase() ||
+      row.applicationNo.trim().toLowerCase() === identifier.trim().toLowerCase(),
+  );
+  return admitted?.registrationNo ?? "";
 }
 
 /* ------------------------------ Provisional ------------------------------ */
@@ -79,7 +90,6 @@ export function provisionalDraft(
       { label: "Subject / department", value: row.department },
       { label: "Mode of study", value: modeLabel(row.studyMode) },
       { label: "Report on or before", value: letter.reportBy },
-      { label: "For office use", value: "Roll Number: ____________" },
     ],
     body: [
       `${displayName(row)} is informed that you have been provisionally selected for admission to the ${letter.programme} in ${row.department} under ${modeLabel(row.studyMode)} registration, subject to the eligibility conditions as per the Ph.D. regulations of the University.`,
@@ -150,11 +160,18 @@ function payloadText(application: StoredApplication, key: string) {
       : "";
 }
 
+/**
+ * The recognition letter. Once the RAB / Vice Chancellor approval is recorded, the letter
+ * keeps the number and date fixed at that approval, so the office and the supervisor's
+ * status page print the same letter.
+ */
 export function recognitionDraft(
-  doctoral: DoctoralState,
+  doctoral: DoctoralState | null,
   application: StoredApplication,
   today: string,
 ): LetterDraft {
+  const approval = recognitionOf(application.payload);
+  if (approval?.issuedOn) today = approval.issuedOn;
   const year = today.slice(0, 4);
   const field = (key: string) => payloadText(application, key);
   const name = field("name") || application.applicantName;
@@ -166,7 +183,9 @@ export function recognitionDraft(
     recipientRole: "supervisor",
     recipientIdentifier: field("email") || application.email || name,
     recipientName: name,
-    refNo: `SJU/DR/SR/${year}/${pad(nextLetterSerial(doctoral, "recognition", year))}`,
+    refNo:
+      approval?.refNo ||
+      `SJU/DR/SR/${year}/${pad(doctoral ? nextLetterSerial(doctoral, "recognition", year) : 1)}`,
     issuedOn: today,
     title: "",
     toLines: [

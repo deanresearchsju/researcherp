@@ -9,7 +9,12 @@ export type RoleProfile = {
   identifierLabel: string;
   identifierPlaceholder: string;
   identifierError: string;
-  footnote?: { prompt: string; label: string; href: string };
+  footnote?: {
+    prompt: string;
+    label: string;
+    href: string;
+    secondary?: { label: string; href: string };
+  };
 };
 
 export const roleProfiles: Record<Role, RoleProfile> = {
@@ -23,9 +28,9 @@ export const roleProfiles: Record<Role, RoleProfile> = {
       "Keep documents and the fee receipt with your record",
       "Read notices from the Center for Research",
     ],
-    identifierLabel: "Application number, registration number, or email",
-    identifierPlaceholder: "Application no. / registration no. / email",
-    identifierError: "Enter your application number, registration number, or email.",
+    identifierLabel: "Email address",
+    identifierPlaceholder: "name@example.com",
+    identifierError: "Enter the email address registered with the Center for Research.",
     footnote: {
       prompt: "New applicant?",
       label: "Apply now",
@@ -49,6 +54,10 @@ export const roleProfiles: Record<Role, RoleProfile> = {
       prompt: "Not recognised yet?",
       label: "Apply for Recognition",
       href: "/supervisor-recognition/apply",
+      secondary: {
+        label: "Track your application",
+        href: "/supervisor-recognition/status",
+      },
     },
   },
   admin: {

@@ -92,7 +92,6 @@ const adminGroups: PortalNavGroup[] = [
       },
       { label: "Applications", href: "/admin/applications", ready: true },
       { label: "Selection", href: "/admin/admission", ready: true },
-      { label: "Scholar allotment", href: "/admin/allocations", ready: true },
       {
         label: registrationCopy.menu,
         href: "/admin/registration-numbers",

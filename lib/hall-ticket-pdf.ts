@@ -193,7 +193,6 @@ function drawTicket(doc: jsPDF, input: HallTicketInput, logo: string | null) {
     ["Name of the candidate", displayName(row).toUpperCase()],
     ["Date of birth", values?.dateOfBirth ? formatIsoDate(values.dateOfBirth) : "—"],
     ["Gender", values?.gender || "—"],
-    ["Community", values?.community || "—"],
     ["Subject / discipline", row.department],
     ["School", values?.school || "—"],
     ["Mode of study", modeLabel(row.studyMode)],

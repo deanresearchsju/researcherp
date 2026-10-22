@@ -9,35 +9,46 @@ import {
 import { DeskModal, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
+import { SupervisorApprovalSheet } from "@/components/portal/SupervisorPrint";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
-import { NativeSelect } from "@/components/ui/native-select";
+import { Badge } from "@/components/ui/badge";
 import { applicationReviewCopy } from "@/data/application-review";
 import { field } from "@/lib/csv";
-import { formatIsoDate } from "@/lib/dates";
+import { clientToday, formatIsoDate } from "@/lib/dates";
+import { currentDoctoral, nextLetterSerial, subscribeDoctoral } from "@/lib/doctoral";
 import {
   currentAdmission,
+  decideApplicationFees,
   isArchivedApplication,
   subscribeAdmission,
+  type PaymentMark,
 } from "@/lib/admission";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import { useCanMenuAction } from "@/lib/use-menu-action";
 import {
   applicationStatuses,
-  approveApplicationStage,
-  canAdvanceApplication,
   canChangeApplicationStatus,
   deleteApplication,
-  nextApplicationStage,
-  rejectApplicationStage,
   reviewSupervisorApplication,
   supervisorReviewStatuses,
   updateApplicationStatus,
   type ApplicationKind,
   type StoredApplication,
 } from "@/lib/records";
+import { mailSummary, sendMailEvent, type MailResult } from "@/lib/mail-client";
 import { saveApprovedQuota } from "@/lib/register";
+import { uniqueIssuedPassword } from "@/lib/register-access";
+import { createPortalUser, currentPortalUsers, subscribePortalUsers } from "@/lib/users";
+import {
+  awaitingRecognition,
+  eligibilityCriteria,
+  eligibilityOf,
+  highestRecognitionSerial,
+  proposedQuota,
+  recognitionBodies,
+} from "@/lib/supervisor-approval";
 import { phdReceiptFromApplication } from "@/lib/scholar-progress";
 import { supervisorReceiptFromApplication } from "@/lib/supervisor-application";
 import { downloadSupervisorApplications } from "@/lib/supervisor-application-pdf";
@@ -71,9 +82,18 @@ function dateLabel(value: string) {
   return formatIsoDate(value.slice(0, 10));
 }
 
-function payloadText(payload: Json) {
-  return JSON.stringify(payload, null, 2) ?? "";
-}
+type TableDecision = {
+  approveLabel: string;
+  rejectLabel: string;
+  stateOf: (row: StoredApplication) => {
+    label: string;
+    tone: "gold" | "maroon" | "outline";
+    canApprove: boolean;
+    canReject: boolean;
+  };
+  onApprove: (rows: StoredApplication[]) => void;
+  onReject: (rows: StoredApplication[]) => void;
+};
 
 function ApplicationTable({
   title,
@@ -85,10 +105,8 @@ function ApplicationTable({
   onToggleAll,
   onDownload,
   downloadBusy,
-  onMoveNext,
-  onApprove,
-  onReject,
-  onStatus,
+  decision,
+  decisionHeading,
   onRemove,
   onView,
 }: {
@@ -101,10 +119,8 @@ function ApplicationTable({
   onToggleAll?: () => void;
   onDownload?: () => void;
   downloadBusy?: boolean;
-  onMoveNext?: () => void;
-  onApprove?: () => void;
-  onReject?: () => void;
-  onStatus: (row: StoredApplication, status: string) => void;
+  decision: TableDecision;
+  decisionHeading: string;
   onRemove: (row: StoredApplication) => void;
   onView: (row: StoredApplication) => void;
 }) {
@@ -112,13 +128,6 @@ function ApplicationTable({
   const picked = selectedIds ?? [];
   const selectedRows = rows.filter((row) => picked.includes(row.id));
   const allOn = rows.length > 0 && rows.every((row) => picked.includes(row.id));
-  const canNext = selectedRows.some((row) => nextApplicationStage(row.kind, row.status));
-  const canApprove = selectedRows.some((row) =>
-    approveApplicationStage(row.kind, row.status),
-  );
-  const canReject = selectedRows.some((row) =>
-    rejectApplicationStage(row.kind, row.status),
-  );
   return (
     <section className="mt-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -147,31 +156,26 @@ function ApplicationTable({
             ) : null}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || !canNext}
-              onClick={onMoveNext}
-            >
-              {applicationReviewCopy.moveNext}
-            </Button>
-            <Button
-              type="button"
               variant="gold"
               size="sm"
-              disabled={busy || !canApprove}
-              onClick={onApprove}
+              disabled={
+                busy || !selectedRows.some((row) => decision.stateOf(row).canApprove)
+              }
+              onClick={() => decision.onApprove(selectedRows)}
             >
-              {applicationReviewCopy.bulkApprove}
+              {decision.approveLabel}
             </Button>
             <Button
               type="button"
               variant="maroon"
               size="sm"
-              disabled={busy || !canReject}
-              onClick={onReject}
+              disabled={
+                busy || !selectedRows.some((row) => decision.stateOf(row).canReject)
+              }
+              onClick={() => decision.onReject(selectedRows)}
             >
-              {applicationReviewCopy.bulkReject}
-            </Button>
+              {decision.rejectLabel}
+            </Button>{" "}
           </div>
         ) : null}
       </div>
@@ -190,7 +194,7 @@ function ApplicationTable({
                 <th className="px-3 py-3 font-semibold">Application No.</th>
                 <th className="px-3 py-3 font-semibold">Applicant</th>
                 <th className="px-3 py-3 font-semibold">Submitted</th>
-                <th className="px-3 py-3 font-semibold">Status</th>
+                <th className="px-3 py-3 font-semibold">{decisionHeading}</th>
                 <th className="px-3 py-3 font-semibold">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -228,41 +232,41 @@ function ApplicationTable({
                     <p className="mt-1 text-muted-foreground">
                       Date of birth {dateLabel(row.dateOfBirth)}
                     </p>
-                    <details className="mt-2">
-                      <summary className="cursor-pointer font-semibold text-primary">
-                        All stored details
-                      </summary>
-                      <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs leading-5 whitespace-pre-wrap">
-                        {payloadText(row.payload)}
-                      </pre>
-                    </details>
                   </td>
                   <td className="px-3 py-3">{dateLabel(row.createdAt)}</td>
                   <td className="px-3 py-3">
-                    <NativeSelect
-                      aria-label={`Status for ${row.applicationNo}`}
-                      value={row.status}
-                      onChange={(event) => onStatus(row, event.target.value)}
-                    >
-                      {(row.kind === "supervisor"
-                        ? supervisorReviewStatuses
-                        : applicationStatuses
-                      )
-                        .filter((status) =>
-                          canAdvanceApplication(row.kind, row.status, status),
-                        )
-                        .map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      {(row.kind === "supervisor"
-                        ? supervisorReviewStatuses
-                        : applicationStatuses
-                      ).some((status) => status === row.status) ? null : (
-                        <option value={row.status}>{row.status}</option>
-                      )}
-                    </NativeSelect>
+                    {(() => {
+                      const state = decision.stateOf(row);
+                      return (
+                        <div className="space-y-2">
+                          <Badge variant={state.tone}>{state.label}</Badge>
+                          <div className="flex flex-wrap gap-2">
+                            {state.canApprove ? (
+                              <Button
+                                type="button"
+                                variant="gold"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => decision.onApprove([row])}
+                              >
+                                {decision.approveLabel}
+                              </Button>
+                            ) : null}
+                            {state.canReject ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => decision.onReject([row])}
+                              >
+                                {decision.rejectLabel}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })()}{" "}
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap gap-2">
@@ -310,157 +314,375 @@ export function ApplicationManager({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
   const [downloadBusy, setDownloadBusy] = useState(false);
-  const [bulkJob, setBulkJob] = useState<{
-    kind: ApplicationKind;
-    action: "next" | "approve" | "reject";
-  } | null>(null);
-  const [bulkRemarks, setBulkRemarks] = useState("");
-  const [bulkQuota, setBulkQuota] = useState("");
-  const [kindFilter, setKindFilter] = useState("");
+  const [approveJob, setApproveJob] = useState<StoredApplication[] | null>(null);
+  const [approveQuotas, setApproveQuotas] = useState<Record<string, string>>({});
+  const [rejectJob, setRejectJob] = useState<StoredApplication[] | null>(null);
+  const [rejectRemarks, setRejectRemarks] = useState("");
+  const [tab, setTab] = useState<ApplicationKind>("phd");
+  const [eligibilityTicks, setEligibilityTicks] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
+  const [approval, setApproval] = useState({
+    body: recognitionBodies[0] as string,
+    reference: "",
+    approvedOn: "",
+    preparedBy: "",
+    verifiedBy: "",
+  });
+  const [approvalDialog, setApprovalDialog] = useState(false);
+  const [issuedLogins, setIssuedLogins] = useState<
+    { name: string; identifier: string; password: string }[]
+  >([]);
+  const users = useSyncExternalStore(
+    subscribePortalUsers,
+    currentPortalUsers,
+    () => null,
+  );
+  const [approvalSheet, setApprovalSheet] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
+  const [feeFilter, setFeeFilter] = useState("");
   const admission = useSyncExternalStore(
     subscribeAdmission,
     currentAdmission,
     () => null,
   );
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
   const canUpload = detail === null;
-  const liveRows = rows.filter(
-    (row) => row.kind !== "phd" || !isArchivedApplication(row, admission?.archived ?? []),
-  );
 
-  function chosenRows(kind: ApplicationKind) {
-    const ids = kind === "phd" ? selectedIds : selectedSupervisorIds;
-    return liveRows.filter((row) => row.kind === kind && ids.includes(row.id));
+  // The application fee is decided here; approved applications appear in Selection.
+  function feeOf(row: StoredApplication): PaymentMark {
+    const found = admission?.cases.find(
+      (item) => item.applicationId === row.id || item.applicationNo === row.applicationNo,
+    );
+    return found?.payment ?? "Pending";
   }
 
-  function supervisorDialogNeeded(
-    action: "next" | "approve" | "reject",
+  async function decideFees(
     chosen: StoredApplication[],
+    payment: "Approved" | "Returned",
   ) {
-    if (action === "approve" || action === "reject") return true;
-    return chosen.some((row) => {
-      const next = nextApplicationStage(row.kind, row.status);
-      return next === "Accepted" || next === "Approved";
-    });
-  }
-
-  async function runBulk(
-    kind: ApplicationKind,
-    action: "next" | "approve" | "reject",
-    remarks: string,
-    quotaText: string,
-  ) {
-    const chosen = chosenRows(kind);
+    const pending = chosen.filter((row) => feeOf(row) !== payment);
     if (chosen.length === 0) {
       setNotice(applicationReviewCopy.needSelection);
+      return;
+    }
+    if (pending.length === 0) {
+      setNotice(`Those applications are already ${payment.toLowerCase()}.`);
       return;
     }
     setBusy(true);
     setNotice(null);
-    let updated = 0;
-    let failed = 0;
-    let nextRows = rows;
-    for (const row of chosen) {
-      const status =
-        action === "next"
-          ? nextApplicationStage(row.kind, row.status)
-          : action === "approve"
-            ? approveApplicationStage(row.kind, row.status)
-            : rejectApplicationStage(row.kind, row.status);
-      if (!status) continue;
-      let saved = false;
-      if (
-        row.kind === "supervisor" &&
-        (status === "Accepted" || status === "Approved" || status === "Rejected")
-      ) {
-        const quota = status === "Approved" ? Number(quotaText) : undefined;
-        saved = await reviewSupervisorApplication(
-          row.id,
-          row.payload,
-          status,
-          remarks.trim(),
-          Number.isInteger(quota) ? quota : undefined,
-        );
-        if (
-          saved &&
-          status === "Approved" &&
-          Number.isInteger(quota) &&
-          quota !== undefined
-        ) {
-          await saveApprovedQuota({
-            name: row.applicantName,
-            quota,
-            department:
-              payloadValue(row.payload, "proposedDepartment") ||
-              payloadValue(row.payload, "department"),
-            designation: payloadValue(row.payload, "designation"),
-          });
-        }
-      } else {
-        saved = await updateApplicationStatus(row.kind, row.id, status);
-      }
-      if (saved) {
-        updated += 1;
-        nextRows = nextRows.map((item) =>
-          item.id === row.id ? { ...item, status } : item,
-        );
-      } else {
-        failed += 1;
-      }
-    }
-    setRows(nextRows);
+    const saved = await decideApplicationFees(pending, payment);
     setBusy(false);
-    setBulkJob(null);
-    if (updated === 0) setNotice(applicationReviewCopy.bulkNone);
-    else if (failed > 0) setNotice(applicationReviewCopy.bulkPartial);
-    else setNotice(applicationReviewCopy.bulkUpdated);
+    if (!saved.ok) {
+      setNotice(saved.message);
+      return;
+    }
+    if (saved.changed === 0) {
+      setNotice("No change: those applications have already moved on in Selection.");
+      return;
+    }
+    if (payment === "Approved") {
+      setRows((current) =>
+        current.map((item) =>
+          pending.some((row) => row.id === item.id) &&
+          item.status === "Acknowledgement sent"
+            ? { ...item, status: "Under review" }
+            : item,
+        ),
+      );
+    }
+    setSelectedIds([]);
+    setNotice(
+      payment === "Approved"
+        ? `Payment approved for ${saved.changed}. ${saved.changed === 1 ? "The application is" : "The applications are"} now in Selection.`
+        : `Payment returned for ${saved.changed}.`,
+    );
+  }
+  const liveRows = rows.filter(
+    (row) => row.kind !== "phd" || !isArchivedApplication(row, admission?.archived ?? []),
+  );
+
+  function supervisorState(row: StoredApplication) {
+    if (row.status === "Approved") {
+      return {
+        label: "Approved",
+        tone: "gold" as const,
+        canApprove: false,
+        canReject: false,
+      };
+    }
+    if (row.status === "Rejected") {
+      return {
+        label: "Rejected",
+        tone: "maroon" as const,
+        canApprove: false,
+        canReject: false,
+      };
+    }
+    if (row.status === "Accepted") {
+      return {
+        label: "Eligible · awaiting approval",
+        tone: "outline" as const,
+        canApprove: false,
+        canReject: true,
+      };
+    }
+    return {
+      label: "Awaiting verification",
+      tone: "outline" as const,
+      canApprove: true,
+      canReject: true,
+    };
   }
 
-  function requestBulk(kind: ApplicationKind, action: "next" | "approve" | "reject") {
-    const chosen = chosenRows(kind);
+  function openVerify(chosen: StoredApplication[]) {
+    const open = chosen.filter((row) => supervisorState(row).canApprove);
     if (chosen.length === 0) {
       setNotice(applicationReviewCopy.needSelection);
       return;
     }
-    const possible = chosen.some((row) => {
-      if (action === "next") return Boolean(nextApplicationStage(row.kind, row.status));
-      if (action === "approve")
-        return Boolean(approveApplicationStage(row.kind, row.status));
-      return Boolean(rejectApplicationStage(row.kind, row.status));
-    });
-    if (!possible) {
+    if (open.length === 0) {
       setNotice(applicationReviewCopy.bulkNone);
       return;
     }
-    if (kind === "supervisor" && supervisorDialogNeeded(action, chosen)) {
-      setBulkRemarks("");
-      setBulkQuota("");
-      setBulkJob({ kind, action });
-      return;
-    }
-    void runBulk(kind, action, "", "");
-  }
-
-  async function onStatus(row: StoredApplication, status: string) {
-    if (!canAdvanceApplication(row.kind, row.status, status)) {
-      setNotice("That status change is not allowed.");
-      return;
-    }
-    const previous = row.status;
-    setRows((current) =>
-      current.map((item) => (item.id === row.id ? { ...item, status } : item)),
+    setApproveQuotas(
+      Object.fromEntries(
+        open.map((row) => [
+          row.id,
+          String(proposedQuota(payloadValue(row.payload, "designation"))),
+        ]),
+      ),
     );
-    const saved = await updateApplicationStatus(row.kind, row.id, status);
-    if (!saved) {
-      setRows((current) =>
-        current.map((item) =>
-          item.id === row.id ? { ...item, status: previous } : item,
-        ),
-      );
-      setNotice("The status could not be saved.");
-    }
+    setEligibilityTicks({});
+    setApproveJob(open);
   }
 
+  function openReject(chosen: StoredApplication[]) {
+    const open = chosen.filter((row) => supervisorState(row).canReject);
+    if (chosen.length === 0) {
+      setNotice(applicationReviewCopy.needSelection);
+      return;
+    }
+    if (open.length === 0) {
+      setNotice(applicationReviewCopy.bulkNone);
+      return;
+    }
+    setRejectRemarks("");
+    setRejectJob(open);
+  }
+
+  /** Verify the eligibility conditions; the application then waits for the RAB / Vice Chancellor. */
+  async function verifySupervisors() {
+    if (!approveJob) return;
+    for (const row of approveJob) {
+      const quota = Number(approveQuotas[row.id]);
+      if (!Number.isInteger(quota) || quota < 0 || quota > 30) {
+        setNotice(`Enter the guide quota for ${row.applicantName} (0 to 30).`);
+        return;
+      }
+      const ticks = eligibilityTicks[row.id] ?? {};
+      if (!eligibilityCriteria.every((item) => ticks[item.id])) {
+        setNotice(
+          `Tick every eligibility condition for ${row.applicantName}, or reject the application.`,
+        );
+        return;
+      }
+    }
+    setBusy(true);
+    setNotice(null);
+    const today = clientToday();
+    const done = new Map<string, Json>();
+    for (const row of approveJob) {
+      const eligibility = {
+        checks: eligibilityTicks[row.id] ?? {},
+        quota: Number(approveQuotas[row.id]),
+        verifiedOn: today,
+        remarks: "Eligibility verified.",
+      };
+      const saved = await reviewSupervisorApplication(
+        row.id,
+        row.payload,
+        "Accepted",
+        eligibility.remarks,
+        undefined,
+        { eligibility },
+      );
+      if (!saved) continue;
+      done.set(row.id, { eligibility } as Json);
+    }
+    setRows((current) =>
+      current.map((item) =>
+        done.has(item.id)
+          ? {
+              ...item,
+              status: "Accepted",
+              payload: {
+                ...(item.payload &&
+                typeof item.payload === "object" &&
+                !Array.isArray(item.payload)
+                  ? item.payload
+                  : {}),
+                ...(done.get(item.id) as Record<string, Json>),
+              },
+            }
+          : item,
+      ),
+    );
+    setBusy(false);
+    setApproveJob(null);
+    setSelectedSupervisorIds([]);
+    setNotice(
+      done.size === approveJob.length
+        ? `Eligibility verified for ${done.size} applicant${done.size === 1 ? "" : "s"}. Print the approval sheet for the RAB / Vice Chancellor.`
+        : applicationReviewCopy.bulkPartial,
+    );
+  }
+
+  /** Records the RAB / Vice Chancellor approval and approves every verified applicant. */
+  async function recordRecognition() {
+    const waiting = awaitingRecognition(liveRows);
+    if (waiting.length === 0) return;
+    if (!approval.reference.trim() || !approval.approvedOn) {
+      setNotice("Enter the approval reference and the date of approval.");
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    const year = approval.approvedOn.slice(0, 4);
+    let serial = Math.max(
+      doctoral ? nextLetterSerial(doctoral, "recognition", year) : 1,
+      highestRecognitionSerial(rows, year) + 1,
+    );
+    const done = new Map<string, Record<string, unknown>>();
+    for (const row of waiting) {
+      const eligibility = eligibilityOf(row.payload);
+      const quota =
+        eligibility?.quota ?? proposedQuota(payloadValue(row.payload, "designation"));
+      const recognition = {
+        body: approval.body,
+        reference: approval.reference.trim(),
+        approvedOn: approval.approvedOn,
+        refNo: `SJU/DR/SR/${year}/${String(serial).padStart(3, "0")}`,
+        issuedOn: approval.approvedOn,
+        preparedBy: approval.preparedBy.trim(),
+        verifiedBy: approval.verifiedBy.trim(),
+      };
+      const saved = await reviewSupervisorApplication(
+        row.id,
+        row.payload,
+        "Approved",
+        `Approved by the ${approval.body}.`,
+        quota,
+        { recognition },
+      );
+      if (!saved) continue;
+      await saveApprovedQuota({
+        name: row.applicantName,
+        quota,
+        department:
+          payloadValue(row.payload, "subject") || payloadValue(row.payload, "department"),
+        designation: payloadValue(row.payload, "designation"),
+      });
+      serial += 1;
+      done.set(row.id, { recognition, approvedQuota: quota });
+    }
+    setRows((current) =>
+      current.map((item) =>
+        done.has(item.id)
+          ? {
+              ...item,
+              status: "Approved",
+              payload: {
+                ...(item.payload &&
+                typeof item.payload === "object" &&
+                !Array.isArray(item.payload)
+                  ? item.payload
+                  : {}),
+                ...(done.get(item.id) as Record<string, Json>),
+              },
+            }
+          : item,
+      ),
+    );
+    // Open each approved supervisor's ERP sign-in and mail the details.
+    const approvedRows = waiting.filter((row) => done.has(row.id));
+    const logins: { name: string; identifier: string; password: string }[] = [];
+    for (const row of approvedRows) {
+      const identifier = row.email.trim();
+      if (!identifier) continue;
+      const exists = users?.users.some(
+        (user) =>
+          user.role === "supervisor" &&
+          user.identifier.toLowerCase() === identifier.toLowerCase(),
+      );
+      if (exists) continue;
+      const password = uniqueIssuedPassword();
+      const created = await createPortalUser(
+        {
+          role: "supervisor",
+          name: row.applicantName,
+          identifier,
+          password,
+          menus: null,
+        },
+        users?.source ?? "browser",
+      );
+      if (created.ok) logins.push({ name: row.applicantName, identifier, password });
+    }
+    const letterMail = await sendMailEvent({
+      event: "recognition",
+      applicationNos: approvedRows.map((row) => row.applicationNo),
+    });
+    const loginMail: MailResult = { ok: true, sent: 0, failed: 0, configured: true };
+    for (const item of logins) {
+      const result = await sendMailEvent({
+        event: "credentials",
+        role: "supervisor",
+        identifier: item.identifier,
+        password: item.password,
+      });
+      loginMail.sent += result.sent;
+      loginMail.failed += result.failed;
+      loginMail.configured = result.configured;
+    }
+    setIssuedLogins((current) => [...logins, ...current]);
+    setBusy(false);
+    setApprovalDialog(false);
+    setNotice(
+      done.size === waiting.length
+        ? `Approval recorded for ${done.size} supervisor${done.size === 1 ? "" : "s"}. They can download the recognition letter from Supervisor application status.${mailSummary(letterMail, "Recognition notice")}${logins.length > 0 ? ` ${logins.length} sign-in(s) opened.${mailSummary(loginMail, "Sign-in details")}` : ""}`
+        : applicationReviewCopy.bulkPartial,
+    );
+  }
+
+  async function rejectSupervisors() {
+    if (!rejectJob || rejectRemarks.trim().length < 2) return;
+    setBusy(true);
+    setNotice(null);
+    const done = new Set<string>();
+    for (const row of rejectJob) {
+      const saved = await reviewSupervisorApplication(
+        row.id,
+        row.payload,
+        "Rejected",
+        rejectRemarks.trim(),
+      );
+      if (saved) done.add(row.id);
+    }
+    setRows((current) =>
+      current.map((item) => (done.has(item.id) ? { ...item, status: "Rejected" } : item)),
+    );
+    setBusy(false);
+    const total = rejectJob.length;
+    setRejectJob(null);
+    setSelectedSupervisorIds([]);
+    setNotice(
+      done.size === total
+        ? `${done.size} supervisor application${done.size === 1 ? "" : "s"} rejected.`
+        : applicationReviewCopy.bulkPartial,
+    );
+  }
   async function onRemove(row: StoredApplication) {
     if (!window.confirm(`Remove application ${row.applicationNo}?`)) return;
     setBusy(true);
@@ -521,8 +743,9 @@ export function ApplicationManager({
 
   const visible = liveRows.filter(
     (row) =>
-      filterMatches(kindFilter, row.kind) &&
+      row.kind === tab &&
       filterMatches(statusFilter, row.status) &&
+      (!feeFilter || filterMatches(feeFilter, feeOf(row))) &&
       textMatches(query, [
         row.applicationNo,
         row.applicantName,
@@ -533,46 +756,167 @@ export function ApplicationManager({
   );
   const phd = visible.filter((row) => row.kind === "phd");
   const supervisors = visible.filter((row) => row.kind === "supervisor");
+  const phdCount = liveRows.filter((row) => row.kind === "phd").length;
+  const supervisorCount = liveRows.filter((row) => row.kind === "supervisor").length;
+  const tabRows = liveRows.filter((row) => row.kind === tab);
+
+  function switchTab(next: ApplicationKind) {
+    if (next === tab) return;
+    setTab(next);
+    setQuery("");
+    setStatusFilter("");
+    setFeeFilter("");
+    setNotice(null);
+  }
+  const waitingRecognition = awaitingRecognition(liveRows);
+
+  if (approvalSheet) {
+    return (
+      <div>
+        <div className="no-print mb-4 flex gap-2">
+          <Button type="button" variant="outline" onClick={() => setApprovalSheet(false)}>
+            Back to applications
+          </Button>
+          <Button type="button" onClick={() => window.print()}>
+            Print approval sheet
+          </Button>
+        </div>
+        <SupervisorApprovalSheet
+          rows={waitingRecognition}
+          body={approval.body}
+          preparedBy={approval.preparedBy}
+          verifiedBy={approval.verifiedBy}
+          deanName={admission?.letter.deanName ?? ""}
+          deanTitle={admission?.letter.deanTitle || undefined}
+        />
+      </div>
+    );
+  }
+
+  const recognitionPanel =
+    waitingRecognition.length > 0 ? (
+      <section className="mt-6 rounded-xl border border-accent/50 bg-accent/10 p-4">
+        <h2 className="font-heading text-xl text-primary">
+          Recognition approval · RAB / Vice Chancellor
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {waitingRecognition.length} applicant
+          {waitingRecognition.length === 1 ? " has" : "s have"} met the eligibility
+          conditions. Print the sheet for approval; once approved, record it here and the
+          supervisors can download their recognition letter from the application status
+          page.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <FormField label="Prepared by" htmlFor="rec-prepared">
+            <input
+              id="rec-prepared"
+              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+              value={approval.preparedBy}
+              onChange={(event) =>
+                setApproval((current) => ({ ...current, preparedBy: event.target.value }))
+              }
+            />
+          </FormField>
+          <FormField label="Verified by" htmlFor="rec-verified">
+            <input
+              id="rec-verified"
+              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+              value={approval.verifiedBy}
+              onChange={(event) =>
+                setApproval((current) => ({ ...current, verifiedBy: event.target.value }))
+              }
+            />
+          </FormField>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" variant="gold" onClick={() => setApprovalSheet(true)}>
+            Print approval sheet
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setApproval((current) => ({
+                ...current,
+                approvedOn: current.approvedOn || clientToday(),
+              }));
+              setApprovalDialog(true);
+            }}
+          >
+            Record approval
+          </Button>
+        </div>
+      </section>
+    ) : null;
 
   return (
     <div>
       <PageTitle kicker="Administration" title="Applications" />
+      <div
+        className="mt-5 flex flex-wrap gap-3"
+        role="group"
+        aria-label="Application type"
+      >
+        {(
+          [
+            ["phd", "Ph.D. applications", phdCount],
+            ["supervisor", "Supervisor applications", supervisorCount],
+          ] as const
+        ).map(([kind, label, count]) => (
+          <Button
+            key={kind}
+            type="button"
+            variant={tab === kind ? "default" : "outline"}
+            aria-pressed={tab === kind}
+            data-readonly-allow
+            onClick={() => switchTab(kind)}
+          >
+            {label}
+            <span
+              className={
+                tab === kind
+                  ? "ml-2 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-xs"
+                  : "ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs"
+              }
+            >
+              {count}
+            </span>
+          </Button>
+        ))}
+      </div>
       <ListToolbar
         query={query}
         onQuery={setQuery}
         filters={[
           {
-            id: "kind",
-            label: "Application",
-            value: kindFilter,
-            options: [
-              { value: "phd", label: "Ph.D." },
-              { value: "supervisor", label: "Supervisor recognition" },
-            ],
-            onChange: setKindFilter,
-          },
-          {
             id: "status",
             label: "Status",
             value: statusFilter,
-            options: [
-              ...applicationStatuses,
-              ...supervisorReviewStatuses.filter(
-                (status) =>
-                  !applicationStatuses.includes(
-                    status as (typeof applicationStatuses)[number],
-                  ),
-              ),
-            ].map((status) => ({
-              value: status,
-              label: status,
-            })),
+            options: (tab === "phd" ? applicationStatuses : supervisorReviewStatuses).map(
+              (status) => ({ value: status, label: status }),
+            ),
             onChange: setStatusFilter,
           },
+          ...(tab === "phd"
+            ? [
+                {
+                  id: "fee",
+                  label: "Application fee",
+                  value: feeFilter,
+                  options: [
+                    { value: "Pending", label: "Payment pending" },
+                    { value: "Approved", label: "Payment approved" },
+                    { value: "Returned", label: "Payment returned" },
+                  ],
+                  onChange: setFeeFilter,
+                },
+              ]
+            : []),
         ]}
         shown={visible.length}
-        total={liveRows.length}
-        filename="applications-filtered.csv"
+        total={tabRows.length}
+        filename={`applications-${tab}-filtered.csv`}
         headers={applicationColumns}
         rows={visible.map((row) => [
           row.kind,
@@ -608,87 +952,131 @@ export function ApplicationManager({
           {notice}
         </p>
       ) : null}
-      <ApplicationTable
-        title="Ph.D. applications"
-        rows={phd}
-        busy={busy}
-        selectable
-        selectedIds={selectedIds}
-        onToggle={(id) => {
-          setSelectedIds((current) =>
-            current.includes(id)
-              ? current.filter((item) => item !== id)
-              : [...current, id],
-          );
-        }}
-        onToggleAll={() => {
-          const ids = phd.map((row) => row.id);
-          const allOn = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
-          setSelectedIds(allOn ? [] : ids);
-        }}
-        downloadBusy={downloadBusy}
-        onDownload={() => {
-          const chosen = phd.filter((row) => selectedIds.includes(row.id));
-          if (chosen.length === 0) {
-            setNotice(applicationReviewCopy.needSelection);
-            return;
-          }
-          setDownloadBusy(true);
-          setNotice(null);
-          void downloadPhdApplications(chosen.map(phdReceiptFromApplication))
-            .catch(() => setNotice(applicationReviewCopy.downloadFailed))
-            .finally(() => setDownloadBusy(false));
-        }}
-        onMoveNext={() => requestBulk("phd", "next")}
-        onApprove={() => requestBulk("phd", "approve")}
-        onReject={() => requestBulk("phd", "reject")}
-        onStatus={onStatus}
-        onRemove={(row) => void onRemove(row)}
-        onView={setViewing}
-      />
-      <ApplicationTable
-        title="Supervisor recognition"
-        rows={supervisors}
-        busy={busy}
-        selectable
-        selectedIds={selectedSupervisorIds}
-        onToggle={(id) => {
-          setSelectedSupervisorIds((current) =>
-            current.includes(id)
-              ? current.filter((item) => item !== id)
-              : [...current, id],
-          );
-        }}
-        onToggleAll={() => {
-          const ids = supervisors.map((row) => row.id);
-          const allOn =
-            ids.length > 0 && ids.every((id) => selectedSupervisorIds.includes(id));
-          setSelectedSupervisorIds(allOn ? [] : ids);
-        }}
-        downloadBusy={downloadBusy}
-        onDownload={() => {
-          const chosen = supervisors.filter((row) =>
-            selectedSupervisorIds.includes(row.id),
-          );
-          if (chosen.length === 0) {
-            setNotice(applicationReviewCopy.needSelection);
-            return;
-          }
-          setDownloadBusy(true);
-          setNotice(null);
-          void downloadSupervisorApplications(
-            chosen.map(supervisorReceiptFromApplication),
-          )
-            .catch(() => setNotice(applicationReviewCopy.downloadFailed))
-            .finally(() => setDownloadBusy(false));
-        }}
-        onMoveNext={() => requestBulk("supervisor", "next")}
-        onApprove={() => requestBulk("supervisor", "approve")}
-        onReject={() => requestBulk("supervisor", "reject")}
-        onStatus={onStatus}
-        onRemove={(row) => void onRemove(row)}
-        onView={setViewing}
-      />
+      {tab === "phd" ? (
+        <ApplicationTable
+          title="Ph.D. applications"
+          rows={phd}
+          busy={busy}
+          selectable
+          selectedIds={selectedIds}
+          onToggle={(id) => {
+            setSelectedIds((current) =>
+              current.includes(id)
+                ? current.filter((item) => item !== id)
+                : [...current, id],
+            );
+          }}
+          onToggleAll={() => {
+            const ids = phd.map((row) => row.id);
+            const allOn = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
+            setSelectedIds(allOn ? [] : ids);
+          }}
+          downloadBusy={downloadBusy}
+          onDownload={() => {
+            const chosen = phd.filter((row) => selectedIds.includes(row.id));
+            if (chosen.length === 0) {
+              setNotice(applicationReviewCopy.needSelection);
+              return;
+            }
+            setDownloadBusy(true);
+            setNotice(null);
+            void downloadPhdApplications(chosen.map(phdReceiptFromApplication))
+              .catch(() => setNotice(applicationReviewCopy.downloadFailed))
+              .finally(() => setDownloadBusy(false));
+          }}
+          decisionHeading="Application fee"
+          decision={{
+            approveLabel: "Approve payment",
+            rejectLabel: "Return payment",
+            stateOf: (row) => {
+              const fee = feeOf(row);
+              return {
+                label:
+                  fee === "Approved"
+                    ? "Payment approved"
+                    : fee === "Returned"
+                      ? "Payment returned"
+                      : "Payment pending",
+                tone:
+                  fee === "Approved" ? "gold" : fee === "Returned" ? "maroon" : "outline",
+                canApprove: fee !== "Approved",
+                canReject: fee === "Pending",
+              };
+            },
+            onApprove: (chosen) => void decideFees(chosen, "Approved"),
+            onReject: (chosen) => void decideFees(chosen, "Returned"),
+          }}
+          onRemove={(row) => void onRemove(row)}
+          onView={setViewing}
+        />
+      ) : (
+        <>
+          {issuedLogins.length > 0 ? (
+            <div className="mt-6 rounded-xl border border-accent/50 bg-accent/10 p-3 text-sm">
+              <p className="font-semibold text-primary">
+                First sign-in for newly approved supervisors. The details are emailed;
+                share a password yourself only if the email did not go. It is not shown
+                again after you leave this page.
+              </p>
+              <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+                {issuedLogins.map((item) => (
+                  <li key={item.identifier} className="font-mono text-xs">
+                    {item.name} · {item.identifier} · {item.password}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {recognitionPanel}
+          <ApplicationTable
+            title="Supervisor applications"
+            rows={supervisors}
+            busy={busy}
+            selectable
+            selectedIds={selectedSupervisorIds}
+            onToggle={(id) => {
+              setSelectedSupervisorIds((current) =>
+                current.includes(id)
+                  ? current.filter((item) => item !== id)
+                  : [...current, id],
+              );
+            }}
+            onToggleAll={() => {
+              const ids = supervisors.map((row) => row.id);
+              const allOn =
+                ids.length > 0 && ids.every((id) => selectedSupervisorIds.includes(id));
+              setSelectedSupervisorIds(allOn ? [] : ids);
+            }}
+            downloadBusy={downloadBusy}
+            onDownload={() => {
+              const chosen = supervisors.filter((row) =>
+                selectedSupervisorIds.includes(row.id),
+              );
+              if (chosen.length === 0) {
+                setNotice(applicationReviewCopy.needSelection);
+                return;
+              }
+              setDownloadBusy(true);
+              setNotice(null);
+              void downloadSupervisorApplications(
+                chosen.map(supervisorReceiptFromApplication),
+              )
+                .catch(() => setNotice(applicationReviewCopy.downloadFailed))
+                .finally(() => setDownloadBusy(false));
+            }}
+            decisionHeading="Verification"
+            decision={{
+              approveLabel: "Verify eligibility",
+              rejectLabel: "Reject application",
+              stateOf: supervisorState,
+              onApprove: openVerify,
+              onReject: openReject,
+            }}
+            onRemove={(row) => void onRemove(row)}
+            onView={setViewing}
+          />
+        </>
+      )}
       {viewing ? (
         <ApplicationViewer
           application={viewing}
@@ -748,62 +1136,194 @@ export function ApplicationManager({
           }
         />
       ) : null}
-      {bulkJob ? (
+      {approveJob ? (
+        <DeskModal title="Verify eligibility" onClose={() => setApproveJob(null)}>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void verifySupervisors();
+            }}
+          >
+            {approveJob.map((row) => (
+              <fieldset
+                key={row.id}
+                className="rounded-xl border border-border p-3 text-sm"
+              >
+                <legend className="px-1 font-semibold text-primary">
+                  {row.applicantName}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {row.applicationNo} ·{" "}
+                    {payloadValue(row.payload, "designation") || "—"}
+                  </span>
+                </legend>
+                <p className="text-xs text-muted-foreground">
+                  Ph.D. awarded {payloadValue(row.payload, "phdAwardYear") || "—"} ·
+                  Appointed{" "}
+                  {payloadValue(row.payload, "appointmentDate")
+                    ? formatIsoDate(payloadValue(row.payload, "appointmentDate"))
+                    : "—"}{" "}
+                  · {payloadValue(row.payload, "faculty") || "School not stated"}
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {eligibilityCriteria.map((item) => (
+                    <li key={item.id}>
+                      <label className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 size-4 accent-primary"
+                          checked={eligibilityTicks[row.id]?.[item.id] === true}
+                          onChange={(event) =>
+                            setEligibilityTicks((current) => ({
+                              ...current,
+                              [row.id]: {
+                                ...current[row.id],
+                                [item.id]: event.target.checked,
+                              },
+                            }))
+                          }
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <label className="mt-3 flex items-center gap-2">
+                  <span className="text-sm">Guide quota</span>
+                  <input
+                    aria-label={`Guide quota for ${row.applicantName}`}
+                    className="h-10 w-20 rounded-lg border border-input bg-card px-2 text-sm"
+                    inputMode="numeric"
+                    value={approveQuotas[row.id] ?? ""}
+                    onChange={(event) =>
+                      setApproveQuotas((current) => ({
+                        ...current,
+                        [row.id]: event.target.value.replace(/\D/g, "").slice(0, 2),
+                      }))
+                    }
+                  />
+                </label>
+              </fieldset>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              Once every condition is met the application waits for the RAB / Vice
+              Chancellor approval. The quota is the number of scholars the supervisor may
+              guide.
+            </p>
+            <div className="flex gap-2">
+              <Button type="submit" variant="gold" disabled={busy}>
+                {busy ? "Saving…" : "Eligibility verified"}
+              </Button>
+            </div>
+          </form>
+        </DeskModal>
+      ) : null}
+      {approvalDialog ? (
         <DeskModal
-          title={
-            bulkJob.action === "reject"
-              ? applicationReviewCopy.bulkReject
-              : bulkJob.action === "approve"
-                ? applicationReviewCopy.bulkApprove
-                : applicationReviewCopy.moveNext
-          }
-          onClose={() => setBulkJob(null)}
+          title="Record RAB / Vice Chancellor approval"
+          onClose={() => setApprovalDialog(false)}
         >
           <form
             className="grid gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              if (bulkRemarks.trim().length < 2) return;
-              void runBulk(bulkJob.kind, bulkJob.action, bulkRemarks, bulkQuota);
+              void recordRecognition();
             }}
           >
-            {bulkJob.action === "approve" ||
-            (bulkJob.action === "next" &&
-              chosenRows(bulkJob.kind).some(
-                (row) => nextApplicationStage(row.kind, row.status) === "Approved",
-              )) ? (
-              <FormField
-                label={applicationReviewCopy.bulkQuota}
-                htmlFor="bulk-quota"
-                required
+            <p className="text-sm text-muted-foreground">
+              {awaitingRecognition(liveRows)
+                .map((row) => row.applicantName)
+                .join(", ")}
+            </p>
+            <FormField label="Approved by" htmlFor="rec-body" required>
+              <select
+                id="rec-body"
+                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                value={approval.body}
+                onChange={(event) =>
+                  setApproval((current) => ({ ...current, body: event.target.value }))
+                }
               >
-                <input
-                  id="bulk-quota"
-                  className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
-                  inputMode="numeric"
-                  value={bulkQuota}
-                  onChange={(event) => setBulkQuota(event.target.value)}
-                />
-              </FormField>
-            ) : null}
+                {recognitionBodies.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField
+              label="Approval reference / minutes no."
+              htmlFor="rec-ref"
+              required
+            >
+              <input
+                id="rec-ref"
+                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                value={approval.reference}
+                onChange={(event) =>
+                  setApproval((current) => ({
+                    ...current,
+                    reference: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField label="Date of approval" htmlFor="rec-date" required>
+              <input
+                id="rec-date"
+                type="date"
+                max={clientToday()}
+                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                value={approval.approvedOn}
+                onChange={(event) =>
+                  setApproval((current) => ({
+                    ...current,
+                    approvedOn: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <p className="text-xs text-muted-foreground">
+              The listed supervisors are approved, added to the vacancy list, and can
+              download the recognition letter from Supervisor application status.
+            </p>
+            <div className="flex gap-2">
+              <Button type="submit" variant="gold" disabled={busy}>
+                {busy ? "Saving…" : "Record approval"}
+              </Button>
+            </div>
+          </form>
+        </DeskModal>
+      ) : null}
+      {rejectJob ? (
+        <DeskModal title="Reject application" onClose={() => setRejectJob(null)}>
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void rejectSupervisors();
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              {rejectJob.map((row) => row.applicantName).join(", ")}
+            </p>
             <FormField
               label={applicationReviewCopy.bulkRemarks}
-              htmlFor="bulk-remarks"
+              htmlFor="reject-remarks"
               required
             >
               <textarea
-                id="bulk-remarks"
+                id="reject-remarks"
                 className="min-h-24 w-full rounded-xl border border-input bg-white px-3 py-2 text-sm"
-                value={bulkRemarks}
-                onChange={(event) => setBulkRemarks(event.target.value)}
+                value={rejectRemarks}
+                onChange={(event) => setRejectRemarks(event.target.value)}
               />
             </FormField>
             <div className="flex gap-2">
-              <Button type="submit" variant="gold" disabled={busy}>
-                {applicationReviewCopy.bulkApply}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setBulkJob(null)}>
-                {applicationReviewCopy.close}
+              <Button
+                type="submit"
+                variant="maroon"
+                disabled={busy || rejectRemarks.trim().length < 2}
+              >
+                Reject
               </Button>
             </div>
           </form>

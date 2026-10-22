@@ -330,8 +330,6 @@ async function buildPdf(receipt: SupervisorReceipt) {
     },
   ]);
   numberedRow([
-    { label: supervisorSheetCopy.religion, value: values.religion },
-    { label: supervisorSheetCopy.community, value: values.community },
     { label: supervisorSheetCopy.state, value: values.state },
     { label: supervisorSheetCopy.nationality, value: values.nationality },
   ]);
@@ -394,7 +392,6 @@ async function buildPdf(receipt: SupervisorReceipt) {
       label: supervisorSheetCopy.remaining,
       value: remaining || supervisorSheetCopy.none,
     },
-    { label: supervisorSheetCopy.proposed, value: values.proposedDepartment },
   ]);
   numberedRow([
     {

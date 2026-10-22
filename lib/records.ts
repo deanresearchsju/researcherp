@@ -1,6 +1,7 @@
 import { issueApplicationNo } from "@/lib/applications";
 import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { fileToDataUrl } from "@/lib/files";
+import { sendMailEvent } from "@/lib/mail-client";
 import { createSupabase } from "@/lib/supabase/client";
 import { assertPhdUploads } from "@/lib/upload-guard";
 import type { Json } from "@/types/database";
@@ -176,7 +177,24 @@ async function announceApplication(kind: ApplicationKind, applicationNo: string)
   }).catch(() => null);
 }
 
+/** Stores the application, then sends the acknowledgement mail (never blocks the applicant). */
 async function insertApplication(
+  kind: ApplicationKind,
+  values: Parameters<typeof insertApplicationRecord>[1],
+): Promise<SaveResult> {
+  const saved = await insertApplicationRecord(kind, values);
+  if (saved.ok) {
+    void sendMailEvent({
+      event: "ack",
+      kind,
+      applicationNo: saved.applicationNo,
+      dateOfBirth: values.dateOfBirth,
+    });
+  }
+  return saved;
+}
+
+async function insertApplicationRecord(
   kind: ApplicationKind,
   values: {
     dateOfBirth: string;
@@ -298,6 +316,35 @@ export async function lookupPhdApplication(applicationNo: string, dateOfBirth: s
     payload: data.payload,
     createdAt: data.created_at,
   };
+}
+
+export async function lookupSupervisorApplication(
+  applicationNo: string,
+  dateOfBirth: string,
+) {
+  const supabase = createSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("supervisor_applications")
+    .select(
+      "id, application_no, applicant_name, email, date_of_birth, status, payload, created_at",
+    )
+    .ilike("application_no", applicationNo.trim())
+    .eq("date_of_birth", dateOfBirth)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    kind: "supervisor" as const,
+    applicationNo: data.application_no,
+    applicantName: data.applicant_name,
+    email: data.email,
+    dateOfBirth: data.date_of_birth,
+    studyMode: null,
+    status: data.status,
+    payload: data.payload,
+    createdAt: data.created_at,
+  } satisfies StoredApplication;
 }
 
 export async function loadStoredApplications(): Promise<{
@@ -429,6 +476,7 @@ export async function reviewSupervisorApplication(
   status: "Accepted" | "Approved" | "Rejected",
   remarks: string,
   approvedQuota?: number,
+  extra: Record<string, unknown> = {},
 ) {
   const supabase = createSupabase();
   if (!supabase) return false;
@@ -436,6 +484,7 @@ export async function reviewSupervisorApplication(
     payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const nextPayload = toJson({
     ...current,
+    ...extra,
     officeDecision: status,
     officeRemarks: remarks.trim(),
     ...(status === "Accepted" ? { acceptedRemarks: remarks.trim() } : {}),

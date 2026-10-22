@@ -14,12 +14,12 @@ export type TablePdfInput = {
   generatedBy?: string;
 };
 
-const margin = 12;
-const fontSize = 8;
-const lineHeight = 3.6;
-const cellPadding = 1.6;
-const headerTop = 34;
-const footerHeight = 14;
+const margin = 10;
+const fontSize = 7.5;
+const lineHeight = 3.2;
+const cellPadding = 1.1;
+const headerTop = 25;
+const footerHeight = 18;
 
 let logoCache: Promise<{ data: string; ratio: number } | null> | null = null;
 
@@ -127,28 +127,31 @@ export async function downloadTablePdf(input: TablePdfInput) {
 
   const drawLetterhead = () => {
     if (logo) {
-      const height = 13;
-      const width = Math.min(height * logo.ratio, 60);
-      doc.addImage(logo.data, "JPEG", margin, 8, width, width / logo.ratio);
+      const height = 9;
+      const width = Math.min(height * logo.ratio, 50);
+      doc.addImage(logo.data, "JPEG", margin, 6, width, width / logo.ratio);
     }
     doc.setTextColor(60, 20, 90);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text(university.researchOffice, pageWidth - margin, 12, { align: "right" });
+    doc.setFontSize(10);
+    doc.text(
+      `${university.researchOffice} · Office of the Dean`,
+      pageWidth - margin,
+      9.5,
+      {
+        align: "right",
+      },
+    );
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.text("Office of the Dean", pageWidth - margin, 17, { align: "right" });
-    doc.text(university.email, pageWidth - margin, 21.5, { align: "right" });
+    doc.setFontSize(8);
+    doc.text(university.email, pageWidth - margin, 13.5, { align: "right" });
     doc.setDrawColor(200, 160, 40);
-    doc.setLineWidth(0.6);
-    doc.line(margin, 25, pageWidth - margin, 25);
-    doc.setDrawColor(90, 40, 130);
-    doc.setLineWidth(0.2);
-    doc.line(margin, 26, pageWidth - margin, 26);
+    doc.setLineWidth(0.5);
+    doc.line(margin, 17, pageWidth - margin, 17);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(9.5);
     doc.setTextColor(40, 20, 70);
-    doc.text(input.title.toUpperCase(), pageWidth / 2, 31.5, { align: "center" });
+    doc.text(input.title.toUpperCase(), margin, 21.5);
     doc.setTextColor(0, 0, 0);
   };
 
@@ -176,15 +179,15 @@ export async function downloadTablePdf(input: TablePdfInput) {
   drawLetterhead();
   let y = headerTop + 2;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
   const criteria = input.criteria.length > 0 ? input.criteria : ["All records"];
   for (const line of criteria) {
     const wrapped = doc.splitTextToSize(line, usable) as string[];
     doc.text(wrapped, margin, y);
-    y += wrapped.length * 3.8;
+    y += wrapped.length * 3.3;
   }
   doc.text(`Records: ${rows.length}`, margin, y);
-  y += 4;
+  y += 3;
   y = drawTableHeader(y);
 
   const bottom = pageHeight - footerHeight - 2;
@@ -227,13 +230,13 @@ export async function downloadTablePdf(input: TablePdfInput) {
   }
 
   // Signature block on the last page.
-  if (y + 24 > bottom) {
+  if (y + 18 > bottom) {
     doc.addPage();
     drawLetterhead();
     y = headerTop + 4;
   }
-  y += 18;
-  doc.setFontSize(9);
+  y += 12;
+  doc.setFontSize(8);
   const slots = ["Prepared by", "Verified by", "Dean Research"];
   const slotWidth = usable / slots.length;
   slots.forEach((label, index) => {

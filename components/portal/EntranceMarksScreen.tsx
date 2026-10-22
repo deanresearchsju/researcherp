@@ -48,6 +48,15 @@ type EntranceRow = {
 
 const fullMarks = writtenMax + interviewMax;
 
+/** One interview panel with the candidates seated on it, in the order of its sheet. */
+export type MarksPanel = {
+  id: string;
+  name: string;
+  /** The two experts, for the line under the panel name. */
+  experts: string;
+  applicationIds: string[];
+};
+
 function rowFromCase(
   row: AdmissionCase,
   score: ReturnType<typeof scoreFor>,
@@ -70,15 +79,19 @@ function rowFromCase(
  */
 export function EntranceMarksScreen({
   locked = false,
+  panels = [],
 }: {
   /** Kept for the Selection desk, which always embeds this screen. */
   embedded?: boolean;
   locked?: boolean;
+  /** When panels are set up, the interview round is entered panel by panel. */
+  panels?: MarksPanel[];
 }) {
   const store = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
   const [chosenRound, setChosenRound] = useState<Round | null>(null);
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("");
+  const [chosenPanel, setChosenPanel] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [fieldError, setFieldError] = useState<Record<string, string>>({});
@@ -119,7 +132,25 @@ export function EntranceMarksScreen({
     a.localeCompare(b),
   );
 
-  const visible = rows.filter(
+  // Interview marks are entered panel by panel, in the order printed on the panel's sheet.
+  const byPanel = round === "interview" && panels.length > 0;
+  const activePanel = byPanel
+    ? (panels.find((item) => item.id === chosenPanel) ??
+      panels.find((item) =>
+        item.applicationIds.some(
+          (id) => rows.find((row) => row.applicationId === id)?.interview === null,
+        ),
+      ) ??
+      panels[0])
+    : null;
+  const panelRows = activePanel
+    ? activePanel.applicationIds.flatMap((id) => {
+        const found = rows.find((row) => row.applicationId === id);
+        return found ? [found] : [];
+      })
+    : rows;
+
+  const visible = panelRows.filter(
     (row) =>
       textMatches(query, [
         row.name,
@@ -270,6 +301,48 @@ export function EntranceMarksScreen({
           !roundOneComplete,
         )}
       </div>
+      {byPanel ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Interview panel">
+            {panels.map((item) => {
+              const mine = item.applicationIds.flatMap((id) => {
+                const found = rows.find((row) => row.applicationId === id);
+                return found ? [found] : [];
+              });
+              const done = mine.filter((row) => row.interview !== null).length;
+              const active = activePanel?.id === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setChosenPanel(item.id);
+                    setPage(1);
+                    setNotice(null);
+                  }}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left text-sm",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-primary hover:border-primary/40",
+                  )}
+                >
+                  <span className="font-semibold">{item.name}</span>
+                  <span className="ml-2 text-xs">
+                    {done}/{mine.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {activePanel?.experts ? (
+            <p className="text-xs text-muted-foreground">
+              Panel members: {activePanel.experts}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {!roundOneComplete && rows.length > 0 ? (
         <p className="text-sm text-secondary">
           Enter the written test mark for every present candidate. The interview round
@@ -295,7 +368,7 @@ export function EntranceMarksScreen({
           },
         ]}
         shown={visible.length}
-        total={rows.length}
+        total={panelRows.length}
         filename="entrance-marks.csv"
         title="Entrance and interview marks"
         headers={[

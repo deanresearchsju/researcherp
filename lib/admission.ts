@@ -17,7 +17,7 @@ import { pushNotice, recordAudit } from "@/lib/audit";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
-import { toJson, type StoredApplication } from "@/lib/records";
+import { toJson, updateApplicationStatus, type StoredApplication } from "@/lib/records";
 import { scholarBySignIn } from "@/lib/register";
 import type { Json } from "@/types/database";
 import type { Vacancy } from "@/lib/vacancies";
@@ -83,6 +83,11 @@ export type AdmissionCase = {
   examRoom: string;
   hallTicketNo: string;
   hallTicketOn: string;
+  /** The day the document checklist was submitted and ERP access opened. */
+  checklistSubmittedOn: string;
+  /** Registration number, allotted once the tuition fee receipt is approved. */
+  registrationNo: string;
+  registrationOn: string;
 };
 
 export const scrutinyMarks = ["Eligible", "Not eligible"] as const;
@@ -100,10 +105,21 @@ export type ExamCampus = { id: string; name: string; address: string };
 
 export type InterviewExpert = { name: string; designation: string; institution: string };
 
-/** The two experts who assess the interview of one department. */
+/**
+ * One interview panel: two experts who assess a group of candidates. A panel covers a school
+ * and/or chosen subjects, and takes up to `strength` candidates (0 = no limit); several panels
+ * can cover the same subject when it has many candidates.
+ */
 export type InterviewPanel = {
-  department: string;
+  id: string;
+  name: string;
+  /** Blank = any school. */
+  school: string;
+  /** Blank = every subject of the school. */
+  subjects: string[];
+  strength: number;
   date: string;
+  venue: string;
   experts: [InterviewExpert, InterviewExpert];
 };
 
@@ -113,12 +129,58 @@ export const emptyExpert: InterviewExpert = {
   institution: "",
 };
 
-export function panelFor(schedule: EntranceSchedule, department: string) {
-  return (
-    schedule.panels.find((item) => sameDepartment(item.department, department)) ?? null
-  );
+export function newPanelId() {
+  return `panel-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
+export type PanelAssignment = { panel: InterviewPanel | null; rows: AdmissionCase[] };
+
+/**
+ * Seats the present candidates on the panels: a panel naming the candidate's subject comes
+ * first, then a panel for the candidate's school, then a general panel. Each panel fills to its
+ * strength before the next panel for the same subject takes over. Candidates no open panel
+ * covers are returned with a null panel.
+ */
+export function assignInterviewPanels(
+  panels: readonly InterviewPanel[],
+  rows: readonly AdmissionCase[],
+  schoolOf: (subject: string) => string,
+): PanelAssignment[] {
+  const loads = panels.map(() => [] as AdmissionCase[]);
+  const unassigned: AdmissionCase[] = [];
+  const ordered = [...rows].sort(
+    (a, b) =>
+      a.department.localeCompare(b.department) ||
+      (a.hallTicketNo || "~").localeCompare(b.hallTicketNo || "~") ||
+      a.name.localeCompare(b.name),
+  );
+  for (const row of ordered) {
+    const school = schoolOf(row.department);
+    const indexes = panels.map((_, index) => index);
+    const bySubject = indexes.filter((index) =>
+      panels[index].subjects.some((subject) => sameDepartment(subject, row.department)),
+    );
+    const bySchool = indexes.filter(
+      (index) =>
+        panels[index].subjects.length === 0 &&
+        panels[index].school &&
+        sameDepartment(panels[index].school, school),
+    );
+    const general = indexes.filter(
+      (index) => panels[index].subjects.length === 0 && !panels[index].school,
+    );
+    const open = [...bySubject, ...bySchool, ...general].find(
+      (index) =>
+        panels[index].strength <= 0 || loads[index].length < panels[index].strength,
+    );
+    if (open === undefined) unassigned.push(row);
+    else loads[open].push(row);
+  }
+  return [
+    ...panels.map((panel, index) => ({ panel, rows: loads[index] })),
+    ...(unassigned.length > 0 ? [{ panel: null, rows: unassigned }] : []),
+  ];
+}
 export type EntranceSchedule = {
   session: string;
   monthYear: string;
@@ -169,7 +231,56 @@ export type SelectionProgress = {
   entranceReady: boolean;
   /** Minimum total (out of 100) to enter the merit list; null when no minimum is set. */
   qualifyingTotal: number | null;
+  /** Approval of the provisional list by the Research Advisory Board or the Vice Chancellor. */
+  approval: ApprovalRecord;
 };
+
+export const approvalBodies = ["Research Advisory Board", "Vice Chancellor"] as const;
+
+export type ApprovalRecord = {
+  /** Names printed under the signature lines of the approval sheet. */
+  preparedBy: string;
+  verifiedBy: string;
+  body: (typeof approvalBodies)[number] | "";
+  /** Minutes or reference number of the approval. */
+  reference: string;
+  approvedOn: string;
+  recordedBy: string;
+  /** Fingerprint of the list that was approved; a later change makes the approval outdated. */
+  listKey: string;
+};
+
+export const emptyApproval: ApprovalRecord = {
+  preparedBy: "",
+  verifiedBy: "",
+  body: "",
+  reference: "",
+  approvedOn: "",
+  recordedBy: "",
+  listKey: "",
+};
+
+/** The provisional list as the approving body sees it: who, in which subject, with which guide. */
+export function provisionalListKey(cases: readonly AdmissionCase[]) {
+  const selected = provisionalOrder(cases).map(
+    (row) => `${row.applicationId}|${row.department}|${row.guideName}`,
+  );
+  const waiting = waitlistOrder(cases).map(
+    (row) => `${row.applicationId}|${row.department}|W${row.waitlistRank}`,
+  );
+  return [...selected, "--", ...waiting].join(";");
+}
+
+export type ApprovalState = "none" | "approved" | "outdated";
+
+export function approvalState(
+  progress: Pick<SelectionProgress, "approval">,
+  cases: readonly AdmissionCase[],
+): ApprovalState {
+  const { approval } = progress;
+  if (!approval.listKey || !approval.body) return "none";
+  return approval.listKey === provisionalListKey(cases) ? "approved" : "outdated";
+}
 
 export type ArchivedSession = {
   id: string;
@@ -197,6 +308,7 @@ export const defaultSelectionProgress: SelectionProgress = {
   entrance: { ...emptyEntranceSchedule, campuses: [], panels: [] },
   entranceReady: false,
   qualifyingTotal: null,
+  approval: { ...emptyApproval },
 };
 
 /** Session and month-year fixed at the start; date and venue fixed at the entrance step. */
@@ -222,8 +334,13 @@ export function stepIsOpen(progress: SelectionProgress, id: SelectionStepId) {
   return progress.current === id && !progress.completed.includes(id);
 }
 
+/** Reporting and Admission stay open until the admission session is closed. */
+export function stepStaysOpen(id: SelectionStepId) {
+  return id === "certificates" || id === "fees";
+}
+
 export function stepIsBlocked(progress: SelectionProgress, id: SelectionStepId) {
-  return progress.completed.includes(id);
+  return !stepStaysOpen(id) && progress.completed.includes(id);
 }
 
 export function completeSelectionProgress(progress: SelectionProgress) {
@@ -391,6 +508,9 @@ export function blankCase(application: StoredApplication): AdmissionCase {
     examRoom: "",
     hallTicketNo: "",
     hallTicketOn: "",
+    checklistSubmittedOn: "",
+    registrationNo: "",
+    registrationOn: "",
   };
 }
 
@@ -469,6 +589,25 @@ export function registerScholarForCase(
   row: Pick<AdmissionCase, "email" | "applicationNo">,
 ) {
   return scholarBySignIn(row.email) ?? scholarBySignIn(row.applicationNo);
+}
+
+/**
+ * Where an applicant stands, worked out from the Selection file (the office's real record), so
+ * a status left over from the old step-by-step buttons can never show the wrong message.
+ */
+export function applicationStageOf(
+  row: AdmissionCase | null | undefined,
+  fallback: string,
+) {
+  if (!row) return fallback;
+  if (row.verification === "Approved") return "Admitted";
+  if (row.reporting) return "Not reported";
+  if (row.selected) return "Selected";
+  if (row.waitlistRank !== null) return "Waiting list";
+  if (row.scrutiny === "Not eligible") return "Not selected";
+  if (row.shortlisted) return "Shortlisted";
+  if (row.scrutiny === "Eligible" || row.payment === "Approved") return "Under review";
+  return "Acknowledgement sent";
 }
 
 export function admissionCompleted(row: AdmissionCase) {
@@ -727,7 +866,14 @@ export function stepCompletionBlock(
         : "Prepare the merit list so that at least one candidate is selected.";
     case "provisional": {
       const open = live.filter((row) => row.selected && !row.guideName).length;
-      return open > 0 ? `Allot a guide to ${open} selected candidate(s).` : null;
+      if (open > 0) return `Allot a guide to ${open} selected candidate(s).`;
+      const state = approvalState(progress, cases);
+      if (state === "none") {
+        return "Print the approval sheet, get the list approved by the Research Advisory Board or the Vice Chancellor, then record the approval.";
+      }
+      return state === "outdated"
+        ? "The list changed after it was approved. Print the revised approval sheet and record the approval again."
+        : null;
     }
     case "letter": {
       const open = live.filter((row) => row.selected && !row.letterIssued).length;
@@ -783,15 +929,50 @@ export function verificationBlock(row: AdmissionCase) {
   if (row.reporting) return "This candidate did not report; the seat is released.";
   if (!row.guideName) return "Allot a guide on the provisional list first.";
   // The tuition fee is paid after the first sign-in, under Fee.
+  // A document that is missing does not hold the file: the scholar brings it within
+  // MISSING_DOCUMENT_DAYS days. Every item must still be marked.
   const open = admissionChecklist.filter((item) => {
     const mark = row.checks[item.id];
-    if (item.required) return mark !== "Received";
-    return mark !== "Received" && mark !== "Not applicable";
+    if (item.required) return mark !== "Received" && mark !== "Missing";
+    return !mark || mark === "Submitted";
   });
   if (open.length > 0) {
-    return "Mark every certificate. Required items must be Received, and the others Received or Not applicable.";
+    return "Mark every document: Received, Missing, or Not applicable for optional items.";
   }
   return null;
+}
+
+/** Days allowed to hand over documents marked Missing at the checklist. */
+export const MISSING_DOCUMENT_DAYS = 10;
+
+export function missingDocumentsDue(row: AdmissionCase) {
+  if (!row.checklistSubmittedOn) return "";
+  const due = new Date(`${row.checklistSubmittedOn}T00:00:00Z`);
+  due.setUTCDate(due.getUTCDate() + MISSING_DOCUMENT_DAYS);
+  return due.toISOString().slice(0, 10);
+}
+
+/**
+ * Why a registration number cannot be allotted yet. It follows the tuition fee: the
+ * scholar uploads the receipt in the ERP and the office approves it first.
+ */
+export function registrationBlock(row: AdmissionCase, tuitionApproved: boolean) {
+  if (row.verification !== "Approved") return "Submit the document checklist first.";
+  if (!tuitionApproved) return "Waiting for the tuition fee receipt to be approved.";
+  return null;
+}
+
+export function registrationNumberTaken(
+  cases: readonly AdmissionCase[],
+  row: AdmissionCase,
+  number: string,
+) {
+  const key = number.trim().toLowerCase();
+  return cases.some(
+    (item) =>
+      item.applicationId !== row.applicationId &&
+      item.registrationNo.trim().toLowerCase() === key,
+  );
 }
 
 function numberOrNull(value: unknown, max: number) {
@@ -880,6 +1061,12 @@ function parseCase(value: unknown): AdmissionCase | null {
     examRoom: row.shortlisted === true ? text(row.examRoom) : "",
     hallTicketNo: row.shortlisted === true ? text(row.hallTicketNo) : "",
     hallTicketOn: row.shortlisted === true ? text(row.hallTicketOn) : "",
+    checklistSubmittedOn:
+      selected && row.verification === "Approved" ? text(row.checklistSubmittedOn) : "",
+    registrationNo:
+      selected && row.verification === "Approved" ? text(row.registrationNo) : "",
+    registrationOn:
+      selected && row.verification === "Approved" ? text(row.registrationOn) : "",
   };
 }
 
@@ -936,11 +1123,9 @@ function parseSchedule(value: unknown): EntranceSchedule {
       ? text(row.deanSignature)
       : "",
     panels: Array.isArray(row.panels)
-      ? row.panels.flatMap((item) => {
+      ? row.panels.flatMap((item, position) => {
           if (!item || typeof item !== "object") return [];
           const panel = item as Record<string, unknown>;
-          const department = text(panel.department);
-          if (!department) return [];
           const list = Array.isArray(panel.experts) ? panel.experts : [];
           const expert = (value: unknown): InterviewExpert => {
             const entry =
@@ -953,10 +1138,23 @@ function parseSchedule(value: unknown): EntranceSchedule {
               institution: text(entry.institution),
             };
           };
+          // Panels saved per department become a panel for that subject.
+          const legacy = text(panel.department);
+          const subjects = Array.isArray(panel.subjects)
+            ? panel.subjects.map(text).filter(Boolean)
+            : legacy
+              ? [legacy]
+              : [];
+          const strength = Math.floor(Number(panel.strength));
           return [
             {
-              department,
+              id: text(panel.id) || `panel-${position + 1}`,
+              name: text(panel.name) || `Panel ${position + 1}`,
+              school: text(panel.school) || (legacy ? schoolNameFromLabel(legacy) : ""),
+              subjects,
+              strength: Number.isFinite(strength) && strength > 0 ? strength : 0,
               date: text(panel.date),
+              venue: text(panel.venue),
               experts: [expert(list[0]), expert(list[1])] as [
                 InterviewExpert,
                 InterviewExpert,
@@ -964,8 +1162,7 @@ function parseSchedule(value: unknown): EntranceSchedule {
             },
           ];
         })
-      : [],
-    // A venue saved before campuses existed becomes the first campus.
+      : [], // A venue saved before campuses existed becomes the first campus.
     campuses:
       campuses.length > 0 || !venue
         ? campuses
@@ -1002,6 +1199,24 @@ function parseProgress(value: unknown): SelectionProgress {
       qualifying <= writtenMax + interviewMax
         ? qualifying
         : null,
+    approval: parseApproval(row.approval),
+  };
+}
+
+function parseApproval(value: unknown): ApprovalRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...emptyApproval };
+  }
+  const row = value as Record<string, unknown>;
+  const body = approvalBodies.find((item) => item === row.body) ?? "";
+  return {
+    preparedBy: text(row.preparedBy),
+    verifiedBy: text(row.verifiedBy),
+    body,
+    reference: text(row.reference),
+    approvedOn: text(row.approvedOn),
+    recordedBy: text(row.recordedBy),
+    listKey: body ? text(row.listKey) : "",
   };
 }
 
@@ -1232,14 +1447,53 @@ function mergeArchived(local: ArchivedSession[], remote: ArchivedSession[]) {
   return [...local.filter((item) => !seen.has(item.id)), ...remote];
 }
 
+type PendingSave = {
+  stored: Parameters<typeof toJson>[0];
+  onFail?: (message: string) => void;
+};
+let pendingSave: PendingSave | null = null;
+let flushing: Promise<void> | null = null;
+
+/** Sends queued quick edits one at a time; only the newest queued state is sent. */
+function flushPending() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    while (pendingSave) {
+      const job = pendingSave;
+      pendingSave = null;
+      const saved = await saveJsonBlob(
+        "admission_office",
+        "office",
+        toJson(job.stored),
+        memory?.updatedAt ?? null,
+      );
+      if (saved.ok) {
+        if (memory) memory = { ...memory, updatedAt: saved.updatedAt };
+        continue;
+      }
+      pendingSave = null;
+      job.onFail?.(saved.message);
+      // Show what the server really holds.
+      const fresh = await loadAdmission();
+      publish(fresh);
+    }
+  })().finally(() => {
+    flushing = null;
+  });
+  return flushing;
+}
+
 export async function saveAdmission(
   next: Pick<AdmissionState, "cases" | "letter"> & {
     entranceScores?: EntranceScore[];
     progress?: SelectionProgress;
     archived?: ArchivedSession[];
     updatedAt?: string | null;
+    /** Show the change at once and save in the background (ticks and other quick edits). */
+    optimistic?: { onFail: (message: string) => void };
   },
 ) {
+  if (!next.optimistic && flushing) await flushing;
   const stored = {
     cases: next.cases,
     letter: next.letter,
@@ -1247,8 +1501,14 @@ export async function saveAdmission(
     progress: next.progress ?? memory?.progress ?? defaultSelectionProgress,
     archived: next.archived ?? memory?.archived ?? [],
   };
-  const stamp = next.updatedAt ?? memory?.updatedAt ?? null;
   const supabase = createSupabase();
+  if (next.optimistic && supabase && memory && !memory.detail) {
+    publish({ ...stored, updatedAt: memory.updatedAt, detail: null });
+    pendingSave = { stored, onFail: next.optimistic.onFail };
+    void flushPending();
+    return { ok: true as const };
+  }
+  const stamp = next.updatedAt ?? memory?.updatedAt ?? null;
   if (supabase && memory && !memory.detail) {
     const saved = await saveJsonBlob("admission_office", "office", toJson(stored), stamp);
     if (saved.ok) {
@@ -1475,6 +1735,26 @@ export function scoreFor(scores: readonly EntranceScore[], key: string) {
   return scores.find((item) => item.key === key) ?? null;
 }
 
+/**
+ * Marks are kept in the marks list and on each candidate's record. Where the two differ, the
+ * saved marks win, so the completion check, the merit list and the marks screen always agree.
+ */
+export function withEntranceScores(
+  rows: readonly AdmissionCase[],
+  scores: readonly EntranceScore[],
+) {
+  return rows.map((row) => {
+    if (row.attendance !== "Present") return row;
+    const score = scoreFor(scores, `app:${row.applicationId}`);
+    if (!score) return row;
+    const written = score.written ?? row.written;
+    const interview = score.interview ?? row.interview;
+    return written === row.written && interview === row.interview
+      ? row
+      : { ...row, written, interview };
+  });
+}
+
 export function admissionCaseForScholar(
   scholar: { email: string; applicationNumber: string },
   cases: readonly AdmissionCase[],
@@ -1541,6 +1821,64 @@ export async function saveEntrancePage(
   });
   if (!saved.ok) return saved;
   return { ok: true as const };
+}
+
+/**
+ * The research office's decision on the application fee of one or many applications, made on
+ * the Applications page. An approved fee puts the application on the Selection list (scrutiny
+ * step) and moves its status to "Under review"; a returned fee takes it off again.
+ */
+export async function decideApplicationFees(
+  applications: readonly StoredApplication[],
+  payment: Exclude<PaymentMark, "Pending">,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return { ...blocked, changed: 0 };
+  const current = memory ?? (await ensureAdmission());
+  const phd = applications.filter((item) => item.kind === "phd");
+  const merged = mergeApplications(current.cases, phd);
+  const ids = new Set(phd.map((item) => item.id));
+  const changedRows: AdmissionCase[] = [];
+  const cases = merged.map((row) => {
+    if (!ids.has(row.applicationId) || row.payment === payment) return row;
+    // Once the file has moved past scrutiny it is not reopened from here.
+    if (row.scrutiny || row.shortlisted || row.selected) return row;
+    const next: AdmissionCase = { ...row, payment };
+    changedRows.push(next);
+    return next;
+  });
+  if (changedRows.length === 0) {
+    return { ok: true as const, changed: 0 };
+  }
+  const saved = await saveAdmission({
+    cases,
+    letter: current.letter,
+    entranceScores: current.entranceScores,
+  });
+  if (!saved.ok) return { ...saved, changed: 0 };
+  for (const row of changedRows) {
+    const application = phd.find((item) => item.id === row.applicationId);
+    if (payment === "Approved" && application?.status === "Acknowledgement sent") {
+      await updateApplicationStatus("phd", row.applicationId, "Under review");
+    }
+    await recordAudit({
+      action: `payment:${payment}`,
+      subject: `application-fee:${row.applicationId}`,
+      detail: `${row.name} · application fee`,
+    });
+    if (row.email) {
+      await pushNotice({
+        role: "scholar",
+        identifier: row.email,
+        title: `Application fee ${payment === "Approved" ? "verified" : "returned"}`,
+        detail:
+          payment === "Approved"
+            ? "The research office verified your application fee. Your application is now with the selection committee."
+            : "The research office returned your application fee. Please contact the research office.",
+      });
+    }
+  }
+  return { ok: true as const, changed: changedRows.length };
 }
 
 export async function setApplicationFee(applicationId: string, payment: PaymentMark) {

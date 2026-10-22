@@ -45,6 +45,12 @@ export function SupervisorReceiptView({ receipt }: { receipt: SupervisorReceipt 
               ? applicationReviewCopy.downloadingPdf
               : applicationReviewCopy.downloadPdf}
           </Button>
+          <Link
+            href="/supervisor-recognition/status"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Track application
+          </Link>
           <Link href="/" className={buttonVariants({ variant: "outline" })}>
             Back to home
           </Link>

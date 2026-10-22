@@ -4,7 +4,7 @@ import { phdSheetCopy } from "@/data/phd-application-sheet";
 import { applicationFeeInr, university } from "@/lib/constants";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
-import type { PhdReceipt } from "@/lib/scholar-progress";
+import { subjectLine, type PhdReceipt } from "@/lib/scholar-progress";
 import { formatInr } from "@/lib/utils";
 import type { jsPDF } from "jspdf";
 
@@ -259,7 +259,7 @@ async function buildPdf(receipt: PhdReceipt) {
   ]);
   numberedRow([
     { label: phdSheetCopy.discipline, value: values.school },
-    { label: phdSheetCopy.specialization, value: values.specialization },
+    { label: phdSheetCopy.specialization, value: subjectLine(values) },
   ]);
 
   function education(label: string, row: PhdReceipt["values"]["ug"]) {

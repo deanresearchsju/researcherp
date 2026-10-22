@@ -10,13 +10,17 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { scholarFormCopy } from "@/data/forms";
 import { referenceDate } from "@/lib/constants";
-import { formatIsoDate } from "@/lib/dates";
+import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
+  applicationStageOf,
+  approvalState,
   ensureAdmission,
   type AdmissionCase,
   type AdmissionState,
 } from "@/lib/admission";
 import { downloadHallTickets } from "@/lib/hall-ticket-pdf";
+import { downloadLetter } from "@/lib/letter-pdf";
+import { provisionalDraft } from "@/lib/letter-templates";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import { trackPhdApplication, type PhdReceipt } from "@/lib/scholar-progress";
 import { statusSchema } from "@/lib/validation";
@@ -27,6 +31,7 @@ type StatusValues = z.infer<typeof statusSchema>;
 export function StatusLookup() {
   const [receipt, setReceipt] = useState<PhdReceipt | null>(null);
   const [archived, setArchived] = useState(false);
+  const [resultPending, setResultPending] = useState(false);
   const [missed, setMissed] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [ticket, setTicket] = useState<{
@@ -34,6 +39,11 @@ export function StatusLookup() {
     office: AdmissionState;
   } | null>(null);
   const [ticketBusy, setTicketBusy] = useState(false);
+  const [letterFile, setLetterFile] = useState<{
+    row: AdmissionCase;
+    office: AdmissionState;
+  } | null>(null);
+  const [letterBusy, setLetterBusy] = useState(false);
   const form = useForm<StatusValues>({
     resolver: zodResolver(statusSchema),
     defaultValues: { applicationNo: "", dateOfBirth: "" },
@@ -44,24 +54,48 @@ export function StatusLookup() {
   async function onSubmit(values: StatusValues) {
     setReceipt(null);
     setArchived(false);
+    setResultPending(false);
     setMissed(false);
     setTicket(null);
+    setLetterFile(null);
     const found = await trackPhdApplication(values.applicationNo, values.dateOfBirth);
     if (found.kind === "current") {
-      setReceipt(found.receipt);
       const office = await ensureAdmission().catch(() => null);
       const row = office?.cases.find(
         (item) =>
           item.applicationNo.trim().toLowerCase() ===
           found.receipt.applicationNo.trim().toLowerCase(),
       );
+      // Selection and waiting-list results are not shown until the list is approved.
+      const pending = Boolean(
+        office &&
+        row &&
+        (row.selected || row.waitlistRank !== null) &&
+        row.verification !== "Approved" &&
+        approvalState(
+          office.progress,
+          office.cases.filter((item) => !item.sessionClosed),
+        ) !== "approved",
+      );
+      setResultPending(pending);
+      setReceipt({
+        ...found.receipt,
+        status: pending ? "Under review" : applicationStageOf(row, found.receipt.status),
+      });
+      if (pending) return;
       if (
         office &&
         row?.shortlisted &&
         row.hallTicketNo &&
-        office.progress.entranceReady
+        office.progress.entranceReady &&
+        !row.selected &&
+        !office.progress.completed.includes("entrance")
       ) {
         setTicket({ row, office });
+      }
+      // The provisional selection letter, once the office has issued it.
+      if (office && row?.selected && row.letterIssued) {
+        setLetterFile({ row, office });
       }
       return;
     }
@@ -89,6 +123,24 @@ export function StatusLookup() {
     }
   }
 
+  async function downloadLetterFile() {
+    if (!letterFile) return;
+    setLetterBusy(true);
+    try {
+      const { office, row } = letterFile;
+      await downloadLetter(
+        provisionalDraft(row, office.letter, row.letterNo ?? 1, clientToday()),
+        {
+          name: office.letter.deanName,
+          title: office.letter.deanTitle,
+          signature: office.progress.entrance.deanSignature || undefined,
+        },
+      );
+    } finally {
+      setLetterBusy(false);
+    }
+  }
+
   async function download() {
     if (!receipt || selected) return;
     setDownloading(true);
@@ -101,7 +153,7 @@ export function StatusLookup() {
 
   return (
     <form
-      className="mx-auto max-w-xl space-y-4"
+      className="mx-auto max-w-xl space-y-4 rounded-2xl border border-border bg-card p-5 shadow-card sm:p-7"
       onSubmit={form.handleSubmit(onSubmit)}
       noValidate
     >
@@ -142,6 +194,16 @@ export function StatusLookup() {
           <p className="mt-1 text-muted-foreground">
             Date of birth {formatIsoDate(receipt.values.dateOfBirth)}
           </p>
+          {resultPending ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {scholarFormCopy.trackResultPending}
+            </p>
+          ) : null}
+          {selected ? (
+            <p className="mt-3 font-semibold text-secondary">
+              {admitted ? scholarFormCopy.trackAdmitted : scholarFormCopy.trackSelected}
+            </p>
+          ) : null}
           {ticket ? (
             <div className="mt-3 rounded-lg border border-accent/50 bg-accent/10 p-3">
               <p className="font-semibold text-primary">
@@ -159,11 +221,30 @@ export function StatusLookup() {
               </Button>
             </div>
           ) : null}
+          {letterFile ? (
+            <div className="mt-3 rounded-lg border border-accent/50 bg-accent/10 p-3">
+              <p className="font-semibold text-primary">{scholarFormCopy.letterReady}</p>
+              <Button
+                type="button"
+                variant="gold"
+                className="mt-2"
+                disabled={letterBusy}
+                aria-busy={letterBusy}
+                onClick={() => void downloadLetterFile()}
+              >
+                {letterBusy ? "Preparing…" : scholarFormCopy.letterDownload}
+              </Button>
+            </div>
+          ) : null}
           {selected ? (
             <>
-              <p className="mt-3 font-semibold text-secondary">
-                {admitted ? scholarFormCopy.trackAdmitted : scholarFormCopy.trackSelected}
-              </p>
+              {!admitted ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {letterFile
+                    ? scholarFormCopy.trackSelectedNext
+                    : `${scholarFormCopy.trackSelectedLetterWaiting} ${scholarFormCopy.trackSelectedNext}`}
+                </p>
+              ) : null}
               {admitted ? (
                 <Link
                   href="/login/scholar"
@@ -173,6 +254,12 @@ export function StatusLookup() {
                 </Link>
               ) : null}
             </>
+          ) : receipt.status === "Shortlisted" ? (
+            <p className="mt-3 font-semibold text-secondary">
+              {ticket
+                ? scholarFormCopy.trackShortlistedTicket
+                : scholarFormCopy.trackShortlisted}
+            </p>
           ) : receipt.status === "Waiting list" || receipt.status === "Not reported" ? (
             <p className="mt-3 font-semibold text-secondary">
               {receipt.status === "Waiting list"

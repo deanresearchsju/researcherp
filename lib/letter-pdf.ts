@@ -15,7 +15,7 @@ const ink: [number, number, number] = [28, 23, 48];
 const purple: [number, number, number] = [91, 42, 134];
 const gold: [number, number, number] = [242, 194, 48];
 const muted: [number, number, number] = [110, 100, 130];
-const line = 4.9;
+const baseLine = 4.9;
 
 async function fetchAsDataUrl(src: string) {
   try {
@@ -116,12 +116,22 @@ function printable(letter: LetterDraft): LetterDraft {
   };
 }
 
-export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
-  const letter = printable(source);
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const logo = await fetchAsDataUrl("/assets/logo-sju.jpg");
+/**
+ * Draws the letter at one size. `k` scales the text and spacing: 1 is the normal size, and
+ * smaller values are tried so that an ordinary letter keeps its header, body, signature and
+ * footer on one A4 page.
+ */
+function renderLetter(
+  jsPDFClass: typeof import("jspdf").jsPDF,
+  letter: LetterDraft,
+  signer: LetterSigner,
+  logo: string | null,
+  k: number,
+) {
+  const doc = new jsPDFClass({ unit: "mm", format: "a4", orientation: "portrait" });
   letterhead(doc, logo);
+  const line = baseLine * k;
+  const size = 10.2 * k;
 
   let y = 46;
   const room = (needed: number) => {
@@ -134,7 +144,7 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
     options: { bold?: boolean; indent?: number; size?: number } = {},
   ) => {
     doc.setFont("helvetica", options.bold ? "bold" : "normal");
-    doc.setFontSize(options.size ?? 10.2);
+    doc.setFontSize((options.size ?? 10.2) * k);
     doc.setTextColor(...ink);
     const x = margin + (options.indent ?? 0);
     const lines = doc.splitTextToSize(text, innerW - (options.indent ?? 0)) as string[];
@@ -147,52 +157,52 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
 
   if (letter.title) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12.5);
+    doc.setFontSize(12.5 * k);
     doc.setTextColor(...purple);
     doc.text(letter.title.toUpperCase(), pageW / 2, y, { align: "center" });
-    y += 9;
+    y += 9 * k;
   }
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.2);
+  doc.setFontSize(size);
   doc.setTextColor(...ink);
   doc.text(`Ref: ${letter.refNo}`, margin, y);
   doc.text(`Dated: ${formatIsoDate(letter.issuedOn)}`, pageW - margin, y, {
     align: "right",
   });
-  y += 10;
+  y += 10 * k;
 
   const to = letter.toLines.filter((row) => row.trim());
   if (to.length > 0) {
     write("To");
     to.forEach((row, index) => write(row, { bold: index === 0, indent: 6 }));
-    y += 4;
+    y += 4 * k;
   }
   if (letter.subject.trim()) {
     write(`Sub.: ${letter.subject.trim()}`, { bold: true });
-    y += 1;
+    y += 1 * k;
   }
   if (letter.reference.trim()) {
     write(`Ref.: ${letter.reference.trim()}`);
-    y += 2;
+    y += 2 * k;
   }
 
   const details = letter.details.filter((row) => row.label.trim() || row.value.trim());
   if (details.length > 0) {
-    y += 2;
+    y += 2 * k;
     const labelW = 52;
     for (const row of details) {
-      doc.setFontSize(9.8);
+      doc.setFontSize(9.8 * k);
       const valueLines = doc.splitTextToSize(
         row.value || "—",
         innerW - labelW - 6,
       ) as string[];
-      const height = Math.max(valueLines.length, 1) * 4.6 + 2.6;
+      const height = Math.max(valueLines.length, 1) * 4.6 * k + 2.6 * k;
       room(height);
       doc.setFillColor(246, 242, 250);
-      doc.rect(margin, y - 4.2, labelW, height, "F");
+      doc.rect(margin, y - 4.2 * k, labelW, height, "F");
       doc.setDrawColor(220, 210, 232);
       doc.setLineWidth(0.2);
-      doc.rect(margin, y - 4.2, innerW, height);
+      doc.rect(margin, y - 4.2 * k, innerW, height);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(...purple);
       doc.text(row.label, margin + 2.5, y);
@@ -201,7 +211,7 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
       doc.text(valueLines, margin + labelW + 3, y);
       y += height;
     }
-    y += 4;
+    y += 4 * k;
   }
 
   for (const paragraph of letter.body) {
@@ -210,7 +220,7 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
       if (!row.trim()) continue;
       if (row.trimStart().startsWith("- ")) {
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10.2);
+        doc.setFontSize(size);
         const text = row.trimStart().slice(2);
         const wrapped = doc.splitTextToSize(text, innerW - 8) as string[];
         wrapped.forEach((part, index) => {
@@ -223,29 +233,30 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
         write(row);
       }
     }
-    y += 2.4;
+    y += 2.4 * k;
   }
 
-  room(34);
-  y += 1;
+  room(34 * k);
+  y += 1 * k;
   write(letter.closing || "Best wishes,");
   const signY = y;
-  if (signer.signature) fit(doc, signer.signature, pageW - margin - 50, signY, 50, 16);
+  if (signer.signature)
+    fit(doc, signer.signature, pageW - margin - 50, signY, 50, 16 * k);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.2);
-  doc.text(signer.name || "Dean Research", pageW - margin, signY + 22, {
+  doc.setFontSize(size);
+  doc.text(signer.name || "Dean Research", pageW - margin, signY + 22 * k, {
     align: "right",
   });
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text(signer.title || "Dean Research", pageW - margin, signY + 27, {
+  doc.setFontSize(9 * k);
+  doc.text(signer.title || "Dean Research", pageW - margin, signY + 27 * k, {
     align: "right",
   });
-  y = signY + 34;
+  y = signY + 34 * k;
 
   const copies = letter.copyTo.filter((row) => row.trim());
   if (copies.length > 0) {
-    room(8 + copies.length * line);
+    room(8 * k + copies.length * line);
     write("Copy to:", { bold: true, size: 9.5 });
     copies.forEach((row, index) =>
       write(`${index + 1}. ${row}`, { indent: 4, size: 9.5 }),
@@ -256,6 +267,18 @@ export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
   return doc;
 }
 
+export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
+  const letter = printable(source);
+  const { jsPDF } = await import("jspdf");
+  const logo = await fetchAsDataUrl("/assets/logo-sju.jpg");
+  // An ordinary letter is fitted onto one A4 page by trying slightly smaller text.
+  for (const k of [1, 0.96, 0.92, 0.88, 0.84, 0.8]) {
+    const doc = renderLetter(jsPDF, letter, signer, logo, k);
+    if (doc.getNumberOfPages() === 1) return doc;
+  }
+  // A very long letter runs onto more pages, each with its header and footer inside A4.
+  return renderLetter(jsPDF, letter, signer, logo, 1);
+}
 export function letterFileName(letter: LetterDraft) {
   const who = (letter.recipientName || letter.recipientIdentifier).replace(
     /[^\w]+/g,

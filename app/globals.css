@@ -42,9 +42,10 @@ div[id] {
 }
 
 @media print {
+  /* A4 with a 10 mm margin: 190 x 277 mm of printable area, matching the sheet size below. */
   @page {
-    size: A4;
-    margin: 12mm;
+    size: A4 portrait;
+    margin: 10mm;
   }
 
   body * {
@@ -69,14 +70,20 @@ div[id] {
   }
 
   .pdf-page {
-    height: 277mm;
-    max-height: 277mm;
+    width: 100%;
+    height: 276mm;
+    max-height: 276mm;
     overflow: hidden;
     break-after: page;
     page-break-after: always;
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+  }
+
+  /* A sheet that would overflow is scaled to fit by PrintFit (--fit). */
+  .pdf-page > * {
+    zoom: var(--fit, 1);
   }
 
   .pdf-page:last-child {
