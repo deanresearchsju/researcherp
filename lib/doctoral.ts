@@ -1348,6 +1348,23 @@ export async function saveCourseWindow(window: CourseWindow) {
       message: `This batch has moved to semester ${floor}. Semester ${window.semester} registration cannot be reopened.`,
     };
   }
+  if (window.enabled && window.semester <= 2) {
+    // Scholars pick papers from the list the research office sets up, so registration cannot
+    // open before the subject codes and titles of that semester are added.
+    const listed = next.subjects.some(
+      (subject) =>
+        subject.semester === window.semester &&
+        (!subject.batchId || subject.batchId === window.batchId) &&
+        subject.code.trim() &&
+        subject.name.trim(),
+    );
+    if (!listed) {
+      return {
+        ok: false as const,
+        message: `Add the subject code and subject title of semester ${window.semester} under Subjects before opening registration.`,
+      };
+    }
+  }
   next.windows = [
     window,
     ...next.windows.filter((item) => item.batchId !== window.batchId),

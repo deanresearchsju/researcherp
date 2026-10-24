@@ -183,6 +183,8 @@ Text and records stay in the Supabase database; uploaded files are kept in Supab
 
 ## Course-work examinations
 
+**Subjects first (administrator, Course work → Subjects).** Before registration, the administrator adds the **subject code** and **subject title** of every paper (by semester, school and batch; semester 1 papers are common to all). A registration window for semester 1 or 2 cannot be opened until at least one subject is listed for that semester, and scholars can register only for listed subjects (the title is taken from the list, not typed).
+
 **Set-up (research office, Course work → Exam setup).** Add the **campuses** where scholars may write, each with its rooms and seats; set the **timetable** (date and time of each paper, printed on the hall tickets); set the **maximum marks, pass mark and grades** (defaults: 100, 50, grades O 90, A+ 80, A 70, B+ 60, B 55, C 50) and the instructions printed on the hall ticket. Until a campus is added, registration does not ask for one. The migration `20261024200000_course_work_exams.sql` must be run once.
 
 **Registration and fee.** At registration the scholar chooses the campus where the examination will be written and uploads the fee receipt. Accounts approves or returns it under Course-work registration fee.
@@ -218,3 +220,10 @@ Exceptions (their own flows):
 - **RAC** – started by the Supervisor, approved by the Dean; after approval it shows to the Supervisor and the scholar.
 - **Thesis evaluators** – started by the Supervisor, approved by the Dean, final approval by the Vice-Chancellor. Scholars never see the panel (confidential).
 Payments go to Accounts; personal details and plagiarism certificates are recorded by the office.
+
+## Search engine optimisation (SEO)
+
+- **Supervisors page** (`/supervisors`) is built on the server from the published profiles, so search engines read every name, area of research and biography as plain HTML (kept for a few minutes, so a change made under Website, Supervisor profiles shows within minutes). Each supervisor also has an address of their own (`/supervisors/<name>`) and a photograph address (`/supervisors/photo/<name>`), with a title, description, canonical link and social-sharing tags.
+- **Structured data (JSON-LD):** the university and website on every page; a list of supervisors (Person: name, designation, department, areas, biography, photograph, Vidwan link) and breadcrumbs on the Supervisors page; a ProfilePage on each profile.
+- **Sitemap** lists the public pages and every published supervisor profile; **robots** keeps the portals, sign-in pages and API out of search. Sign-in pages carry `noindex`.
+- Only the public fields are published; the supervisor's sign-in e-mail is never in the page.

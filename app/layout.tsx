@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
 import { PrintFit } from "@/components/layout/PrintFit";
+import { JsonLd } from "@/components/seo/JsonLd";
 import { university } from "@/lib/constants";
+import { siteJsonLd } from "@/lib/seo";
 
 import "./globals.css";
 
@@ -43,7 +45,12 @@ export const metadata: Metadata = {
     description,
     images: ["/assets/og.jpeg"],
   },
-  robots: { index: true, follow: true },
+  alternates: { canonical: "./" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -56,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
+        <JsonLd data={siteJsonLd()} />
         <PrintFit />
         {children}
       </body>

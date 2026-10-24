@@ -383,7 +383,7 @@ function parseAttendance(value: unknown): AttendanceSheet[] {
   });
 }
 
-function parseProfiles(value: unknown): SupervisorProfile[] {
+export function parseProfiles(value: unknown): SupervisorProfile[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
