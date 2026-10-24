@@ -28,7 +28,11 @@ import {
   subscribeDoctoral,
 } from "@/lib/doctoral";
 import { sameId } from "@/lib/office";
-import { fetchProfilePhotos, profilePhotoKey, saveProfilePhoto } from "@/lib/profile-photo";
+import {
+  fetchProfilePhotos,
+  profilePhotoKey,
+  saveProfilePhoto,
+} from "@/lib/profile-photo";
 import {
   currentAllotments,
   originalScholar,
@@ -49,6 +53,7 @@ import {
 } from "@/lib/scholar-records";
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
+import { allBatches } from "@/lib/batches";
 
 const paymentMenu = menuByKind("payment");
 
@@ -168,7 +173,9 @@ function ScholarPhotoField({ scholar }: { scholar: ResearchScholar }) {
     let live = true;
     void fetchProfilePhotos("scholar", keys).then((found) => {
       if (!live) return;
-      const first = keys.map((key) => found.get(profilePhotoKey("scholar", key))).find(Boolean);
+      const first = keys
+        .map((key) => found.get(profilePhotoKey("scholar", key)))
+        .find(Boolean);
       setPhoto(first ?? null);
     });
     return () => {
@@ -209,7 +216,11 @@ function ScholarPhotoField({ scholar }: { scholar: ResearchScholar }) {
       <div className="grid h-[5.6rem] w-[4.4rem] shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-card">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={photo} alt={`${scholar.name} photo`} className="size-full object-cover" />
+          <img
+            src={photo}
+            alt={`${scholar.name} photo`}
+            className="size-full object-cover"
+          />
         ) : (
           <ImageOff className="size-6 text-muted-foreground" aria-hidden="true" />
         )}
@@ -310,10 +321,8 @@ export function ScholarRegisterEditor({
           name: "batchId",
           label: "Batch",
           kind: "select",
-          options: researchRegister.batches.map((batch) => batch.id),
-          labels: Object.fromEntries(
-            researchRegister.batches.map((batch) => [batch.id, batch.name]),
-          ),
+          options: allBatches().map((batch) => batch.id),
+          labels: Object.fromEntries(allBatches().map((batch) => [batch.id, batch.name])),
         },
         { name: "department", label: "Department", kind: "select", options: departments },
       ],
@@ -330,7 +339,13 @@ export function ScholarRegisterEditor({
       specs: [
         { name: "category", label: "Mode of study", kind: "select", options: studyModes },
         { name: "institution", label: "Working institution" },
-        { name: "guideName", label: "Guide", kind: "select", options: guides, wide: true },
+        {
+          name: "guideName",
+          label: "Guide",
+          kind: "select",
+          options: guides,
+          wide: true,
+        },
         { name: "title", label: "Research title", kind: "textarea", wide: true },
       ],
     },
@@ -365,7 +380,11 @@ export function ScholarRegisterEditor({
           .map((key) => enrollmentFor(doctoral, key))
           .find((item) => item !== null)
       : null;
-    if (enrollment && values.category.trim() && enrollment.studyMode !== values.category.trim()) {
+    if (
+      enrollment &&
+      values.category.trim() &&
+      enrollment.studyMode !== values.category.trim()
+    ) {
       const { id: _id, ...rest } = enrollment;
       void _id;
       await saveEnrollment({ ...rest, studyMode: values.category.trim() });
@@ -376,73 +395,77 @@ export function ScholarRegisterEditor({
 
   return (
     <>
-    <FormDialog
-      title={`Edit scholar · ${scholar.name}`}
-      onClose={onClose}
-      onSubmit={(event) => void submit(event)}
-      busy={busy}
-      submitLabel="Save details"
-      size="lg"
-    >
-      <DeskTabs
-        tabs={[
-          { id: "details", label: "Details" },
-          { id: "fee", label: "Fee payments" },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
-      {tab === "details" ? (
-        <div className="space-y-6">
-          <ScholarPhotoField scholar={scholar} />
-          {sections.map((section) => (
-            <fieldset key={section.title} className="space-y-3">
-              <legend className="text-xs font-bold tracking-[0.16em] text-secondary uppercase">
-                {section.title}
-              </legend>
-              <EditFields
-                specs={section.specs}
-                values={values}
-                onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
-              />
-            </fieldset>
-          ))}
-          <EditedLine on={edit?.editedOn} by={edit?.editedBy} />
-        </div>
-      ) : (
-        <ScholarFeePayments
-          scholar={scholar}
-          notice={paymentNotice}
-          onEdit={(record) => {
-            setPaymentNotice(null);
-            setPayment(record);
+      <FormDialog
+        title={`Edit scholar · ${scholar.name}`}
+        onClose={onClose}
+        onSubmit={(event) => void submit(event)}
+        busy={busy}
+        submitLabel="Save details"
+        size="lg"
+      >
+        <DeskTabs
+          tabs={[
+            { id: "details", label: "Details" },
+            { id: "fee", label: "Fee payments" },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+        {tab === "details" ? (
+          <div className="space-y-6">
+            <ScholarPhotoField scholar={scholar} />
+            {sections.map((section) => (
+              <fieldset key={section.title} className="space-y-3">
+                <legend className="text-xs font-bold tracking-[0.16em] text-secondary uppercase">
+                  {section.title}
+                </legend>
+                <EditFields
+                  specs={section.specs}
+                  values={values}
+                  onChange={(name, value) =>
+                    setValues((current) => ({ ...current, [name]: value }))
+                  }
+                />
+              </fieldset>
+            ))}
+            <EditedLine on={edit?.editedOn} by={edit?.editedBy} />
+          </div>
+        ) : (
+          <ScholarFeePayments
+            scholar={scholar}
+            notice={paymentNotice}
+            onEdit={(record) => {
+              setPaymentNotice(null);
+              setPayment(record);
+            }}
+          />
+        )}
+        {error ? (
+          <p role="alert" className="text-sm text-secondary">
+            {error}
+          </p>
+        ) : null}
+      </FormDialog>
+      {payment ? (
+        // Beside the dialog, not inside it, so saving a payment does not submit the details form.
+        <RecordForm
+          key={payment === "new" ? "new" : payment.id}
+          officeEntry
+          menu={paymentMenu}
+          scholarIdentifier={
+            payment === "new" ? scholarSignInId(scholar) : payment.scholarIdentifier
+          }
+          scholarName={scholar.name}
+          supervisorIdentifier=""
+          supervisorName=""
+          existing={payment === "new" ? undefined : payment}
+          onClose={() => setPayment(null)}
+          onDone={(message) => {
+            setPayment(null);
+            setPaymentNotice(message);
           }}
         />
-      )}
-      {error ? (
-        <p role="alert" className="text-sm text-secondary">
-          {error}
-        </p>
       ) : null}
-    </FormDialog>
-    {payment ? (
-      // Beside the dialog, not inside it, so saving a payment does not submit the details form.
-      <RecordForm
-        key={payment === "new" ? "new" : payment.id}
-        officeEntry
-        menu={paymentMenu}
-        scholarIdentifier={payment === "new" ? scholarSignInId(scholar) : payment.scholarIdentifier}
-        scholarName={scholar.name}
-        supervisorIdentifier=""
-        supervisorName=""
-        existing={payment === "new" ? undefined : payment}
-        onClose={() => setPayment(null)}
-        onDone={(message) => {
-          setPayment(null);
-          setPaymentNotice(message);
-        }}
-      />
-    ) : null}
     </>
   );
 }
@@ -469,7 +492,9 @@ function ScholarFeePayments({
   const payments = load.records
     .filter((record) => keys.some((key) => sameId(record.scholarIdentifier, key)))
     .sort((left, right) =>
-      (right.payload.paidOn ?? right.createdAt).localeCompare(left.payload.paidOn ?? left.createdAt),
+      (right.payload.paidOn ?? right.createdAt).localeCompare(
+        left.payload.paidOn ?? left.createdAt,
+      ),
     );
   const verified = payments
     .filter((record) => record.status === "Approved")
@@ -639,7 +664,9 @@ export function SupervisorRegisterEditor({
       <EditFields
         specs={specs}
         values={values}
-        onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
+        onChange={(name, value) =>
+          setValues((current) => ({ ...current, [name]: value }))
+        }
       />
       <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
         <input

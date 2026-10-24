@@ -295,40 +295,58 @@ export function DashboardHome({ role: pageRole }: { role: Role }) {
             ["/supervisor/rac", "RAC proposal"],
             ["/supervisor/reviews", "Scholar requests"],
           ]
-        : role === "staff"
+        : role === "accounts"
           ? [
-              ["/admin/vacancies", "Vacancies"],
-              ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
-              ["/admin/applications", "Applications"],
-              ["/admin/admission", "Selection"],
-              ["/admin/registration-numbers", registrationCopy.menu],
+              ["/admin/accounts/registration", "Registration fee"],
+              ["/admin/accounts/course-work", "Course-work registration fee"],
+              ["/admin/accounts/annual", "Annual fee"],
+              ["/admin/accounts/synopsis", "Synopsis fee"],
+              ["/admin/accounts/thesis", "Thesis fee"],
             ]
-          : role === "dean"
+          : role === "coe"
+            ? [["/admin/coe/marks", "Marks entry"]]
+            : role === "coeverify"
+              ? [["/admin/coe/verify", "Verify & freeze marks"]]
+              : role === "vc"
             ? [
-                ["/admin/vacancies", "Vacancies"],
-                ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
-                ["/admin/applications", "Applications"],
-                ["/admin/admission", "Selection"],
-                ["/admin/registration-numbers", registrationCopy.menu],
-                ["/admin/admission-archive", admissionArchiveCopy.menu],
-              ]
-            : [
-                ["/admin/site", "Application window"],
-                ["/admin/vacancies", "Vacancies"],
-                ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
-                ["/admin/applications", "Applications"],
-                ["/admin/admission", "Selection"],
-                ["/admin/registration-numbers", registrationCopy.menu],
-                ["/admin/admission-archive", admissionArchiveCopy.menu],
                 ["/admin/register", "Scholar register"],
                 ["/admin/supervisors", "Supervisor register"],
-                ["/admin/transfers", "Transfer a supervisor"],
-                ["/admin/rac", "RAC decisions"],
-                ["/admin/payments", "Payment approvals"],
-                ["/admin/fee", "Fee collection"],
-                ["/admin/promotions", "Promote a semester"],
-                ["/admin/results", "Course results"],
-              ];
+                ["/admin/evaluators", "Thesis evaluators"],
+              ]
+            : role === "staff"
+              ? [
+                  ["/admin/vacancies", "Vacancies"],
+                  ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+                  ["/admin/applications", "Applications"],
+                  ["/admin/admission", "Selection"],
+                  ["/admin/registration-numbers", registrationCopy.menu],
+                ]
+              : role === "dean"
+                ? [
+                    ["/admin/vacancies", "Vacancies"],
+                    ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+                    ["/admin/applications", "Applications"],
+                    ["/admin/admission", "Selection"],
+                    ["/admin/registration-numbers", registrationCopy.menu],
+                    ["/admin/admission-archive", admissionArchiveCopy.menu],
+                  ]
+                : [
+                    ["/admin/site", "Application window"],
+                    ["/admin/vacancies", "Vacancies"],
+                    ["/admin/incomplete-applications", incompleteApplicationsCopy.menu],
+                    ["/admin/applications", "Applications"],
+                    ["/admin/admission", "Selection"],
+                    ["/admin/registration-numbers", registrationCopy.menu],
+                    ["/admin/admission-archive", admissionArchiveCopy.menu],
+                    ["/admin/register", "Scholar register"],
+                    ["/admin/supervisors", "Supervisor register"],
+                    ["/admin/transfers", "Transfer a supervisor"],
+                    ["/admin/rac", "RAC decisions"],
+                    ["/admin/payments", "Payment approvals"],
+                    ["/admin/fee", "Fee collection"],
+                    ["/admin/promotions", "Promote a semester"],
+                    ["/admin/results", "Course results"],
+                  ];
   if (session && session.role === role && role === "scholar") {
     return (
       <ScholarDashboard

@@ -14,10 +14,10 @@ export const pageHeroes = {
       "Eligibility, the admission process and the documents you need for the Ph.D.",
   },
   supervisors: {
-    eyebrow: "Supervisors",
-    title: "Supervisors",
+    eyebrow: "Faculty",
+    title: "Research supervisors",
     summary:
-      "Recognised research supervisors by school, with the seats open this session.",
+      "The recognised Ph.D. supervisors of the university, with their areas of research, biographies and Vidwan profiles.",
   },
   team: {
     eyebrow: university.researchOffice,

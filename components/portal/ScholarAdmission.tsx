@@ -22,7 +22,7 @@ import {
   type AdmissionCase,
 } from "@/lib/admission";
 import { formatIsoDate } from "@/lib/dates";
-import { fileToDataUrl, type StoredFile } from "@/lib/files";
+import { type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
 import { scholarBySignIn } from "@/lib/register";
 import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
@@ -31,6 +31,7 @@ import { usePortalSession } from "@/lib/use-preview-session";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import type { StoredApplication } from "@/lib/records";
 import { createSupabase } from "@/lib/supabase/client";
+import { storeFile } from "@/lib/file-store";
 
 /** The scholar's own application, read by its number. */
 async function loadOwnApplication(
@@ -150,6 +151,48 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
       return;
     }
     setApplication(found);
+  }
+
+  // On the dashboard of an admitted scholar the admission file is not shown. Only what still
+  // needs the scholar's action stays: documents to hand over, and the tuition fee.
+  if (embedded && row.verification === "Approved") {
+    const pendingFee = !guideReleased(session.identifier, payments?.records ?? []);
+    if (missing.length === 0 && !pendingFee) return null;
+    return (
+      <div id="admission" className="scroll-mt-24 space-y-3">
+        {missing.length > 0 ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm leading-6 text-secondary"
+          >
+            <p className="font-semibold">Documents pending</p>
+            <p className="mt-1">
+              Kindly submit the following documents to the Research Office within{" "}
+              {MISSING_DOCUMENT_DAYS} days
+              {missingDocumentsDue(row)
+                ? ` (by ${formatIsoDate(missingDocumentsDue(row))})`
+                : ""}
+              : {missing.map((item) => item.title).join("; ")}. This reminder stays here
+              until the office records them as received.
+            </p>
+          </div>
+        ) : null}
+        {pendingFee ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-card">
+            <p>
+              Pay the tuition fee and upload the receipt under Fee. The Accounts
+              department approves the receipt.
+            </p>
+            <Link
+              href="/scholar/fee"
+              className="inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
+            >
+              Go to Fee
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -276,7 +319,7 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
 
       {row.selected ? (
         <section className="rounded-xl border border-border p-4">
-          <h2 className="font-semibold">Tuition fee and registration number</h2>
+          <h2 className="font-semibold">Tuition fee</h2>
           {row.verification !== "Approved" ? (
             <p className="mt-2 text-sm text-muted-foreground">
               The tuition fee opens once the research office has checked your original
@@ -287,20 +330,16 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6">
                 <li>Admission checklist submitted by the research office.</li>
                 <li>
-                  Pay the tuition fee and upload the receipt under Fee. The research
-                  office approves it.
+                  Pay the tuition fee and upload the receipt under Fee. The Accounts
+                  department approves it.
                 </li>
-                <li>
-                  {row.registrationNo ? (
-                    <>
-                      Registration number: <strong>{row.registrationNo}</strong>
-                    </>
-                  ) : (
-                    "Your registration number is allotted after the receipt is approved."
-                  )}
-                </li>
+                {row.registrationNo ? (
+                  <li>
+                    Registration number: <strong>{row.registrationNo}</strong>
+                  </li>
+                ) : null}
               </ol>
-              {row.registrationNo ? null : (
+              {guideReleased(session.identifier, payments?.records ?? []) ? null : (
                 <Link
                   href="/scholar/fee"
                   className="mt-3 inline-flex h-9 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-foreground"
@@ -364,7 +403,7 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
                           return;
                         }
                         const file = uploadFile.file;
-                        void fileToDataUrl(file).then((fileData) => {
+                        void storeFile(file, "admission").then((fileData) => {
                           if (!fileData) return;
                           const checklistItem = admissionChecklist.find(
                             (entry) => entry.id === item.id,
@@ -411,7 +450,7 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
           <h2 className="font-semibold">Guide</h2>
           <p className="mt-2 text-sm">
             {guideReleased(session.identifier, payments?.records ?? [])
-              ? `${row.guideName} is your guide for ${row.department}.`
+              ? `${row.guideName} is your guide for ${row.department}.${row.coGuideName ? ` ${row.coGuideName} is your co-supervisor.` : ""}`
               : guideHiddenCopy}
           </p>
           {!guideReleased(session.identifier, payments?.records ?? []) ? (

@@ -16,6 +16,9 @@ export const issuedPassword = "Welcome12345";
 
 const issuedAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
+/** First password of every newly admitted scholar; the scholar must change it at first sign-in. */
+export const scholarFirstPassword = "Welcome12345";
+
 export function uniqueIssuedPassword() {
   const bytes = new Uint8Array(10);
   crypto.getRandomValues(bytes);

@@ -29,9 +29,10 @@ import {
   type DoctoralState,
   type PlagiarismStage,
 } from "@/lib/doctoral";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { storeFile } from "@/lib/file-store";
 
 const stageLabel: Record<PlagiarismStage, string> = {
   synopsis: "Before synopsis",
@@ -96,7 +97,7 @@ function IssueDialog({
       return;
     }
     setBusy(true);
-    const data = await fileToDataUrl(file.file).catch(() => "");
+    const data = await storeFile(file.file, "thesis").catch(() => "");
     const saved = await issuePlagiarism({
       stage,
       scholarIdentifier: scholar.identifier,

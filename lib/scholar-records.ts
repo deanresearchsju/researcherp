@@ -18,6 +18,7 @@ import { z } from "zod";
 import { isOfficeRole } from "@/lib/access";
 import { readPreviewSession } from "@/lib/auth";
 import { currentDoctoral, latestCommittee, synopsisSubmitted } from "@/lib/doctoral";
+import { isFileRef } from "@/lib/file-ref";
 
 export type ScholarRecord = {
   id: string;
@@ -506,11 +507,46 @@ function decisionStamp(
   if (!status || status === current) return {};
   const signer = readPreviewSession();
   const by = signer ? signer.name.trim() || signer.identifier : "";
-  const on = new Date().toISOString().slice(0, 10);
-  if (status === "Approved") return { approvedOn: on, approvedBy: by };
-  if (status === "Supervisor approved") return { supervisorOn: on, supervisorBy: by };
-  if (status === "Returned") return { returnedOn: on, returnedBy: by };
+  const at = new Date().toISOString();
+  const on = at.slice(0, 10);
+  if (status === "Approved") return { approvedOn: on, approvedAt: at, approvedBy: by };
+  if (status === "Supervisor approved") {
+    return { supervisorOn: on, supervisorAt: at, supervisorBy: by };
+  }
+  if (status === "Returned") {
+    return { returnedOn: on, returnedAt: at, returnedBy: by, returnedByRole: signer?.role ?? "" };
+  }
   return {};
+}
+
+/**
+ * A document that needs the guide goes to the Supervisor first and then to the Dean: the guide
+ * approves or rejects it, and only then can the Dean (or the administrator) give the final
+ * decision. Returns why a decision is not allowed, or null.
+ */
+function decisionBlock(record: ScholarRecord, status: RecordStatus | undefined) {
+  if (!status || status === record.status) return null;
+  const menu = scholarRecordMenus.find((item) => item.kind === record.kind);
+  if (!menu?.needsSupervisor) return null;
+  const role = readPreviewSession()?.role;
+  const withGuide = Boolean(record.supervisorIdentifier?.trim());
+  if (status === "Supervisor approved") {
+    return role === "supervisor" || role === "admin"
+      ? null
+      : "Only the supervisor can approve this first.";
+  }
+  if (role === "supervisor") {
+    return status === "Returned" && record.status === "Submitted"
+      ? null
+      : "Only a request waiting for the supervisor can be decided here.";
+  }
+  if (role !== "dean" && role !== "admin") {
+    return "Only the Dean can give the final decision.";
+  }
+  if (role === "dean" && withGuide && record.status !== "Supervisor approved") {
+    return "The supervisor has to approve first.";
+  }
+  return null;
 }
 
 export async function annotateScholarRecord(
@@ -519,6 +555,7 @@ export async function annotateScholarRecord(
 ) {
   if (officeViewWriteBlock()) return false;
   if (record.status === "Approved") return false;
+  if (decisionBlock(record, patch.status)) return false;
   if (patch.status === "Returned" && (patch.extra?.remarks ?? "").trim().length < 2) {
     return false;
   }
@@ -570,6 +607,7 @@ export async function setScholarRecordStatus(
 ) {
   if (officeViewWriteBlock()) return false;
   if (record.status === "Approved") return false;
+  if (decisionBlock(record, status)) return false;
   if (status === "Returned" && remarks.trim().length < 2) return false;
   if (record.kind === "title_change" && status !== "Returned") {
     // The title is locked once the synopsis is submitted.
@@ -745,6 +783,11 @@ export function blobFromDataUrl(dataUrl: string) {
 }
 
 export function openStoredFile(filename: string, dataUrl: string) {
+  // A file kept in storage opens straight from its address.
+  if (isFileRef(dataUrl)) {
+    window.open(dataUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
   const blob = blobFromDataUrl(dataUrl);
   if (!blob) {
     downloadStoredFile(filename, dataUrl);

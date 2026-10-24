@@ -2,6 +2,7 @@
 
 import { buildApprovedCopy } from "@/lib/approved-copy";
 import type { ApprovedDocument } from "@/lib/approved-documents";
+import { fileAsDataUrl } from "@/lib/file-store";
 
 function safe(value: string) {
   return (
@@ -51,8 +52,9 @@ export async function downloadApprovedZip(
   let skipped = 0;
   for (const [position, item] of documents.entries()) {
     onProgress?.(position, documents.length);
-    const data =
+    const loaded =
       item.fileData ?? (item.load ? await item.load().catch(() => null) : null);
+    const data = loaded ? await fileAsDataUrl(loaded).catch(() => null) : null;
     const folder = safe(item.scholarName);
     let name = `${safe(item.title)}`;
     let content: Uint8Array | string | null = null;

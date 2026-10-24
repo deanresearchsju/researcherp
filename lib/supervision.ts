@@ -1,20 +1,6 @@
 import { researchRegister } from "@/data/research-register";
 import { sameId, type Allocation } from "@/lib/office";
-import {
-  batchOf,
-  exitFor,
-  guideFigures,
-  isPassedOut,
-  registrationOf,
-  sameGuide,
-  scholarSignInId,
-  supervisorForGuide,
-  supervisorKeys,
-  supervisorListingActive,
-  type ApprovedQuota,
-  type RegistrationAllotment,
-  type SupervisorStanding,
-} from "@/lib/register";
+import { batchOf, exitFor, guideFigures, isPassedOut, registrationOf, sameGuide, scholarSignInId, supervisorForGuide, supervisorKeys, supervisorListingActive, type ApprovedQuota, type RegistrationAllotment, type SupervisorStanding, registrationCompare } from "@/lib/register";
 import type { PortalUser } from "@/lib/users";
 
 export type GuideStatus = "Active" | "Leaving" | "Past";
@@ -189,9 +175,15 @@ export function scholarRows(
       currentName: item.supervisorName,
       currentIdentifier: item.supervisorIdentifier,
     }));
-  return [...registerRows, ...extra].filter(
-    (row) => !isPassedOut(row.identifier, row.name),
-  );
+  return [...registerRows, ...extra]
+    .filter((row) => !isPassedOut(row.identifier, row.name))
+    .sort(
+      (left, right) =>
+        registrationCompare(
+          left.registration.includes("@") ? "" : left.registration,
+          right.registration.includes("@") ? "" : right.registration,
+        ) || left.name.localeCompare(right.name),
+    );
 }
 
 export function scholarsWith(rows: readonly ScholarRow[], guide: GuideOption) {

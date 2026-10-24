@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/Logo";
-import { interviewCriteria, interviewMax, writtenMax } from "@/data/admission";
+import { interviewCriteria, interviewMax } from "@/data/admission";
 import {
   clockLabel,
   displayName,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/admission";
 import { university } from "@/lib/constants";
 import { formatIsoDate } from "@/lib/dates";
+import { seatLabel } from "@/lib/seating";
 
 export function Sheet({ children }: { children: ReactNode }) {
   return (
@@ -43,6 +44,17 @@ export function SheetHeading({
   title: string;
   lines: readonly ReactNode[];
 }) {
+  // Text lines are shown as boxes: "Batch: July 2026 · Date: 24 October 2026" becomes a Batch
+  // box and a Date box. Anything else is shown as it is.
+  const boxes = lines
+    .filter((line): line is string => typeof line === "string")
+    .flatMap((line) => line.split(" · "))
+    .filter((part) => part.trim())
+    .map((part) => {
+      const match = /^([^:]{1,30}):\s*(.+)$/.exec(part);
+      return match ? { label: match[1], value: match[2] } : { label: "", value: part };
+    });
+  const others = lines.filter((line) => typeof line !== "string");
   return (
     <>
       <div className="flex items-center justify-between gap-3">
@@ -51,16 +63,28 @@ export function SheetHeading({
           {university.researchOffice} · Office of the Dean
         </p>
       </div>
-      <h1 className="mt-2 font-serif text-lg leading-tight text-primary">{title}</h1>
-      {lines.map((line, index) => (
-        <p
-          key={index}
-          className={
-            index === lines.length - 1
-              ? "mt-0.5 text-xs font-medium text-primary"
-              : "mt-0.5 text-xs text-muted-foreground"
-          }
-        >
+      <h1 className="mt-2 text-center font-serif text-xl leading-tight text-primary">
+        {title}
+      </h1>
+      {boxes.length > 0 ? (
+        <dl className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] border-t border-l border-foreground/30">
+          {boxes.map((box, index) => (
+            <div
+              key={index}
+              className="border-r border-b border-foreground/30 px-2 py-1 text-center"
+            >
+              {box.label ? (
+                <dt className="text-[0.6rem] font-bold tracking-wide text-muted-foreground uppercase">
+                  {box.label}
+                </dt>
+              ) : null}
+              <dd className="text-xs font-semibold text-primary">{box.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {others.map((line, index) => (
+        <p key={index} className="mt-0.5 text-center text-xs text-muted-foreground">
           {line}
         </p>
       ))}
@@ -99,7 +123,7 @@ export function AttendanceSheet({
             />
             <table className="mt-2 w-full border-collapse border border-foreground/30 text-xs">
               <thead className="bg-muted/60">
-                <tr className="text-left">
+                <tr className="text-center">
                   <th className="border border-foreground/30 px-2 py-1">S. No.</th>
                   <th className="border border-foreground/30 px-2 py-1">Photograph</th>
                   <th className="border border-foreground/30 px-2 py-1">Candidate</th>
@@ -146,9 +170,9 @@ export function AttendanceSheet({
                       </td>
                       <td className="border border-foreground/30 px-2 py-1 align-middle">
                         {row.department}
-                        {row.examRoom ? (
+                        {seatLabel(row) ? (
                           <span className="block text-xs text-muted-foreground">
-                            {row.examRoom}
+                            {seatLabel(row)}
                           </span>
                         ) : null}
                       </td>
@@ -248,7 +272,7 @@ export function InterviewSheet({
                 <col className="w-[20mm]" />
               </colgroup>
               <thead className="bg-muted/60">
-                <tr className="text-left align-bottom">
+                <tr className="text-center align-bottom">
                   <th className="border border-foreground/30 px-1 py-1">S. No.</th>
                   <th className="border border-foreground/30 px-1 py-1">Hall ticket</th>
                   <th className="border border-foreground/30 px-1 py-1">
@@ -344,19 +368,23 @@ export function ApprovalSheet({
     { label: "Verified by", name: verifiedBy },
     { label: deanTitle, name: deanName },
   ];
-  const footer = (page: number) => (
+  // The signature lines follow the table by four blank lines, on the last page of the list:
+  // when the table runs on to another page they appear there, after the table.
+  const footer = (page: number, last: boolean) => (
     <>
-      <div className="mt-auto grid grid-cols-3 gap-8 pt-10 text-center text-xs">
-        {signatures.map((item) => (
-          <div key={item.label}>
-            <div className="border-t border-foreground/60 pt-1">
-              <p className="font-semibold">{item.name || "\u00a0"}</p>
-              <p className="text-muted-foreground">{item.label}</p>
+      {last ? (
+        <div className="mt-[24mm] grid grid-cols-3 gap-8 text-center text-xs">
+          {signatures.map((item) => (
+            <div key={item.label}>
+              <div className="border-t border-foreground/60 pt-1">
+                <p className="font-semibold">{item.name || "\u00a0"}</p>
+                <p className="text-muted-foreground">{item.label}</p>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      <p className="mt-2 text-[0.65rem] text-muted-foreground">
+          ))}
+        </div>
+      ) : null}
+      <p className="mt-auto pt-2 text-[0.65rem] text-muted-foreground">
         Page {page} of {total}
       </p>
     </>
@@ -376,13 +404,12 @@ export function ApprovalSheet({
               <colgroup>
                 <col className="w-[9mm]" />
                 <col />
-                <col className="w-[36mm]" />
-                <col className="w-[34mm]" />
-                <col className="w-[14mm]" />
                 <col className="w-[38mm]" />
+                <col className="w-[40mm]" />
+                <col className="w-[44mm]" />
               </colgroup>
               <thead className="bg-muted/60">
-                <tr className="text-left">
+                <tr className="text-center">
                   <th className="border border-foreground/30 px-1.5 py-1">S. No.</th>
                   <th className="border border-foreground/30 px-1.5 py-1">
                     Name of the candidate
@@ -392,10 +419,6 @@ export function ApprovalSheet({
                   </th>
                   <th className="border border-foreground/30 px-1.5 py-1">
                     Subject / department
-                  </th>
-
-                  <th className="border border-foreground/30 px-1.5 py-1 text-center">
-                    Marks /{writtenMax + interviewMax}
                   </th>
                   <th className="border border-foreground/30 px-1.5 py-1">
                     Guide allotted
@@ -415,18 +438,19 @@ export function ApprovalSheet({
                     <td className="border border-foreground/30 px-1.5">
                       {row.department}
                     </td>
-
-                    <td className="border border-foreground/30 px-1.5 text-center">
-                      {totalMarks(row) ?? "—"}
-                    </td>
                     <td className="border border-foreground/30 px-1.5">
                       {row.guideName || "—"}
+                      {row.coGuideName ? (
+                        <span className="block text-[0.85em]">
+                          Co-supervisor: {row.coGuideName}
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {footer(pageIndex + 1)}
+            {footer(pageIndex + 1, pageIndex === pages.length - 1)}
           </Sheet>
         ))}
         {waitingPages.map((page, pageIndex) => (
@@ -439,7 +463,7 @@ export function ApprovalSheet({
             />
             <table className="mt-2 w-full border-collapse border border-foreground/30 text-xs">
               <thead className="bg-muted/60">
-                <tr className="text-left">
+                <tr className="text-center">
                   <th className="border border-foreground/30 px-1.5 py-1">
                     Subject / department
                   </th>
@@ -451,9 +475,6 @@ export function ApprovalSheet({
                   </th>
                   <th className="border border-foreground/30 px-1.5 py-1">
                     Application No.
-                  </th>
-                  <th className="border border-foreground/30 px-1.5 py-1 text-center">
-                    Marks /{writtenMax + interviewMax}
                   </th>
                 </tr>
               </thead>
@@ -472,14 +493,11 @@ export function ApprovalSheet({
                     <td className="border border-foreground/30 px-1.5 font-mono">
                       {row.applicationNo}
                     </td>
-                    <td className="border border-foreground/30 px-1.5 text-center">
-                      {totalMarks(row) ?? "—"}
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {footer(pages.length + pageIndex + 1)}
+            {footer(pages.length + pageIndex + 1, pageIndex === waitingPages.length - 1)}
           </Sheet>
         ))}
       </article>
@@ -510,7 +528,7 @@ export function ProvisionalSheet({
             </h1>
             <table className="mt-2 w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-primary/30 text-left">
+                <tr className="border-b border-primary/30 text-center">
                   <th className="py-1 pr-2">S. No.</th>
                   <th className="py-1 pr-2">Name of the Candidate</th>
                   <th className="py-1 pr-2">Subject/department</th>
@@ -523,7 +541,14 @@ export function ProvisionalSheet({
                     <td className="py-1 pr-2">{serial}</td>
                     <td className="py-1 pr-2">{displayName(row)}</td>
                     <td className="py-1 pr-2">{row.department}</td>
-                    <td className="py-1">{row.guideName || "—"}</td>
+                    <td className="py-1">
+                      {row.guideName || "—"}
+                      {row.coGuideName ? (
+                        <span className="block text-[0.85em]">
+                          Co-supervisor: {row.coGuideName}
+                        </span>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -541,7 +566,7 @@ export function ProvisionalSheet({
             </h1>
             <table className="mt-2 w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-primary/30 text-left">
+                <tr className="border-b border-primary/30 text-center">
                   <th className="py-1 pr-2">Subject/department</th>
                   <th className="py-1 pr-2">Waiting list No.</th>
                   <th className="py-1 pr-2">Name of the Candidate</th>
@@ -641,6 +666,327 @@ export function AdmissionLetter({
           <p className="mt-3 text-sm font-semibold">{letter.deanName}</p>
           <p className="text-sm">{letter.deanTitle}</p>
         </Sheet>
+      </article>
+    </div>
+  );
+}
+
+/**
+ * Seating plan for the notice board: large, bold sheets to fix outside the building or door.
+ * One page per venue lists every room with its hall ticket range, then each room has its own
+ * page(s) with the room name in a banner and the seat, hall ticket number and name of every
+ * candidate. No signature columns; the attendance sheets carry those.
+ */
+export function SeatingSheet({
+  rows,
+  schedule,
+  campuses,
+}: {
+  rows: readonly AdmissionCase[];
+  schedule: EntranceSchedule;
+  campuses: readonly ExamCampus[];
+}) {
+  const when = `${schedule.date ? formatIsoDate(schedule.date) : "—"}  ·  Test begins ${clockLabel(schedule.examTime) || "—"}`;
+  const banner = (venue: string, address: string, title: string, big?: string) => (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <Logo className="h-9" />
+        <p className="text-right text-xs leading-tight font-semibold text-muted-foreground">
+          {university.researchOffice} · Office of the Dean
+        </p>
+      </div>
+      <p className="mt-3 text-center text-sm font-bold tracking-[0.2em] text-secondary uppercase">
+        {sessionText(schedule)}
+      </p>
+      <h1 className="mt-1 text-center font-serif text-3xl leading-tight font-bold tracking-wide text-primary uppercase">
+        {title}
+      </h1>
+      <p className="mt-1 text-center text-xl font-bold text-foreground">{when}</p>
+      <p className="mt-1 text-center text-lg font-semibold text-foreground">
+        {venue}
+        {address ? <span className="font-normal"> · {address}</span> : null}
+      </p>
+      {big ? (
+        <div className="mt-4 rounded-2xl border-4 border-primary bg-primary py-3 text-center">
+          <p className="font-serif text-6xl leading-none font-bold tracking-wide text-primary-foreground uppercase">
+            {big}
+          </p>
+        </div>
+      ) : null}
+    </>
+  );
+  const perPage = 11;
+  return (
+    <div className="overflow-x-auto">
+      <article className="print-root mx-auto flex w-[210mm] min-w-[210mm] flex-col print:w-full print:min-w-0">
+        {campuses.flatMap((campus) => {
+          const seated = rows.filter(
+            (row) => row.examCampusId === campus.id && row.examSeat && row.examRoom,
+          );
+          if (seated.length === 0) return [];
+          const roomNames = [...new Set(seated.map((row) => row.examRoom))];
+          const roomRows = roomNames.map((name) =>
+            seated
+              .filter((row) => row.examRoom === name)
+              .sort((a, b) => Number(a.examSeat) - Number(b.examSeat)),
+          );
+          const summary = (
+            <Sheet key={`${campus.id}-summary`}>
+              {banner(campus.name, campus.address, "Seating plan")}
+              <table className="mt-6 w-full border-collapse border-2 border-foreground text-xl">
+                <thead className="bg-primary text-primary-foreground">
+                  <tr className="text-center">
+                    <th className="border-2 border-foreground px-4 py-3 text-2xl font-bold">
+                      Room
+                    </th>
+                    <th className="border-2 border-foreground px-4 py-3 text-2xl font-bold">
+                      Hall ticket numbers
+                    </th>
+                    <th className="border-2 border-foreground px-4 py-3 text-center text-2xl font-bold">
+                      Candidates
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roomRows.map((list, index) => {
+                    const tickets = list
+                      .map((row) => row.hallTicketNo)
+                      .sort((a, b) => a.localeCompare(b));
+                    return (
+                      <tr key={roomNames[index]}>
+                        <td className="border-2 border-foreground px-4 py-4 text-3xl font-bold">
+                          {roomNames[index]}
+                        </td>
+                        <td className="border-2 border-foreground px-4 py-4 font-mono text-2xl font-bold">
+                          {tickets[0]} – {tickets[tickets.length - 1]}
+                        </td>
+                        <td className="border-2 border-foreground px-4 py-4 text-center text-3xl font-bold">
+                          {list.length}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-auto pt-6 text-center text-lg font-semibold">
+                Candidates must sit only in the room and seat shown on the hall ticket.
+              </p>
+            </Sheet>
+          );
+          const sheets = roomRows.flatMap((list, roomIndex) =>
+            pagesOf(list, perPage).map((page, pageIndex, pages) => (
+              <Sheet key={`${campus.id}-${roomNames[roomIndex]}-${pageIndex}`}>
+                {banner(
+                  campus.name,
+                  campus.address,
+                  "Ph.D. Entrance Examination",
+                  roomNames[roomIndex],
+                )}
+                <table className="mt-5 w-full border-collapse border-2 border-foreground">
+                  <thead className="bg-muted">
+                    <tr className="text-center">
+                      <th className="w-[26mm] border-2 border-foreground px-3 py-2 text-center text-xl font-bold">
+                        Seat
+                      </th>
+                      <th className="w-[58mm] border-2 border-foreground px-3 py-2 text-xl font-bold">
+                        Hall ticket No.
+                      </th>
+                      <th className="border-2 border-foreground px-3 py-2 text-xl font-bold">
+                        Candidate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {page.map((row) => (
+                      <tr key={row.applicationId} className="h-[13mm]">
+                        <td className="border-2 border-foreground px-3 text-center text-3xl font-bold">
+                          {row.examSeat}
+                        </td>
+                        <td className="border-2 border-foreground px-3 font-mono text-2xl font-bold">
+                          {row.hallTicketNo}
+                        </td>
+                        <td className="border-2 border-foreground px-3 text-2xl font-bold">
+                          {displayName(row)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-auto pt-4 text-center text-sm font-semibold text-muted-foreground">
+                  {roomNames[roomIndex]} · {list.length} candidate
+                  {list.length === 1 ? "" : "s"}
+                  {pages.length > 1 ? ` · Page ${pageIndex + 1} of ${pages.length}` : ""}
+                </p>
+              </Sheet>
+            )),
+          );
+          return [summary, ...sheets];
+        })}
+      </article>
+    </div>
+  );
+}
+
+export type MeritGroup = {
+  subject: string;
+  seats: number;
+  selected: readonly AdmissionCase[];
+  waiting: readonly AdmissionCase[];
+};
+
+/**
+ * Subject-wise merit list and waiting list. Each subject starts on a new page with its name in
+ * a box at the top, then a Selection list box and a Waiting list box. When both fit on one
+ * page they share it; otherwise the selection list takes its own page(s) and the waiting list
+ * starts on the next page for that subject.
+ */
+export function MeritSheet({
+  groups,
+  sessionLabel,
+}: {
+  groups: readonly MeritGroup[];
+  sessionLabel: string;
+}) {
+  /** Rows that fit on one page with both boxes (box titles and table headings included). */
+  const sharedRows = 18;
+  const perPage = 24;
+  const cell = "border-b border-foreground/20 px-2";
+  const headCell = "border-b border-foreground/30 px-2 py-1";
+  const selectedBox = (rows: readonly AdmissionCase[], offset = 0) => (
+    <div className="mt-4 overflow-hidden rounded-xl border-2 border-primary">
+      <p className="bg-primary px-3 py-1.5 text-sm font-bold tracking-[0.12em] text-primary-foreground uppercase">
+        Selection list
+      </p>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-muted/60">
+          <tr className="text-center">
+            <th className={`w-[10mm] ${headCell}`}>S. No.</th>
+            <th className={`w-[12mm] ${headCell}`}>Rank</th>
+            <th className={headCell}>Name of the candidate</th>
+            <th className={`w-[36mm] ${headCell}`}>Application No.</th>
+            <th className={`w-[16mm] text-center ${headCell}`}>Written</th>
+            <th className={`w-[18mm] text-center ${headCell}`}>Interview</th>
+            <th className={`w-[14mm] text-center ${headCell}`}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td className="px-2 py-3 text-muted-foreground" colSpan={7}>
+                No candidate is selected in this subject.
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={row.applicationId} className="h-[8mm]">
+                <td className={cell}>{offset + index + 1}</td>
+                <td className={cell}>{row.meritRank ?? "—"}</td>
+                <td className={`${cell} font-semibold`}>{displayName(row)}</td>
+                <td className={`${cell} font-mono`}>{row.applicationNo}</td>
+                <td className={`${cell} text-center`}>{row.written ?? "—"}</td>
+                <td className={`${cell} text-center`}>{row.interview ?? "—"}</td>
+                <td className={`${cell} text-center font-semibold`}>
+                  {totalMarks(row) ?? "—"}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+  const waitingBox = (rows: readonly AdmissionCase[], offset = 0) => (
+    <div className="mt-4 overflow-hidden rounded-xl border-2 border-secondary">
+      <p className="bg-secondary px-3 py-1.5 text-sm font-bold tracking-[0.12em] text-secondary-foreground uppercase">
+        Waiting list
+      </p>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-muted/60">
+          <tr className="text-center">
+            <th className={`w-[10mm] ${headCell}`}>S. No.</th>
+            <th className={`w-[18mm] ${headCell}`}>Waiting No.</th>
+            <th className={headCell}>Name of the candidate</th>
+            <th className={`w-[36mm] ${headCell}`}>Application No.</th>
+            <th className={`w-[14mm] text-center ${headCell}`}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td className="px-2 py-3 text-muted-foreground" colSpan={5}>
+                No candidate is on the waiting list for this subject.
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={row.applicationId} className="h-[8mm]">
+                <td className={cell}>{offset + index + 1}</td>
+                <td className={`${cell} font-semibold`}>W{row.waitlistRank}</td>
+                <td className={`${cell} font-semibold`}>{displayName(row)}</td>
+                <td className={`${cell} font-mono`}>{row.applicationNo}</td>
+                <td className={`${cell} text-center font-semibold`}>
+                  {totalMarks(row) ?? "—"}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+  const head = (group: MeritGroup, part: string) => (
+    <>
+      <SheetHeading
+        title="Ph.D. Admission · Merit list and waiting list"
+        lines={[`${sessionLabel || "Admission session"}${part ? ` · ${part}` : ""}`]}
+      />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-foreground px-4 py-2">
+        <p className="font-serif text-2xl leading-tight font-bold text-primary">
+          {group.subject}
+        </p>
+        <p className="text-xs font-semibold">
+          Seats {group.seats} · Selected {group.selected.length} · Waiting{" "}
+          {group.waiting.length}
+        </p>
+      </div>
+    </>
+  );
+  return (
+    <div className="overflow-x-auto">
+      <article className="print-root mx-auto flex w-[210mm] min-w-[210mm] flex-col print:w-full print:min-w-0">
+        {groups.flatMap((group) => {
+          if (group.selected.length + group.waiting.length <= sharedRows) {
+            return [
+              <Sheet key={group.subject}>
+                {head(group, "")}
+                {selectedBox(group.selected)}
+                {waitingBox(group.waiting)}
+              </Sheet>,
+            ];
+          }
+          const selectedPages = pagesOf(group.selected, perPage);
+          const waitingPages = pagesOf(group.waiting, perPage);
+          return [
+            ...selectedPages.map((page, index) => (
+              <Sheet key={`${group.subject}-s${index}`}>
+                {head(
+                  group,
+                  `Selection list${selectedPages.length > 1 ? ` (page ${index + 1} of ${selectedPages.length})` : ""}`,
+                )}
+                {selectedBox(page, index * perPage)}
+              </Sheet>
+            )),
+            ...waitingPages.map((page, index) => (
+              <Sheet key={`${group.subject}-w${index}`}>
+                {head(
+                  group,
+                  `Waiting list${waitingPages.length > 1 ? ` (page ${index + 1} of ${waitingPages.length})` : ""}`,
+                )}
+                {waitingBox(page, index * perPage)}
+              </Sheet>
+            )),
+          ];
+        })}
       </article>
     </div>
   );

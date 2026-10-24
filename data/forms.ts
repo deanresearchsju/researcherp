@@ -31,7 +31,9 @@ export const scholarFormCopy = {
     "Ph.D. applications can be submitted only when a school and subject currently have a vacancy.",
   track: "Track application",
   trackResultPending:
-    "Your application is under review. The result will be published here once the selection list is approved.",
+    "Your application is under process. The result will be published here once the selection list is approved.",
+  trackNotSelected:
+    "We regret that you have not been selected in this admission session. Thank you for applying.",
   trackSelected:
     "Congratulations! You have been provisionally selected for admission to the Ph.D. programme.",
   trackSelectedNext:
@@ -39,7 +41,7 @@ export const scholarFormCopy = {
   trackSelectedLetterWaiting:
     "Your provisional selection letter will appear here once the office issues it.",
   trackAdmitted:
-    "Your documents are verified and you are admitted. Sign in to the scholar ERP portal with the sign-in details given by the office, and pay the fee under Fee.",
+    "Your documents are verified. Login to the scholar portal for more information.",
   trackWaiting:
     "You are on the waiting list for your subject. If a selected candidate does not report, the next candidate on the waiting list is offered the seat and the research office will write to you.",
   letterReady:

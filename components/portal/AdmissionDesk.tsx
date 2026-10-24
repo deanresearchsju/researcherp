@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Lock } from "lucide-react";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 
@@ -10,10 +10,13 @@ import {
   AdmissionLetter,
   ApprovalSheet,
   AttendanceSheet,
+  SeatingSheet,
+  MeritSheet,
   InterviewSheet,
   ProvisionalSheet,
 } from "@/components/portal/AdmissionPrint";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
+import { MarkButtons, markSummary } from "@/components/portal/AttendanceControls";
 import {
   DeskModal,
   FormDialog,
@@ -23,6 +26,7 @@ import {
 } from "@/components/portal/Desk";
 import { EntranceMarksScreen } from "@/components/portal/EntranceMarksScreen";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { PhdWindowDialog } from "@/components/portal/SiteScreen";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -53,8 +57,11 @@ import {
   archivedKeys,
   attendanceOrder,
   clearSelectionProgress,
+  resetStepData,
+  type EntranceScore,
   closeAdmissionSession,
   completeSelectionProgress,
+  defaultSelectionProgress,
   currentAdmission,
   displayName,
   isLiveAdmissionCase,
@@ -86,6 +93,7 @@ import {
   type CheckMark,
   type EntranceSchedule,
   type ExamCampus,
+  type ExamRoom,
   type LetterConfig,
   type ReportingMark,
   campusFor,
@@ -95,15 +103,18 @@ import {
   emptyExpert,
   newPanelId,
   schoolNameFromLabel,
-  registrationBlock,
-  registrationNumberTaken,
   type ApprovalRecord,
   type InterviewExpert,
   type InterviewPanel,
 } from "@/lib/admission";
 import { researchRegister } from "@/data/research-register";
 import { downloadHallTickets } from "@/lib/hall-ticket-pdf";
-import { suggestRegistration } from "@/lib/registration-format";
+import { PromotionPanel } from "@/components/portal/PromotionPanel";
+import { purgeAdmittedRecords, syncAllotments } from "@/lib/admission-sync";
+import { downloadSheet } from "@/lib/sheet";
+import { downloadTablePdf } from "@/lib/table-pdf";
+import { arrangeSeating, seatLabel } from "@/lib/seating";
+import { guideCampus } from "@/lib/registration-format";
 import { mailSummary, sendMailEvent, type MailResult } from "@/lib/mail-client";
 import { recordAudit } from "@/lib/audit";
 import { clientToday, formatIsoDate } from "@/lib/dates";
@@ -112,19 +123,24 @@ import { compressImage, fileToDataUrl } from "@/lib/files";
 import { filterMatches } from "@/lib/list-filter";
 import {
   currentOffice,
+  currentSiteSettings,
+  defaultSiteSettings,
+  formatPhdSession,
   removeAllocation,
   sameId,
-  saveAllocation,
   subscribeOffice,
+  type SiteSettings,
 } from "@/lib/office";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import {
   currentApplications,
+  deleteApplication,
+  forgetApplications,
   subscribeApplications,
   updateApplicationStatus,
   type StoredApplication,
 } from "@/lib/records";
-import { uniqueIssuedPassword } from "@/lib/register-access";
+import { scholarFirstPassword } from "@/lib/register-access";
 import { phdReceiptFromApplication } from "@/lib/scholar-progress";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { useCanMenuAction } from "@/lib/use-menu-action";
@@ -144,6 +160,8 @@ type Step = SelectionStepId;
 type Sheet =
   | null
   | { kind: "attendance" }
+  | { kind: "seating" }
+  | { kind: "merit" }
   | { kind: "interview"; panelId?: string }
   | { kind: "approval" }
   | { kind: "provisional" }
@@ -161,8 +179,6 @@ const letterSchema = z.object({
   refPrefix: z.string().min(1, "Enter the reference prefix.").max(80),
   issueDate: z.string().min(1, "Enter the letter date.").max(40),
   reportBy: z.string().min(1, "Enter the reporting date.").max(80),
-  fullTimeFee: z.string().regex(/^\d+$/, "Enter the full-time fee in rupees."),
-  partTimeFee: z.string().regex(/^\d+$/, "Enter the part-time fee in rupees."),
   accountName: z.string().min(1, "Enter the account name.").max(120),
   accountNumber: z.string().min(1, "Enter the account number.").max(40),
   bankName: z.string().min(1, "Enter the bank.").max(120),
@@ -180,8 +196,6 @@ const letterFields = [
   ["refPrefix", "Reference prefix"],
   ["issueDate", "Letter date"],
   ["reportBy", "Report by"],
-  ["fullTimeFee", "Full-time fee (₹)"],
-  ["partTimeFee", "Part-time fee (₹)"],
   ["accountName", "Account name"],
   ["accountNumber", "Account number"],
   ["bankName", "Bank"],
@@ -242,6 +256,7 @@ function cleared(row: AdmissionCase, keepShortlist: boolean): AdmissionCase {
     examRoom: shortlisted ? row.examRoom : "",
     hallTicketNo: shortlisted ? row.hallTicketNo : "",
     hallTicketOn: shortlisted ? row.hallTicketOn : "",
+    examSeat: shortlisted ? row.examSeat : "",
     guideName: selected ? row.guideName : "",
     guideIdentifier: selected ? row.guideIdentifier : "",
     verification: selected ? row.verification : "Pending",
@@ -306,8 +321,8 @@ export function AdmissionDesk({
   );
   const session = usePreviewSession();
   const canDownload = useCanMenuAction("export");
-  const form = useForm<LetterConfig>({
-    resolver: zodResolver(letterSchema) as Resolver<LetterConfig>,
+  const form = useForm<z.infer<typeof letterSchema>>({
+    resolver: zodResolver(letterSchema) as Resolver<z.infer<typeof letterSchema>>,
     values: store?.letter ?? defaultLetter,
   });
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -321,14 +336,15 @@ export function AdmissionDesk({
   >([]);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [finalStep, setFinalStep] = useState<"certificates" | "fees" | null>(null);
+  const [seatingOpen, setSeatingOpen] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
-  const [registrationDrafts, setRegistrationDrafts] = useState<Record<string, string>>(
-    {},
-  );
   const [releasingId, setReleasingId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string[] | null>(null);
   const [confirmStep, setConfirmStep] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [nextWindow, setNextWindow] = useState<SiteSettings | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  const [discardText, setDiscardText] = useState("");
   const [manageOpen, setManageOpen] = useState(false);
   const [editingLetter, setEditingLetter] = useState(false);
   const [sessionDraft, setSessionDraft] = useState<{
@@ -350,6 +366,16 @@ export function AdmissionDesk({
     | { mode: "assign"; ids: string[] }
   >(null);
 
+  // Once the provisional list is approved (or documents are verified), the guides and the
+  // scholars' portals are linked automatically; this only saves what is still missing.
+  const autoSynced = useRef(false);
+  const canSync = Boolean(ready && store && users && !officeWriteBlock());
+  useEffect(() => {
+    if (!canSync || autoSynced.current) return;
+    autoSynced.current = true;
+    void syncAllotments(users?.users ?? []);
+  }, [canSync, users]);
+
   if (!ready || !store) {
     return <p className="text-sm text-muted-foreground">Loading the admission file…</p>;
   }
@@ -358,9 +384,8 @@ export function AdmissionDesk({
   const progress = officeFile.progress;
   // Reporting and Admission are open together; the office moves between them until the
   // admission session is closed.
-  const step: Step = finalStep ?? progress.current;
-  const currentStepInfo =
-    selectionSteps.find((item) => item.id === progress.current) ?? selectionSteps[0];
+  const lastStages = stepStaysOpen(progress.current);
+  const step: Step = lastStages && finalStep ? finalStep : progress.current;
   const stepIndex = selectionSteps.findIndex((item) => item.id === step);
   const stepInfo = selectionSteps[stepIndex] ?? selectionSteps[0];
   const isAdmin = session?.role === "admin";
@@ -404,6 +429,7 @@ export function AdmissionDesk({
     nextProgress = progress,
     adminOnly = false,
     optimistic = false,
+    entranceScores?: EntranceScore[],
   ) {
     const blocked = adminOnly ? adminActionBlock() : officeWriteBlock();
     if (blocked) {
@@ -418,10 +444,102 @@ export function AdmissionDesk({
       cases: keepHiddenCases(nextCases, officeFile.cases, archiveKeys),
       letter,
       progress: nextProgress,
+      ...(entranceScores ? { entranceScores } : {}),
       ...(optimistic ? { optimistic: { onFail: setNotice } } : {}),
     });
     if (!saved.ok) setNotice(saved.message);
     return saved.ok;
+  }
+
+  const reopenLabel =
+    selectionSteps.find(
+      (item) => item.id === progress.completed[progress.completed.length - 1],
+    )?.label ?? "the previous step";
+
+  /** Reopens the last completed step and deletes the work done in it. */
+  async function reopenLastStep() {
+    const reopened = progress.completed[progress.completed.length - 1];
+    if (!reopened) return false;
+    let reset = resetStepData(cases, progress, reopened);
+    // Going back past the admission takes the scholars admitted in this session out of the
+    // ERP again (sign-in, guide, course records), so nothing of a test remains.
+    const admitted = cases.filter((row) => row.verification === "Approved");
+    if (admitted.length > 0) {
+      const undone = resetStepData(reset.cases, reset.progress, "certificates");
+      reset = { ...reset, cases: undone.cases };
+      const problems = await purgeAdmittedRecords(
+        admitted,
+        users?.users ?? [],
+        users?.source ?? "browser",
+      );
+      if (problems.length > 0) setNotice(problems[0]);
+    }
+    const nextProgress = clearSelectionProgress(reset.progress, 1);
+    // A guide taken off the provisional list leaves the supervisor's scholars too.
+    if (reopened === "provisional") {
+      for (const row of cases) {
+        const allocation = currentOffice()?.allocations.find((item) =>
+          sameId(item.scholarIdentifier, linkedScholar(row)),
+        );
+        if (allocation) await removeAllocation(allocation);
+      }
+    }
+    setBusy(true);
+    const saved = await commit(
+      reset.cases,
+      officeFile.letter,
+      nextProgress,
+      true,
+      false,
+      reset.clearScores ? [] : undefined,
+    );
+    setBusy(false);
+    if (saved) {
+      setFinalStep(null);
+      setNotice(
+        `${reopenLabel} is open again. Its earlier work was deleted; do it again in full.`,
+      );
+    }
+    return saved;
+  }
+
+  /** Throws away everything of the running session: applications, files, admitted scholars. */
+  async function discardSession() {
+    const blocked = adminActionBlock();
+    if (blocked) {
+      setNotice(blocked.message);
+      return;
+    }
+    setBusy(true);
+    const admitted = cases.filter((row) => row.verification === "Approved");
+    const problems = await purgeAdmittedRecords(
+      admitted,
+      users?.users ?? [],
+      users?.source ?? "browser",
+    );
+    const ids = cases.map((row) => row.applicationId);
+    let removed = 0;
+    for (const id of ids) {
+      if (await deleteApplication("phd", id)) removed += 1;
+    }
+    forgetApplications(ids);
+    const saved = await saveAdmission({
+      cases: officeFile.cases.filter((row) => row.sessionClosed),
+      letter: officeFile.letter,
+      entranceScores: [],
+      progress: { ...defaultSelectionProgress },
+      archived: officeFile.archived,
+    });
+    setBusy(false);
+    setDiscarding(false);
+    setDiscardText("");
+    setManageOpen(false);
+    setFinalStep(null);
+    setNotice(
+      saved.ok
+        ? `The session was discarded: ${removed} application(s), ${admitted.length} admitted scholar(s) and the selection file are removed.${problems.length > 0 ? ` ${problems[0]}` : ""}`
+        : saved.message,
+    );
   }
 
   async function persistProgress(nextProgress: typeof progress, message: string) {
@@ -488,6 +606,7 @@ export function AdmissionDesk({
   }
 
   async function persistCases(nextCases: AdmissionCase[], nextProgress = progress) {
+    const changed: AdmissionCase[] = [];
     for (const before of cases) {
       const after = nextCases.find((item) => item.applicationId === before.applicationId);
       if (!after) continue;
@@ -502,16 +621,24 @@ export function AdmissionDesk({
         (before.guideIdentifier !== after.guideIdentifier ||
           before.verification !== "Approved")
       ) {
-        const allotted = await saveAllocation({
-          scholarIdentifier: linkedScholar(after),
-          scholarName: after.name,
-          supervisorIdentifier: after.guideIdentifier || after.guideName,
-          supervisorName: after.guideName,
-        });
-        if (!allotted.ok) setNotice(allotted.message);
+        changed.push(after);
       }
     }
-    return commit(nextCases, officeFile.letter, nextProgress);
+    const saved = await commit(nextCases, officeFile.letter, nextProgress);
+    // The guide and the course enrolment are linked after the verification is saved: the
+    // allotment checks the saved admission file.
+    if (saved && changed.length > 0) {
+      const problems = await syncPortalRecords(changed);
+      if (problems.length > 0) setNotice(problems[0]);
+    }
+    return saved;
+  }
+
+  /** Links admitted scholars to their guide and course enrolment so their portal shows them. */
+  async function syncPortalRecords(rows: readonly AdmissionCase[]) {
+    void rows;
+    const result = await syncAllotments(users?.users ?? []);
+    return result.problems;
   }
 
   /** Applies a change to every chosen row in one save. */
@@ -557,7 +684,7 @@ export function AdmissionDesk({
           user.identifier.toLowerCase() === identifier.toLowerCase(),
       );
       if (exists) continue;
-      const password = uniqueIssuedPassword();
+      const password = scholarFirstPassword;
       const saved = await createPortalUser(
         { role: "scholar", name: displayName(row), identifier, password, menus: null },
         users?.source ?? "browser",
@@ -591,7 +718,7 @@ export function AdmissionDesk({
       setNotice("This candidate has no email address to sign in with.");
       return;
     }
-    const password = uniqueIssuedPassword();
+    const password = scholarFirstPassword;
     const existing = users?.users.find(
       (user) =>
         user.role === "scholar" &&
@@ -837,7 +964,7 @@ export function AdmissionDesk({
       detail: `${displayName(row)} · ${row.department} · seat offered from the waiting list`,
     });
     setNotice(
-      `${displayName(row)} is selected from the waiting list. Allot the guide and issue the letter.`,
+      `${displayName(row)} is selected from the waiting list. Allot the guide, issue the letter and verify the documents under Reporting & documents.`,
     );
   }
 
@@ -925,6 +1052,55 @@ export function AdmissionDesk({
               </div>
             );
           })}
+        </div>
+      );
+    }
+    if (sheet.kind === "merit") {
+      const ranked = cases.filter(rankable);
+      const subjects = [...new Set(ranked.map((row) => row.department))].sort((a, b) =>
+        a.localeCompare(b),
+      );
+      return (
+        <div>
+          <div className="no-print mb-4 flex gap-2">
+            {back}
+            <Button type="button" onClick={() => window.print()}>
+              Print merit list and waiting list
+            </Button>
+          </div>
+          <MeritSheet
+            sessionLabel={sessionName}
+            groups={subjects.map((subject) => {
+              const rows = ranked.filter((row) => row.department === subject);
+              return {
+                subject,
+                seats: seatsFor(subject, vacancies),
+                selected: rows
+                  .filter((row) => row.selected)
+                  .sort((a, b) => (a.meritRank ?? 9999) - (b.meritRank ?? 9999)),
+                waiting: rows
+                  .filter((row) => row.waitlistRank !== null)
+                  .sort((a, b) => (a.waitlistRank ?? 9999) - (b.waitlistRank ?? 9999)),
+              };
+            })}
+          />
+        </div>
+      );
+    }
+    if (sheet.kind === "seating") {
+      return (
+        <div>
+          <div className="no-print mb-4 flex gap-2">
+            {back}
+            <Button type="button" onClick={() => window.print()}>
+              Print seating plan
+            </Button>
+          </div>
+          <SeatingSheet
+            rows={cases.filter((row) => row.shortlisted)}
+            schedule={progress.entrance}
+            campuses={progress.entrance.campuses}
+          />
         </div>
       );
     }
@@ -1089,7 +1265,10 @@ export function AdmissionDesk({
         row.guideName,
       ]) && filterMatches(department, row.department),
   );
-  const completionBlock = stepCompletionBlock(step, cases, progress);
+  const applicationWindowOpen = currentOffice()?.settings.phdOpen === true;
+  const completionBlock = stepCompletionBlock(step, cases, progress, {
+    applicationWindowOpen,
+  });
 
   function picked(rows: readonly AdmissionCase[]) {
     return rows.filter(
@@ -1224,6 +1403,52 @@ export function AdmissionDesk({
     );
   }
 
+  /** Co-supervisor of an interdisciplinary candidate: any active supervisor other than the guide. */
+  function coGuideSelect(row: AdmissionCase) {
+    const accounts = (users?.users ?? []).filter((item) => item.role === "supervisor");
+    const options = new Map<string, { name: string; department: string }>();
+    for (const item of researchRegister.supervisors) {
+      if (item.active) {
+        options.set(item.name.toLowerCase(), { name: item.name, department: item.department });
+      }
+    }
+    for (const account of accounts) {
+      const key = account.name.toLowerCase();
+      if (!options.has(key)) options.set(key, { name: account.name, department: "" });
+    }
+    const list = [...options.values()]
+      .filter((item) => item.name.toLowerCase() !== row.guideName.toLowerCase())
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return (
+      <NativeSelect
+        value={row.coGuideName}
+        disabled={admissionFileFrozen(row) || !canWrite || busy}
+        onChange={(event) => {
+          const name = event.target.value;
+          const account = accounts.find(
+            (item) => item.name.toLowerCase() === name.toLowerCase(),
+          );
+          void commitRow(row.applicationId, {
+            coGuideName: name,
+            coGuideIdentifier: name ? (account?.identifier ?? name) : "",
+          });
+        }}
+        aria-label={`Co-supervisor for ${row.name}`}
+      >
+        <option value="">Choose a co-supervisor</option>
+        {row.coGuideName && !options.has(row.coGuideName.toLowerCase()) ? (
+          <option value={row.coGuideName}>{row.coGuideName}</option>
+        ) : null}
+        {list.map((item) => (
+          <option key={item.name} value={item.name}>
+            {item.name}
+            {item.department ? ` · ${item.department}` : ""}
+          </option>
+        ))}
+      </NativeSelect>
+    );
+  }
+
   /* ---------- per-step figures and export ---------- */
 
   const count = (test: (row: AdmissionCase) => boolean) => stepRows.filter(test).length;
@@ -1297,10 +1522,73 @@ export function AdmissionDesk({
           { label: "Still waiting", value: waitlistOrder(cases).length },
         ];
       case "fees":
-        return [{ label: "Admitted", value: stepRows.length }];
+        return [
+          { label: "Admitted", value: stepRows.length },
+          { label: "Not yet verified", value: unverifiedSelected().length },
+          { label: "Waiting list", value: waitlistOrder(cases).length },
+          { label: "Subjects with a vacancy", value: subjectsWithOpenOffers().length },
+        ];
     }
   })();
 
+  // The Finish step lists the admitted scholars for the Controller of Examinations, who
+  // generates the registration numbers; the last column is left blank for them.
+  const coeHeaders = [
+    "S. No.",
+    "Name of the scholar",
+    "Department",
+    "School",
+    "Guide name",
+    "Guide campus",
+    "Registration No.",
+  ];
+  const coeRows = visible.map((row, index) => [
+    String(index + 1),
+    displayName(row),
+    row.department,
+    schoolOfSubject(row.department),
+    row.guideName,
+    guideCampus(row.guideName),
+    "",
+  ]);
+  // Merit list: every ranked candidate, subject by subject, with the result.
+  const meritHeaders = [
+    "S. No.",
+    "Subject",
+    "Rank",
+    "Name of the candidate",
+    "Application No.",
+    `Written /${writtenMax}`,
+    `Interview /${interviewMax}`,
+    "Total",
+  ];
+  const meritRows = visible.map((row, index) => [
+    String(index + 1),
+    row.department,
+    row.meritRank === null ? "" : String(row.meritRank),
+    displayName(row),
+    row.applicationNo,
+    row.written === null ? "" : String(row.written),
+    row.interview === null ? "" : String(row.interview),
+    totalMarks(row) === null ? "" : String(totalMarks(row)),
+  ]);
+  // Waiting list: subject by subject in waiting order.
+  const waitingHeaders = [
+    "S. No.",
+    "Subject",
+    "Waiting No.",
+    "Name of the candidate",
+    "Application No.",
+    "Total",
+  ];
+  const waitingRows = waitlistOrder(cases).map((row, index) => [
+    String(index + 1),
+    row.department,
+    row.waitlistRank === null ? "" : `W${row.waitlistRank}`,
+    displayName(row),
+    row.applicationNo,
+    totalMarks(row) === null ? "" : String(totalMarks(row)),
+  ]);
   const exportHeaders = [
     "Application No.",
     "Name",
@@ -1508,6 +1796,15 @@ export function AdmissionDesk({
     );
     return (
       <>
+        {applicationWindowOpen ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm font-medium text-secondary"
+          >
+            The Ph.D. application window is still open. Close it under Application window
+            before completing the shortlist; the shortlist cannot move on until then.
+          </p>
+        ) : null}
         {canWrite ? (
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1752,7 +2049,7 @@ export function AdmissionDesk({
                   variant="outline"
                   onClick={() => setCampusDialog({ mode: "add" })}
                 >
-                  Add campus
+                  Add venue
                 </Button>
               ) : null}
             </div>
@@ -1775,7 +2072,10 @@ export function AdmissionDesk({
                           {campus.address || "Address not set"}
                         </p>
                         <p className="mt-1 text-xs font-medium">
-                          {assigned} candidate(s)
+                          {assigned} candidate(s) ·{" "}
+                          {campus.rooms.length > 0
+                            ? `${campus.rooms.length} room(s), ${campus.rooms.reduce((sum, room) => sum + room.capacity, 0)} seats`
+                            : "no rooms listed"}
                         </p>
                       </div>
                       {canWrite ? (
@@ -1926,6 +2226,25 @@ export function AdmissionDesk({
                   ? ` (${ticketed.length})`
                   : ""}
             </Button>
+            {canWrite ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || ticketed.length === 0}
+                onClick={() => setSeatingOpen(true)}
+              >
+                Seating arrangement
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              data-readonly-allow
+              disabled={!ticketed.some((row) => row.examSeat)}
+              onClick={() => setSheet({ kind: "seating" })}
+            >
+              Print seating plan
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -1993,6 +2312,49 @@ export function AdmissionDesk({
               },
             ])
           : null}
+        {progress.entranceReady ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || visible.length === 0}
+                  onClick={() =>
+                    void applyToRows(
+                      visible,
+                      (row) => cleared({ ...row, attendance: "Present" }, true),
+                      undefined,
+                      "Everyone on this list is marked present",
+                    )
+                  }
+                >
+                  All present
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || visible.length === 0}
+                  onClick={() =>
+                    void applyToRows(
+                      visible,
+                      (row) => cleared({ ...row, attendance: "" }, true),
+                      undefined,
+                      "Attendance cleared for this list",
+                    )
+                  }
+                >
+                  Clear all
+                </Button>
+              </>
+            ) : null}
+            <span className="ml-auto text-sm text-muted-foreground">
+              {markSummary(visible.map((row) => row.attendance))}
+            </span>
+          </div>
+        ) : null}
         <Rows
           rows={visible}
           empty="No shortlisted candidate matches."
@@ -2041,8 +2403,8 @@ export function AdmissionDesk({
                   {campus ? (
                     <>
                       <p>{campus.name}</p>
-                      {row.examRoom ? (
-                        <p className="text-xs text-muted-foreground">{row.examRoom}</p>
+                      {seatLabel(row) ? (
+                        <p className="text-xs text-muted-foreground">{seatLabel(row)}</p>
                       ) : null}
                     </>
                   ) : (
@@ -2066,7 +2428,8 @@ export function AdmissionDesk({
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <NativeSelect
+                  <MarkButtons
+                    name={row.name}
                     value={row.attendance}
                     disabled={
                       admissionFileFrozen(row) ||
@@ -2074,19 +2437,13 @@ export function AdmissionDesk({
                       !progress.entranceReady ||
                       busy
                     }
-                    onChange={(event) => {
-                      const next = event.target.value as AttendanceMark;
+                    onChange={(next) =>
                       void commitRow(
                         row.applicationId,
-                        cleared({ ...row, attendance: next }, true),
-                      );
-                    }}
-                    aria-label={`Attendance for ${row.name}`}
-                  >
-                    <option value="">Not marked</option>
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                  </NativeSelect>
+                        cleared({ ...row, attendance: next as AttendanceMark }, true),
+                      )
+                    }
+                  />
                 </td>
               </>
             );
@@ -2276,6 +2633,56 @@ export function AdmissionDesk({
     const subjects = [...new Set(visible.map((row) => row.department))];
     return (
       <>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="gold"
+            data-readonly-allow
+            disabled={subjects.length === 0}
+            onClick={() => setSheet({ kind: "merit" })}
+          >
+            Print subject-wise merit list and waiting list
+          </Button>
+          <span className="text-sm font-semibold text-primary">Waiting list only</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-readonly-allow
+            disabled={waitingRows.length === 0}
+            onClick={() =>
+              void downloadSheet("waiting-list", waitingHeaders, waitingRows)
+            }
+          >
+            Export Excel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            data-readonly-allow
+            disabled={waitingRows.length === 0}
+            onClick={() =>
+              void downloadTablePdf({
+                title: `Waiting list${sessionName ? ` · ${sessionName}` : ""}`,
+                criteria: [],
+                headers: waitingHeaders,
+                rows: waitingRows,
+                filename: "waiting-list.pdf",
+                generatedBy: session
+                  ? session.name.trim() || session.identifier
+                  : undefined,
+              })
+            }
+          >
+            Export PDF
+          </Button>
+          {waitingRows.length === 0 ? (
+            <span className="text-xs text-muted-foreground">
+              No candidate is on the waiting list yet.
+            </span>
+          ) : null}
+        </div>
         {canWrite ? (
           <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-muted/30 p-4">
             <label className="grid gap-1 text-sm">
@@ -2442,6 +2849,9 @@ export function AdmissionDesk({
       names.preparedBy.trim() !== approval.preparedBy ||
       names.verifiedBy.trim() !== approval.verifiedBy;
     const unguided = orderedProvisional.filter((item) => !item.row.guideName).length;
+    const noCoGuide = orderedProvisional.filter(
+      (item) => item.row.interdisciplinary && !item.row.coGuideName,
+    ).length;
     return (
       <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2546,6 +2956,12 @@ export function AdmissionDesk({
                   setNotice(`Allot a guide to ${unguided} selected candidate(s) first.`);
                   return;
                 }
+                if (noCoGuide > 0) {
+                  setNotice(
+                    `Allot a co-supervisor to ${noCoGuide} interdisciplinary candidate(s) first.`,
+                  );
+                  return;
+                }
                 setRecordingApproval(true);
               }}
             >
@@ -2579,7 +2995,14 @@ export function AdmissionDesk({
         <Rows
           rows={visible}
           empty="No selected candidate matches."
-          headers={["S. No.", "Candidate", "Subject", "Total", "Guide allotted"]}
+          headers={[
+            "S. No.",
+            "Candidate",
+            "Subject",
+            "Total",
+            "Guide allotted",
+            "Co-supervisor",
+          ]}
           render={(row) => {
             const serial =
               orderedProvisional.find(
@@ -2593,10 +3016,27 @@ export function AdmissionDesk({
                   {row.fromWaitlist ? (
                     <Badge variant="purple">From waiting list</Badge>
                   ) : null}
+                  {row.interdisciplinary ? (
+                    <div className="mt-1">
+                      <Badge variant="gold">Interdisciplinary</Badge>
+                      {row.interdisciplinaryNote ? (
+                        <p className="mt-1 max-w-[14rem] text-xs text-muted-foreground">
+                          {row.interdisciplinaryNote}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2">{row.department}</td>
                 <td className="px-3 py-2">{totalMarks(row) ?? "—"}</td>
                 <td className="min-w-[16rem] px-3 py-2">{guideSelect(row)}</td>
+                <td className="min-w-[16rem] px-3 py-2">
+                  {row.interdisciplinary ? (
+                    coGuideSelect(row)
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not required</span>
+                  )}
+                </td>
               </>
             );
           }}
@@ -2610,6 +3050,15 @@ export function AdmissionDesk({
     return (
       <>
         {approvalPanel()}
+        <PromotionPanel
+          promotedOn={progress.promotedOn}
+          onPromoted={() =>
+            persistProgress(
+              { ...progress, promotedOn: today },
+              "All batches are promoted. The fresh batch starts in semester 1.",
+            )
+          }
+        />
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">Report by {officeFile.letter.reportBy}</Badge>
           <Button
@@ -2684,9 +3133,6 @@ export function AdmissionDesk({
   }
 
   function reportingBody() {
-    const waiting = waitlistOrder(cases).filter((row) =>
-      filterMatches(department, row.department),
-    );
     return (
       <>
         {bulkBar(
@@ -2806,21 +3252,99 @@ export function AdmissionDesk({
             );
           }}
         />
-        <section className="space-y-2 border-t border-border pt-4">
+      </>
+    );
+  }
+
+  /** Seats of a subject not held by a selected candidate. */
+  function freeSeatsOf(subject: string) {
+    return Math.max(
+      seatsFor(subject, vacancies) -
+        cases.filter(
+          (other) => other.selected && sameDepartment(other.department, subject),
+        ).length,
+      0,
+    );
+  }
+
+  function unverifiedSelected() {
+    return cases.filter((row) => row.selected && row.verification !== "Approved");
+  }
+
+  /** Subjects with a vacant seat and candidates still waiting for it. */
+  function subjectsWithOpenOffers() {
+    return [...new Set(waitlistOrder(cases).map((row) => row.department))].filter(
+      (subject) => freeSeatsOf(subject) > 0,
+    );
+  }
+
+  /** Why the selection cannot be finished yet; null when it can. */
+  function finishBlock() {
+    const open = unverifiedSelected().length;
+    return open > 0
+      ? `${open} selected candidate(s) have not completed document verification. Verify them under Reporting & documents, or mark them Not reported and offer the seat from the waiting list.`
+      : null;
+  }
+
+  /**
+   * Finishes the selection: the admitted scholars are linked to their guide and start in
+   * semester 1, the unselected files move to the admission archive, and the application
+   * window can be opened for the next session.
+   */
+  async function finishSelection() {
+    const admitted = cases.filter((row) => row.selected).length;
+    const month = progress.entrance.session === "July" ? "January" : "July";
+    const year = archiveYearOf(progress.entrance);
+    const nextYear = month === "January" ? String(Number(year) + 1) : year;
+    setBusy(true);
+    const problems = await syncPortalRecords(cases.filter((row) => row.selected));
+    if (problems.length > 0) {
+      setBusy(false);
+      setConfirmClose(false);
+      setNotice(problems[0]);
+      return;
+    }
+    const result = await closeAdmissionSession(phdApplications);
+    setBusy(false);
+    setConfirmClose(false);
+    if (!result.ok) {
+      setNotice(result.message);
+      return;
+    }
+    setNotice(
+      `${sessionName || "The"} selection is finished. ${admitted} admitted scholar(s) start in semester 1 of the ERP and ${result.archived} application(s) moved to the admission archive. Open the application window for the next session.`,
+    );
+    setNextWindow({
+      ...(currentSiteSettings() ?? defaultSiteSettings),
+      phdOpen: true,
+      admissionSession: formatPhdSession(month, nextYear),
+    });
+  }
+
+  function finishBody() {
+    const waiting = waitlistOrder(cases).filter((row) =>
+      filterMatches(department, row.department),
+    );
+    const block = finishBlock();
+    return (
+      <>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Last stage. Where a selected candidate did not report or declined, offer the
+          vacant seat to the next candidate on that subject&apos;s waiting list; that
+          candidate then goes through the guide, the letter and the reporting like the
+          others. When every selected candidate is verified, finish the selection: the
+          remaining files move to the admission archive, the admitted scholars start in
+          semester 1 of the ERP, and the application window can be opened for the next
+          session.
+        </p>
+        <section className="space-y-2">
           <h3 className="font-semibold text-primary">Waiting list</h3>
           <Rows
             rows={waiting}
             empty="No candidate is waiting."
             headers={["Subject", "No.", "Candidate", "Total", "Free seats", ""]}
             render={(row) => {
-              const free = Math.max(
-                seatsFor(row.department, vacancies) -
-                  cases.filter(
-                    (other) =>
-                      other.selected && sameDepartment(other.department, row.department),
-                  ).length,
-                0,
-              );
+              const free = freeSeatsOf(row.department);
               const first = waitlistFor(cases, row.department)[0];
               return (
                 <>
@@ -2850,281 +3374,110 @@ export function AdmissionDesk({
             }}
           />
         </section>
-      </>
-    );
-  }
-
-  async function saveRegistration(row: AdmissionCase, tuitionApproved: boolean) {
-    const number = (registrationDrafts[row.applicationId] ?? row.registrationNo).trim();
-    const blocked = registrationBlock(row, tuitionApproved);
-    if (blocked) {
-      setNotice(blocked);
-      return;
-    }
-    if (number.length < 8 || number.length > 20) {
-      setNotice("Enter a registration number of 8 to 20 characters.");
-      return;
-    }
-    const onRegister = researchRegister.scholars.some(
-      (item) => item.registrationNumber.trim().toLowerCase() === number.toLowerCase(),
-    );
-    if (onRegister || registrationNumberTaken(cases, row, number)) {
-      setNotice("That registration number is already allotted.");
-      return;
-    }
-    if (row.registrationNo && row.registrationNo !== number && !isAdmin) {
-      setNotice("Only an administrator can change an allotted registration number.");
-      return;
-    }
-    setBusy(true);
-    const saved = await commitRow(row.applicationId, {
-      registrationNo: number,
-      registrationOn: row.registrationOn || today,
-    });
-    setBusy(false);
-    if (!saved) return;
-    setRegistrationDrafts((current) => {
-      const next = { ...current };
-      delete next[row.applicationId];
-      return next;
-    });
-    setNotice(`Registration number allotted to ${displayName(row)}.`);
-  }
-
-  function tuitionApprovedFor(row: AdmissionCase) {
-    const first = feeLedger(row.email, displayName(row), feeLoad?.records ?? [], today)
-      .plan[0];
-    return Boolean(first && first.paid > 0);
-  }
-
-  /** Numbers already in use: the register, every admission file, and the drafts on screen. */
-  function takenRegistrations(extra: readonly string[] = []) {
-    return [
-      ...researchRegister.scholars.map((item) => item.registrationNumber),
-      ...cases.map((item) => item.registrationNo),
-      ...extra,
-    ].filter(Boolean);
-  }
-
-  /** Fills the numbers of every scholar whose tuition receipt is approved, by the register format. */
-  function generateRegistrations() {
-    const rows = visible.filter(
-      (row) =>
-        row.verification === "Approved" && !row.registrationNo && tuitionApprovedFor(row),
-    );
-    if (rows.length === 0) {
-      setNotice("No scholar is waiting for a registration number.");
-      return;
-    }
-    const drafts: Record<string, string> = {};
-    const gaps = new Set<string>();
-    const used: string[] = [];
-    for (const row of rows) {
-      const suggestion = suggestRegistration(row, {
-        schoolName: schoolOfSubject(row.department),
-        schedule: progress.entrance,
-        taken: takenRegistrations(used),
-      });
-      if (suggestion.ok) {
-        drafts[row.applicationId] = suggestion.number;
-        used.push(suggestion.number);
-      } else {
-        suggestion.missing.forEach((item) => gaps.add(item));
-      }
-    }
-    setRegistrationDrafts((current) => ({ ...current, ...drafts }));
-    const made = Object.keys(drafts).length;
-    setNotice(
-      `${made} registration number(s) prepared; check them and press Allot all.` +
-        (gaps.size > 0
-          ? ` ${rows.length - made} could not be prepared. Needed: ${[...gaps].join("; ")}.`
-          : ""),
-    );
-  }
-
-  async function allotAllRegistrations() {
-    const rows = visible.filter(
-      (row) =>
-        registrationDrafts[row.applicationId] &&
-        !row.registrationNo &&
-        registrationBlock(row, tuitionApprovedFor(row)) === null,
-    );
-    if (rows.length === 0) {
-      setNotice("Prepare the registration numbers first.");
-      return;
-    }
-    const numbers = rows.map((row) => registrationDrafts[row.applicationId].trim());
-    const clash = numbers.find(
-      (number, index) =>
-        numbers.indexOf(number) !== index ||
-        takenRegistrations().some((item) => item.toLowerCase() === number.toLowerCase()),
-    );
-    if (clash) {
-      setNotice(`${clash} is already allotted. Prepare the numbers again.`);
-      return;
-    }
-    const byId = new Map(rows.map((row, index) => [row.applicationId, numbers[index]]));
-    setBusy(true);
-    const saved = await commit(
-      cases.map((row) =>
-        byId.has(row.applicationId)
-          ? {
-              ...row,
-              registrationNo: byId.get(row.applicationId) ?? "",
-              registrationOn: today,
-            }
-          : row,
-      ),
-    );
-    setBusy(false);
-    if (!saved) return;
-    setRegistrationDrafts({});
-    setNotice(`Registration numbers allotted to ${rows.length} scholar(s).`);
-  }
-
-  function feesBody() {
-    return (
-      <>
-        <p className="text-sm leading-6 text-muted-foreground">
-          After the checklist is submitted the scholar signs in, pays the tuition fee and
-          attaches the receipt under Fee. Approve the receipt in Fee collection, then
-          allot the registration numbers here. A number is built as year, session, the
-          guide&apos;s campus code, mode of study, school code, department code and roll
-          number.
-        </p>
-        {canWrite ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={generateRegistrations}
-            >
-              Prepare registration numbers
-            </Button>
-            <Button
-              type="button"
-              variant="gold"
-              disabled={busy || Object.keys(registrationDrafts).length === 0}
-              onClick={() => void allotAllRegistrations()}
-            >
-              Allot all
-            </Button>
+        <section className="space-y-2 border-t border-border pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-primary">Admitted scholars</h3>
+            {canWrite ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void syncPortalRecords(cases.filter((row) => row.selected))
+                    .then((problems) =>
+                      setNotice(
+                        problems.length > 0
+                          ? problems[0]
+                          : "Guide and course records are linked to the scholars' portals.",
+                      ),
+                    )
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Update scholar portals
+              </Button>
+            ) : null}
           </div>
-        ) : null}
-        <Rows
-          rows={visible}
-          empty="No admitted scholar yet."
-          headers={[
-            "Candidate",
-            "Checklist",
-            "Tuition fee",
-            "Paid",
-            "Balance",
-            "Registration No.",
-          ]}
-          render={(row) => {
-            const ledger = feeLedger(
-              row.email,
-              displayName(row),
-              feeLoad?.records ?? [],
-              today,
-            );
-            const first = ledger.plan[0];
-            const approved = Boolean(first && first.paid > 0);
-            const waiting = Boolean(first && first.pending > 0);
-            const block = registrationBlock(row, approved);
-            const draft = registrationDrafts[row.applicationId] ?? row.registrationNo;
-            const editable =
-              canWrite && block === null && (!row.registrationNo || isAdmin);
-            return (
-              <>
-                <td className="px-3 py-2">
-                  <p className="font-medium text-primary">{displayName(row)}</p>
-                  <p className="text-xs text-muted-foreground">{row.email || "—"}</p>
-                  {canWrite && row.verification === "Approved" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-1"
-                      disabled={busy}
-                      onClick={() => void issueNewPassword(row)}
-                    >
-                      New sign-in password
-                    </Button>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2">
-                  <Badge variant={row.verification === "Approved" ? "gold" : "outline"}>
-                    {row.verification === "Approved" ? "Submitted" : "Pending"}
-                  </Badge>
-                </td>
-                <td className="px-3 py-2">
-                  <Badge variant={approved ? "gold" : waiting ? "purple" : "outline"}>
-                    {approved
-                      ? "Receipt approved"
-                      : waiting
-                        ? "Receipt awaiting approval"
-                        : "Not paid"}
-                  </Badge>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Year 1 ₹{first?.amount ?? "—"}
-                  </p>
-                </td>
-                <td className="px-3 py-2">₹{first?.paid ?? 0}</td>
-                <td className="px-3 py-2">₹{first?.balance ?? "—"}</td>
-                <td className="min-w-[14rem] px-3 py-2">
-                  {editable ? (
-                    <div className="flex gap-2">
-                      <Input
-                        value={draft}
-                        maxLength={20}
-                        aria-label={`Registration number for ${displayName(row)}`}
-                        onChange={(event) =>
-                          setRegistrationDrafts((current) => ({
-                            ...current,
-                            [row.applicationId]: event.target.value
-                              .toUpperCase()
-                              .replace(/[^A-Z0-9/-]/g, ""),
-                          }))
-                        }
-                      />
+          <Rows
+            rows={visible}
+            empty="No admitted scholar yet."
+            headers={["Candidate", "Checklist", "Tuition fee", "Paid", "Balance"]}
+            render={(row) => {
+              const ledger = feeLedger(
+                row.email,
+                displayName(row),
+                feeLoad?.records ?? [],
+                today,
+              );
+              const first = ledger.plan[0];
+              const approved = Boolean(first && first.paid > 0);
+              const awaiting = Boolean(first && first.pending > 0);
+              return (
+                <>
+                  <td className="px-3 py-2">
+                    <p className="font-medium text-primary">{displayName(row)}</p>
+                    <p className="text-xs text-muted-foreground">{row.email || "—"}</p>
+                    {canWrite && row.verification === "Approved" ? (
                       <Button
                         type="button"
                         size="sm"
-                        variant="gold"
-                        disabled={busy || draft.trim() === row.registrationNo}
-                        onClick={() => void saveRegistration(row, approved)}
+                        variant="outline"
+                        className="mt-1"
+                        disabled={busy}
+                        onClick={() => void issueNewPassword(row)}
                       >
-                        Allot
+                        New sign-in password
                       </Button>
-                    </div>
-                  ) : row.registrationNo ? (
-                    <span className="font-mono text-sm">{row.registrationNo}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">{block}</span>
-                  )}
-                </td>
-              </>
-            );
-          }}
-        />
-        {isAdmin ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-secondary/30 bg-secondary/5 p-4">
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge variant={row.verification === "Approved" ? "gold" : "outline"}>
+                      {row.verification === "Approved" ? "Submitted" : "Pending"}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge variant={approved ? "gold" : awaiting ? "purple" : "outline"}>
+                      {approved
+                        ? "Receipt approved"
+                        : awaiting
+                          ? "Receipt awaiting approval"
+                          : "Not paid"}
+                    </Badge>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Year 1 ₹{first?.amount ?? "—"}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2">₹{first?.paid ?? 0}</td>
+                  <td className="px-3 py-2">₹{first?.balance ?? "—"}</td>
+                </>
+              );
+            }}
+          />
+        </section>
+        <div className="space-y-2 rounded-xl border border-secondary/30 bg-secondary/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-semibold text-secondary">
-              Close {sessionName || "this"} admission
+              Finish {sessionName || "this"} selection
             </p>
-            <Button
-              type="button"
-              variant="maroon"
-              disabled={busy}
-              onClick={() => setConfirmClose(true)}
-            >
-              Close admission session
-            </Button>
+            {isAdmin ? (
+              <Button
+                type="button"
+                variant="maroon"
+                disabled={busy || block !== null}
+                onClick={() => setConfirmClose(true)}
+              >
+                Finish selection & archive
+              </Button>
+            ) : null}
           </div>
-        ) : null}
+          <p className={cn("text-sm", block ? "text-secondary" : "text-muted-foreground")}>
+            {block ??
+              (isAdmin
+                ? "Every selected candidate is verified. Finishing archives the remaining files and starts the admitted scholars in semester 1."
+                : "Only an administrator can finish the selection.")}
+          </p>
+        </div>
       </>
     );
   }
@@ -3148,7 +3501,7 @@ export function AdmissionDesk({
       case "certificates":
         return reportingBody();
       case "fees":
-        return feesBody();
+        return finishBody();
     }
   })();
 
@@ -3239,50 +3592,35 @@ export function AdmissionDesk({
       ) : null}
 
       <Stepper current={step} completed={progress.completed} />
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Open stages">
-        {stepStaysOpen(progress.current) ? null : (
-          <Button
-            type="button"
-            size="sm"
-            variant={finalStep === null ? "default" : "outline"}
-            aria-pressed={finalStep === null}
-            data-readonly-allow
-            onClick={() => {
-              setFinalStep(null);
-              setQuery("");
-              setDepartment("");
-              setSelectedIds([]);
-            }}
-          >
-            Current step: {currentStepInfo.label}
-          </Button>
-        )}
-        {(
-          [
-            ["certificates", "Reporting & documents"],
-            ["fees", "Fee & registration number"],
-          ] as const
-        ).map(([id, label]) => (
-          <Button
-            key={id}
-            type="button"
-            size="sm"
-            variant={step === id ? "default" : "outline"}
-            aria-pressed={step === id}
-            data-readonly-allow
-            onClick={() => {
-              setFinalStep(
-                stepStaysOpen(progress.current) && id === progress.current ? null : id,
-              );
-              setQuery("");
-              setDepartment("");
-              setSelectedIds([]);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      {lastStages ? (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Open stages">
+          {(
+            [
+              ["certificates", "Reporting & documents"],
+              ["fees", "Waiting list & finish"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              size="sm"
+              variant={step === id ? "default" : "outline"}
+              aria-pressed={step === id}
+              data-readonly-allow
+              onClick={() => {
+                setFinalStep(
+                  stepStaysOpen(progress.current) && id === progress.current ? null : id,
+                );
+                setQuery("");
+                setDepartment("");
+                setSelectedIds([]);
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
         <header className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-primary to-purple-deep px-5 py-4 text-primary-foreground">
@@ -3325,10 +3663,30 @@ export function AdmissionDesk({
               ]}
               shown={visible.length}
               total={stepRows.length}
-              filename={`selection-${step}.csv`}
-              title={`${stepInfo.title}${sessionName ? ` · ${sessionName}` : ""}`}
-              headers={exportHeaders}
-              rows={exportRows}
+              filename={
+                step === "fees"
+                  ? "admitted-scholars-for-coe.csv"
+                  : step === "selection"
+                    ? "merit-list.csv"
+                    : `selection-${step}.csv`
+              }
+              title={
+                step === "fees"
+                  ? `Admitted scholars · for the Controller of Examinations${sessionName ? ` · ${sessionName}` : ""}`
+                  : step === "selection"
+                    ? `Merit list${sessionName ? ` · ${sessionName}` : ""}`
+                    : `${stepInfo.title}${sessionName ? ` · ${sessionName}` : ""}`
+              }
+              headers={
+                step === "fees"
+                  ? coeHeaders
+                  : step === "selection"
+                    ? meritHeaders
+                    : exportHeaders
+              }
+              rows={
+                step === "fees" ? coeRows : step === "selection" ? meritRows : exportRows
+              }
             />
           ) : null}
           {body}
@@ -3391,40 +3749,83 @@ export function AdmissionDesk({
 
       {confirmClose ? (
         <FormDialog
-          title="Close admission session"
-          submitLabel="Close session"
+          title="Finish selection"
+          submitLabel="Finish selection"
           busy={busy}
           onClose={() => setConfirmClose(false)}
           onSubmit={(event) => {
             event.preventDefault();
-            setBusy(true);
-            void closeAdmissionSession(phdApplications)
-              .then((result) => {
-                if (!result.ok) {
-                  setNotice(result.message);
-                  return;
-                }
-                setNotice(
-                  `${sessionName || "The"} admission is closed. ${result.archived} application(s) moved to the admission archive. The next session starts at Scrutiny.`,
-                );
-              })
-              .finally(() => {
-                setBusy(false);
-                setConfirmClose(false);
-              });
+            void finishSelection();
           }}
         >
           <ul className="list-disc space-y-1 pl-5 text-sm">
             <li>
+              {cases.filter((row) => row.selected).length} admitted scholar(s) start in
+              semester 1 of the ERP, linked to their guides.
+            </li>
+            <li>
               Unselected, wait-listed and not-reported candidates move to the admission
               archive.
             </li>
-            <li>
-              Admitted scholars leave this desk and continue under the scholar menus.
-            </li>
             <li>The desk restarts at Step 1 for the next admission session.</li>
+            <li>You can then open the application window for the next session.</li>
           </ul>
+          {subjectsWithOpenOffers().length > 0 ? (
+            <p role="alert" className="mt-3 text-sm font-medium text-secondary">
+              A seat is still vacant, with candidates waiting, in:{" "}
+              {subjectsWithOpenOffers().join("; ")}. Offer the seats first, or these
+              candidates are archived with the rest.
+            </p>
+          ) : null}
         </FormDialog>
+      ) : null}
+
+      {discarding ? (
+        <FormDialog
+          title="Discard this session"
+          submitLabel="Discard everything"
+          busy={busy}
+          onClose={() => {
+            setDiscarding(false);
+            setDiscardText("");
+          }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (discardText.trim().toUpperCase() !== "DISCARD") return;
+            void discardSession();
+          }}
+        >
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            <li>
+              {cases.length} application(s) of {sessionName || "this session"} are deleted.
+            </li>
+            <li>
+              {cases.filter((row) => row.verification === "Approved").length} admitted
+              scholar(s) are removed from the ERP with their sign-ins, guides and course
+              records.
+            </li>
+            <li>The selection file and its progress are cleared. This cannot be undone.</li>
+          </ul>
+          <label className="mt-3 grid gap-1 text-sm">
+            <span className="font-semibold text-primary">Type DISCARD to confirm</span>
+            <Input
+              value={discardText}
+              onChange={(event) => setDiscardText(event.target.value)}
+              aria-label="Type DISCARD to confirm"
+            />
+          </label>
+        </FormDialog>
+      ) : null}
+
+      {nextWindow ? (
+        <PhdWindowDialog
+          settings={nextWindow}
+          onClose={() => setNextWindow(null)}
+          onSaved={(message) => {
+            setNotice(message);
+            setNextWindow(null);
+          }}
+        />
       ) : null}
 
       {rejecting ? (
@@ -3463,8 +3864,14 @@ export function AdmissionDesk({
                 },
               },
               `Approval by the ${values.body} recorded. The letters can be issued.`,
-            ).then((ok) => {
-              if (ok) setRecordingApproval(false);
+            ).then(async (ok) => {
+              if (!ok) return;
+              setRecordingApproval(false);
+              // Supervisors now see the scholars allotted to them.
+              const problems = await syncPortalRecords(
+                cases.filter((row) => row.selected && row.guideName),
+              );
+              if (problems.length > 0) setNotice(problems[0]);
             });
           }}
         />
@@ -3511,6 +3918,45 @@ export function AdmissionDesk({
           }}
         />
       ) : null}
+      {seatingOpen ? (
+        <SeatingDialog
+          cases={cases}
+          campuses={progress.entrance.campuses}
+          busy={busy}
+          onClose={() => setSeatingOpen(false)}
+          onEditVenue={(campusId) => {
+            const campus = progress.entrance.campuses.find(
+              (item) => item.id === campusId,
+            );
+            if (!campus) return;
+            setSeatingOpen(false);
+            setCampusDialog({ mode: "edit", campus });
+          }}
+          onApply={(plan) => {
+            const byId = new Map(
+              plan.assignments.map((item) => [item.applicationId, item]),
+            );
+            const campusIds = new Set(progress.entrance.campuses.map((item) => item.id));
+            void applyToRows(
+              cases.filter(
+                (row) =>
+                  row.shortlisted && row.hallTicketNo && campusIds.has(row.examCampusId),
+              ),
+              (row) => {
+                const seat = byId.get(row.applicationId);
+                return {
+                  ...row,
+                  examRoom: seat?.room ?? "",
+                  examSeat: seat ? String(seat.seat) : "",
+                };
+              },
+              undefined,
+              "Seating arranged",
+            ).then(() => setSeatingOpen(false));
+          }}
+        />
+      ) : null}
+
       {campusDialog ? (
         <CampusDialog
           state={campusDialog}
@@ -3631,17 +4077,17 @@ export function AdmissionDesk({
                 variant="maroon"
                 disabled={progress.completed.length === 0 || busy}
                 onClick={() => {
+                  const admittedNow = cases.filter(
+                    (row) => row.verification === "Approved",
+                  ).length;
                   if (
                     !window.confirm(
-                      "Reopen the previous step? The current step is hidden until it is completed again.",
+                      `Reopen ${reopenLabel}? Everything done in this step (approvals, marks, numbers) is deleted and the step must be done again in full.${admittedNow > 0 ? ` ${admittedNow} scholar(s) already admitted in this session are also removed from the ERP (sign-in, guide and course records).` : ""}`,
                     )
                   ) {
                     return;
                   }
-                  void persistProgress(
-                    clearSelectionProgress(progress, 1),
-                    "The previous step is open again for correction.",
-                  ).then((ok) => {
+                  void reopenLastStep().then((ok) => {
                     if (ok) setManageOpen(false);
                   });
                 }}
@@ -3649,6 +4095,32 @@ export function AdmissionDesk({
                 Reopen
               </Button>
             </div>
+            {isAdmin ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-secondary/30 p-3">
+                <div>
+                  <p className="font-semibold text-secondary">
+                    Discard this session (sample testing)
+                  </p>
+                  <p className="text-muted-foreground">
+                    Deletes every application of the running session, the selection file
+                    and the scholars admitted from it, with their sign-ins, guides and
+                    course records.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="maroon"
+                  disabled={busy || cases.length === 0}
+                  onClick={() => {
+                    setManageOpen(false);
+                    setDiscarding(true);
+                  }}
+                >
+                  Discard
+                </Button>
+              </div>
+            ) : null}
           </div>
         </DeskModal>
       ) : null}
@@ -3658,7 +4130,12 @@ export function AdmissionDesk({
           title="Provisional admission letter wording"
           onClose={() => setEditingLetter(false)}
           onSubmit={form.handleSubmit((values) => {
-            void commit(cases, values, progress, isAdmin && !canWrite).then((ok) => {
+            void commit(
+              cases,
+              { ...officeFile.letter, ...values },
+              progress,
+              isAdmin && !canWrite,
+            ).then((ok) => {
               if (ok) {
                 setNotice("The provisional letter wording has been saved.");
                 setEditingLetter(false);
@@ -4280,6 +4757,13 @@ function CampusDialog({
   const editing = state.mode === "edit" ? state.campus : null;
   const [name, setName] = useState(editing?.name ?? "");
   const [address, setAddress] = useState(editing?.address ?? "");
+  const [rooms, setRooms] = useState<{ id: string; name: string; capacity: string }[]>(
+    editing?.rooms.map((room) => ({
+      id: room.id,
+      name: room.name,
+      capacity: String(room.capacity),
+    })) ?? [],
+  );
   const [campusId, setCampusId] = useState(campuses[0]?.id ?? "");
   const [room, setRoom] = useState("");
   const [error, setError] = useState("");
@@ -4335,8 +4819,8 @@ function CampusDialog({
 
   return (
     <FormDialog
-      title={editing ? `Edit ${editing.name}` : "Add campus"}
-      submitLabel="Save campus"
+      title={editing ? `Edit ${editing.name}` : "Add venue"}
+      submitLabel="Save venue"
       busy={busy}
       onClose={onClose}
       onSubmit={(event) => {
@@ -4354,16 +4838,37 @@ function CampusDialog({
           setError("A campus with this name is already listed.");
           return;
         }
+        const filled = rooms.filter((room) => room.name.trim() || room.capacity.trim());
+        const parsed: ExamRoom[] = [];
+        for (const room of filled) {
+          const capacity = Number(room.capacity);
+          if (
+            !room.name.trim() ||
+            !Number.isInteger(capacity) ||
+            capacity < 1 ||
+            capacity > 500
+          ) {
+            setError("Give every room a name and the number of seats (1 to 500).");
+            return;
+          }
+          parsed.push({ id: room.id, name: room.name.trim(), capacity });
+        }
+        const names = parsed.map((room) => room.name.toLowerCase());
+        if (new Set(names).size !== names.length) {
+          setError("Each room name can be listed once.");
+          return;
+        }
         onSaveCampus({
           id: editing?.id ?? `campus-${Date.now().toString(36)}`,
           name: name.trim(),
           address: address.trim(),
+          rooms: parsed,
         });
       }}
     >
       <div className="space-y-3 text-sm">
         <label className="grid gap-1">
-          <span className="font-semibold text-primary">Campus name</span>
+          <span className="font-semibold text-primary">Venue</span>
           <Input
             value={name}
             placeholder="e.g. St. Joseph University, Main Campus"
@@ -4384,7 +4889,195 @@ function CampusDialog({
             className="w-full rounded-xl border border-input bg-white px-3 py-2 text-sm"
           />
         </label>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-primary">
+              Rooms (classes) and seats per room
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setRooms((current) => [
+                  ...current,
+                  {
+                    id: `room-${Date.now().toString(36)}-${current.length}`,
+                    name: "",
+                    capacity: "",
+                  },
+                ])
+              }
+            >
+              Add room
+            </Button>
+          </div>
+          {rooms.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Add the rooms used for the test and how many candidates each seats. The
+              seating arrangement fills them in this order.
+            </p>
+          ) : (
+            rooms.map((room, index) => (
+              <div key={room.id} className="grid grid-cols-[1fr_6rem_auto] gap-2">
+                <Input
+                  value={room.name}
+                  placeholder="Room name, e.g. Room 104"
+                  aria-label={`Room ${index + 1} name`}
+                  onChange={(event) =>
+                    setRooms((current) =>
+                      current.map((item) =>
+                        item.id === room.id
+                          ? { ...item, name: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+                <Input
+                  value={room.capacity}
+                  inputMode="numeric"
+                  placeholder="Seats"
+                  aria-label={`Seats in room ${index + 1}`}
+                  onChange={(event) =>
+                    setRooms((current) =>
+                      current.map((item) =>
+                        item.id === room.id
+                          ? {
+                              ...item,
+                              capacity: event.target.value.replace(/\D/g, "").slice(0, 3),
+                            }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setRooms((current) => current.filter((item) => item.id !== room.id))
+                  }
+                >
+                  Remove
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
         {error ? <p className="text-secondary">{error}</p> : null}
+      </div>
+    </FormDialog>
+  );
+}
+
+function SeatingDialog({
+  cases,
+  campuses,
+  busy,
+  onClose,
+  onEditVenue,
+  onApply,
+}: {
+  cases: readonly AdmissionCase[];
+  campuses: readonly ExamCampus[];
+  busy: boolean;
+  onClose: () => void;
+  onEditVenue: (campusId: string) => void;
+  onApply: (plan: ReturnType<typeof arrangeSeating>) => void;
+}) {
+  const [mix, setMix] = useState(true);
+  const plan = arrangeSeating(cases, campuses, { mix });
+  return (
+    <FormDialog
+      title="Seating arrangement"
+      submitLabel="Apply seating"
+      busy={busy}
+      size="lg"
+      onClose={onClose}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (plan.assignments.length === 0) return;
+        onApply(plan);
+      }}
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          Candidates with hall tickets are taken in hall ticket order and fill the rooms
+          of their venue in the order listed, each room up to its seats. Seats are
+          numbered inside each room. Rooms and seats are set under Examination centres
+          (Edit).
+        </p>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={mix}
+            onChange={(event) => setMix(event.target.checked)}
+          />
+          Seat candidates of different subjects side by side (keeps same-subject
+          candidates apart)
+        </label>
+        {plan.unseated.map((item) => (
+          <div
+            key={item.campusName}
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-secondary/40 bg-secondary/10 px-3 py-2"
+          >
+            <p className="font-medium text-secondary">
+              {item.campusName}: {item.count} candidate(s) have no seat. {item.reason}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="gold"
+              onClick={() =>
+                onEditVenue(campuses.find((c) => c.name === item.campusName)?.id ?? "")
+              }
+            >
+              Add rooms and seats
+            </Button>
+          </div>
+        ))}
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full min-w-[34rem] border-collapse text-left">
+            <thead className="bg-muted text-primary">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Venue</th>
+                <th className="px-3 py-2 font-semibold">Room</th>
+                <th className="px-3 py-2 font-semibold">Seated / seats</th>
+                <th className="px-3 py-2 font-semibold">Hall tickets</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.rooms.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-muted-foreground" colSpan={4}>
+                    Nobody can be seated yet: list the rooms for each venue and generate
+                    the hall tickets.
+                  </td>
+                </tr>
+              ) : (
+                plan.rooms.map((room) => (
+                  <tr
+                    key={`${room.campusId}-${room.room}`}
+                    className="border-t border-border"
+                  >
+                    <td className="px-3 py-2">{room.campusName}</td>
+                    <td className="px-3 py-2 font-medium text-primary">{room.room}</td>
+                    <td className="px-3 py-2">
+                      {room.seated} / {room.capacity}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {room.firstTicket} to {room.lastTicket}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </FormDialog>
   );

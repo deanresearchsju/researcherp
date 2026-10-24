@@ -38,6 +38,7 @@ import {
 } from "@/lib/doctoral";
 import { downloadLetter, type LetterSigner } from "@/lib/letter-pdf";
 import {
+  addressLinesOf,
   completionDraft,
   confirmationDraft,
   provisionalDraft,
@@ -113,7 +114,19 @@ function rowsFor(
       detail: `${row.applicationNo} · ${row.department}`,
       approvedOn: row.letterIssuedOn,
       letter: letterFor(doctoral, kind, row.applicationId),
-      draft: () => provisionalDraft(row, admission.letter, index + 1, today),
+      draft: () =>
+        provisionalDraft(
+          row,
+          admission.letter,
+          index + 1,
+          today,
+          addressLinesOf(
+            (currentApplications() ?? []).find(
+              (item) =>
+                item.id === row.applicationId || item.applicationNo === row.applicationNo,
+            )?.payload,
+          ),
+        ),
     }));
   }
   if (kind === "confirmation") {

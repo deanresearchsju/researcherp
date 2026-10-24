@@ -48,8 +48,20 @@ export function approvedDocuments(
         scholarName: report.scholarName,
         scholarId: report.scholarIdentifier,
         reference: report.id.slice(-8).toUpperCase(),
-        approvedOn: report.decidedOn,
+        approvedOn: report.decidedAt || report.decidedOn,
         approvedBy: report.decidedBy || "Office of the Dean",
+        ...(report.supervisorStatus === "Recommended" && !report.officeEntry
+          ? {
+              supervisor: {
+                by: report.supervisorName,
+                at: report.supervisorAt || report.supervisorOn,
+              },
+            }
+          : {}),
+        dean: {
+          by: report.decidedBy || "Office of the Dean",
+          at: report.decidedAt || report.decidedOn,
+        },
         details: report.meetingOn
           ? [{ label: "Meeting date", value: report.meetingOn }]
           : [],
@@ -70,9 +82,9 @@ export function approvedDocuments(
               ...(report.supervisorStatus === "Recommended"
                 ? [
                     {
-                      label: "Recommended by the guide",
+                      label: "Approved by the Supervisor",
                       by: report.supervisorName,
-                      on: report.supervisorOn,
+                      on: report.supervisorAt || report.supervisorOn,
                       note: report.supervisorRemarks,
                     },
                   ]
@@ -80,7 +92,7 @@ export function approvedDocuments(
               {
                 label: "Approved by the Dean",
                 by: report.decidedBy,
-                on: report.decidedOn,
+                on: report.decidedAt || report.decidedOn,
                 note: report.minutes,
               },
             ],
@@ -105,18 +117,40 @@ export function approvedDocuments(
         scholarName: synopsis.scholarName,
         scholarId: synopsis.scholarIdentifier,
         reference: synopsis.id.slice(-8).toUpperCase(),
-        approvedOn: synopsis.decidedOn,
-        approvedBy: "Office of the Dean",
+        approvedOn: synopsis.decidedAt || synopsis.decidedOn,
+        approvedBy: synopsis.decidedBy || "Office of the Dean",
+        ...(synopsis.supervisorStatus === "Recommended"
+          ? {
+              supervisor: {
+                by: synopsis.supervisorName,
+                at: synopsis.supervisorAt || synopsis.supervisorOn,
+              },
+            }
+          : {}),
+        dean: {
+          by: synopsis.decidedBy || "Office of the Dean",
+          at: synopsis.decidedAt || synopsis.decidedOn,
+        },
         steps: [
           {
             label: "Submitted by the scholar",
             by: synopsis.scholarName,
             on: synopsis.createdAt,
           },
+          ...(synopsis.supervisorStatus === "Recommended"
+            ? [
+                {
+                  label: "Approved by the Supervisor",
+                  by: synopsis.supervisorName,
+                  on: synopsis.supervisorAt || synopsis.supervisorOn,
+                  note: synopsis.supervisorRemarks,
+                },
+              ]
+            : []),
           {
-            label: "Accepted by the Dean",
-            by: "Office of the Dean",
-            on: synopsis.decidedOn,
+            label: "Approved by the Dean",
+            by: synopsis.decidedBy || "Office of the Dean",
+            on: synopsis.decidedAt || synopsis.decidedOn,
             note: synopsis.remarks,
           },
         ],
@@ -163,8 +197,20 @@ export function approvedDocuments(
         scholarName: thesis.scholarName,
         scholarId: thesis.scholarIdentifier,
         reference: thesis.id.slice(-8).toUpperCase(),
-        approvedOn: thesis.decidedOn,
-        approvedBy: "Office of the Dean",
+        approvedOn: thesis.decidedAt || thesis.decidedOn,
+        approvedBy: thesis.decidedBy || "Office of the Dean",
+        ...(thesis.supervisorStatus === "Recommended"
+          ? {
+              supervisor: {
+                by: thesis.supervisorName,
+                at: thesis.supervisorAt || thesis.supervisorOn,
+              },
+            }
+          : {}),
+        dean: {
+          by: thesis.decidedBy || "Office of the Dean",
+          at: thesis.decidedAt || thesis.decidedOn,
+        },
         details: [
           { label: "Title", value: thesis.title },
           { label: "Domain", value: thesis.domain },
@@ -193,8 +239,21 @@ export function approvedDocuments(
         scholarName: record.scholarName,
         scholarId: record.scholarIdentifier,
         reference: record.id.slice(-8).toUpperCase(),
-        approvedOn: record.payload.approvedOn || record.createdAt,
+        approvedOn:
+          record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
         approvedBy: record.payload.approvedBy || "Research office",
+        ...(record.payload.supervisorOn
+          ? {
+              supervisor: {
+                by: record.payload.supervisorBy || record.supervisorName,
+                at: record.payload.supervisorAt || record.payload.supervisorOn,
+              },
+            }
+          : {}),
+        dean: {
+          by: record.payload.approvedBy || "Research office",
+          at: record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
+        },
         details:
           record.kind === "payment"
             ? [
@@ -212,16 +271,16 @@ export function approvedDocuments(
           ...(record.payload.supervisorOn
             ? [
                 {
-                  label: "Recommended by the guide",
+                  label: "Approved by the Supervisor",
                   by: record.payload.supervisorBy ?? "",
-                  on: record.payload.supervisorOn,
+                  on: record.payload.supervisorAt || record.payload.supervisorOn,
                 },
               ]
             : []),
           {
-            label: "Approved by the research office",
+            label: "Approved by the Dean",
             by: record.payload.approvedBy || "Research office",
-            on: record.payload.approvedOn || record.createdAt,
+            on: record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
             note: record.payload.remarks,
           },
         ],

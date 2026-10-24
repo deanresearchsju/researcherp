@@ -312,15 +312,35 @@ function payloadPhdSession(payload: Json) {
   return { session, year };
 }
 
+/**
+ * The session whose selection is running. Closing the application window, or opening the next
+ * window while this selection is still on, must not cut candidates off from their status,
+ * hall ticket and letters: they stay until the session is closed and archived.
+ */
+async function runningSelection() {
+  try {
+    const admission = await ensureAdmission();
+    const entrance = admission.progress.entrance;
+    const year = entrance.monthYear.slice(0, 4);
+    return entrance.session && year ? { session: entrance.session, year } : null;
+  } catch {
+    return null;
+  }
+}
+
 function isLivePhdApplication(
   applicationNo: string,
   payload: Json,
   archived: ReadonlySet<string>,
   id = "",
+  running: { session: string; year: string } | null = null,
 ) {
   if (archived.has(applicationNo) || (id && archived.has(id))) return false;
   const stored = payloadPhdSession(payload);
   if (!stored) return true;
+  if (running && stored.session === running.session && stored.year === running.year) {
+    return true;
+  }
   return matchesOpenPhdSession(stored.session, stored.year);
 }
 
@@ -333,7 +353,16 @@ export async function trackPhdApplication(
   const remote = await lookupPhdApplication(applicationNo, dateOfBirth);
   if (!remote) return { kind: "missing" };
   const archived = await livePhdKeys();
-  if (!isLivePhdApplication(remote.applicationNo, remote.payload, archived, remote.id)) {
+  const running = await runningSelection();
+  if (
+    !isLivePhdApplication(
+      remote.applicationNo,
+      remote.payload,
+      archived,
+      remote.id,
+      running,
+    )
+  ) {
     return { kind: "archived" };
   }
   return {
@@ -356,6 +385,7 @@ export async function findPhdByMobile(
 > {
   const supabase = createSupabase();
   const archived = await livePhdKeys();
+  const running = await runningSelection();
   if (supabase) {
     const submitted = await supabase
       .from("phd_applications")
@@ -364,7 +394,7 @@ export async function findPhdByMobile(
       .order("created_at", { ascending: false })
       .limit(20);
     const row = (submitted.data ?? []).find((item) =>
-      isLivePhdApplication(item.application_no, item.payload, archived, item.id),
+      isLivePhdApplication(item.application_no, item.payload, archived, item.id, running),
     );
     if (!submitted.error && row) {
       return {

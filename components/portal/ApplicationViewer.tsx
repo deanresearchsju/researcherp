@@ -36,6 +36,8 @@ import { useCanMenuAction } from "@/lib/use-menu-action";
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database";
+import { isFileValue } from "@/lib/file-ref";
+import { storeFile } from "@/lib/file-store";
 
 export type ReviewAction = "Accepted" | "Approved" | "Rejected";
 
@@ -59,14 +61,14 @@ function fileFromUnknown(
   value: unknown,
 ): { fileName: string; fileData: string | null } | null {
   if (typeof value === "string") {
-    if (value.startsWith("data:")) return { fileName: "file", fileData: value };
+    if (isFileValue(value)) return { fileName: "file", fileData: value };
     return value.trim() ? { fileName: value.trim(), fileData: null } : null;
   }
   const row = asRecord(value);
   if (!row) return null;
   const fileName = textOf(row.fileName) || textOf(row.name);
   const fileData = textOf(row.fileData) || textOf(row.data);
-  const data = fileData.startsWith("data:") ? fileData : null;
+  const data = isFileValue(fileData) ? fileData : null;
   if (!fileName && !data) return null;
   return { fileName: fileName || "file", fileData: data };
 }
@@ -366,7 +368,10 @@ export function ApplicationViewer({
     setUploadNotice(null);
     try {
       const prepared = image ? await compressImage(file, 300 * 1024) : file;
-      const fileData = await fileToDataUrl(prepared);
+      // Photographs and signatures stay with the application; documents go to storage.
+      const fileData = image
+        ? await fileToDataUrl(prepared)
+        : await storeFile(prepared, "applications");
       const saved = await attachApplicationFile(
         application.kind,
         application.id,

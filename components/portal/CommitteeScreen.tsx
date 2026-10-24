@@ -25,7 +25,6 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dcCopy, dcOfficeEntryBatchIds } from "@/data/doctoral";
-import { researchRegister } from "@/data/research-register";
 import { approvedDocuments } from "@/lib/approved-documents";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
@@ -43,17 +42,20 @@ import {
   type CommitteeReport,
   type DoctoralState,
 } from "@/lib/doctoral";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import {
   currentOffice,
   sameId,
   scholarsStillGuidedBy,
   subscribeOffice,
 } from "@/lib/office";
-import { batchOf, isPassedOut, scholarBySignIn, scholarSignInId } from "@/lib/register";
+import { batchOf, isPassedOut, scholarBySignIn, scholarSignInId, registerScholarsInOrder } from "@/lib/register";
 import { loadRecordFile } from "@/lib/scholar-records";
 import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { storeFile } from "@/lib/file-store";
+import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
+import { committeeSummary } from "@/lib/approval-flow";
 
 /** The first committee fixes the research title and the second finalises it. */
 function carriesTitle(kind: CommitteeKind) {
@@ -68,14 +70,14 @@ export function isOfficeEntryScholar(identifier: string) {
 
 function stageOf(report: CommitteeReport) {
   if (report.status === "Approved") return report.officeEntry ? "Completed" : "Approved";
-  if (report.status === "Rejected") return "Returned";
+  if (report.status === "Rejected") return "Rejected";
   return report.supervisorStatus === "Recommended" ? "With the Dean" : "With the guide";
 }
 
 function stageTone(stage: string) {
   return stage === "Approved" || stage === "Completed"
     ? "gold"
-    : stage === "Returned"
+    : stage === "Rejected"
       ? "maroon"
       : "purple";
 }
@@ -129,7 +131,7 @@ function ScholarCommittee({
       );
       return;
     }
-    const data = await fileToDataUrl(file.file).catch(() => "");
+    const data = await storeFile(file.file, "documents").catch(() => "");
     const saved = await saveCommittee({
       kind,
       scholarIdentifier: session.identifier,
@@ -166,7 +168,7 @@ function ScholarCommittee({
                 {mine.fileName ? ` · ${mine.fileName}` : ""}
               </p>
             </div>
-            <Badge variant={stageTone(stageOf(mine))}>{stageOf(mine)}</Badge>
+            <ApprovalBadge summary={committeeSummary(mine)} showDetail />
           </div>
           {carriesTitle(kind) && mine.researchTitle ? (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
@@ -176,24 +178,7 @@ function ScholarCommittee({
               <p className="mt-0.5 font-semibold text-primary">{mine.researchTitle}</p>
             </div>
           ) : null}
-          <ol className="grid gap-2 text-sm sm:grid-cols-3">
-            {(mine.officeEntry
-              ? [["Recorded by the research office", mine.decidedOn]]
-              : [
-                  ["Submitted", mine.createdAt.slice(0, 10)],
-                  ["Guide recommended", mine.supervisorOn],
-                  ["Dean approved", mine.status === "Approved" ? mine.decidedOn : ""],
-                ]
-            ).map(([label, on]) => (
-              <li
-                key={label}
-                className={`rounded-lg border px-3 py-2 ${on ? "border-accent/50 bg-accent/10" : "border-border text-muted-foreground"}`}
-              >
-                <p className="font-semibold">{label}</p>
-                <p className="text-xs">{on ? formatIsoDate(on) : "Pending"}</p>
-              </li>
-            ))}
-          </ol>
+          <ApprovalTrail summary={committeeSummary(mine)} />
           <div className="flex flex-wrap justify-end gap-2">
             <ViewFilesButton
               fileName={mine.fileName}
@@ -220,7 +205,7 @@ function ScholarCommittee({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5 shadow-card">
           <p className="text-sm text-muted-foreground">
             {mine?.status === "Rejected"
-              ? `Returned: ${mine.remarks}. Upload the corrected report.`
+              ? `${committeeSummary(mine).label}: ${mine.remarks}. Upload the corrected report.`
               : "Upload the committee report after the meeting."}
           </p>
           <Button
@@ -335,7 +320,7 @@ export function SupervisorCommitteeScreen() {
     setNotice(
       acting.status === "Recommended"
         ? `${acting.report.scholarName}'s report is sent to the Dean.`
-        : `${acting.report.scholarName}'s report is returned.`,
+        : `${acting.report.scholarName}'s report is rejected.`,
     );
     setActing(null);
   }
@@ -417,7 +402,7 @@ export function SupervisorCommitteeScreen() {
                                 setActing({ report, status: "Returned" });
                               }}
                             >
-                              Return
+                              Reject
                             </Button>
                           </>
                         ) : null}
@@ -432,11 +417,11 @@ export function SupervisorCommitteeScreen() {
       )}
       {acting ? (
         <FormDialog
-          title={`${acting.status === "Recommended" ? "Recommend" : "Return"} · ${acting.report.scholarName}`}
+          title={`${acting.status === "Recommended" ? "Recommend" : "Reject"} · ${acting.report.scholarName}`}
           onClose={() => setActing(null)}
           onSubmit={(event) => void submit(event)}
           submitLabel={
-            acting.status === "Recommended" ? "Send to the Dean" : "Return to scholar"
+            acting.status === "Recommended" ? "Send to the Dean" : "Reject with comments"
           }
           size="sm"
         >
@@ -505,7 +490,7 @@ function OfficeCommittee({
       textMatches(query, [item.scholarName, item.fileName, item.remarks]),
   );
 
-  const legacy = researchRegister.scholars
+  const legacy = registerScholarsInOrder()
     .filter((scholar) => dcOfficeEntryBatchIds.includes(scholar.batchId))
     .map((scholar) => {
       const identifier = scholarSignInId(scholar);
@@ -1060,7 +1045,7 @@ function OfficeCommittee({
               size="sm"
               onClick={() => void decide("Rejected")}
             >
-              Return
+              Reject
             </Button>
             <Button
               type="button"

@@ -19,7 +19,7 @@ Other scripts:
 - `npm run lint` — ESLint
 - `npm run format` — Prettier
 
-The product brief is [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md). The official forms are in `docs/forms/`.
+How the ERP works (sign-ins, admission steps, registration numbers, fee verification, thesis evaluation, emails) is in [docs/WORKFLOW.md](docs/WORKFLOW.md); keep it updated when a rule changes. The product brief is [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md). The official forms are in `docs/forms/`.
 
 ## Structure
 

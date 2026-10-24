@@ -16,7 +16,7 @@ import {
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { createSupabase } from "@/lib/supabase/client";
 import { toJson } from "@/lib/records";
-import { ensureAdmission } from "@/lib/admission";
+import { approvalState, ensureAdmission } from "@/lib/admission";
 import {
   currentRegister,
   exitFor,
@@ -769,9 +769,17 @@ export async function saveAllocation(
   );
   if (!alreadyAllotted && !scholarBySignIn(allocation.scholarIdentifier)) {
     const admission = await ensureAdmission();
+    // A guide is allotted once the provisional list is approved by the RAB / Vice Chancellor,
+    // or once the scholar's documents are verified.
+    const listApproved =
+      approvalState(
+        admission.progress,
+        admission.cases.filter((item) => !item.sessionClosed),
+      ) === "approved";
     const verified = admission.cases.some(
       (item) =>
-        item.verification === "Approved" &&
+        (item.verification === "Approved" ||
+          (listApproved && item.selected && !item.reporting)) &&
         (sameId(item.email, allocation.scholarIdentifier) ||
           sameId(item.applicationNo, allocation.scholarIdentifier)),
     );
@@ -846,7 +854,7 @@ export type RacNomination = Pick<
 /** Internal members named per nomination; the Dean selects one. */
 export const racInternalCount = 2;
 /** External panel candidates named per nomination; the Dean selects one. */
-export const racExternalCount = 3;
+export const racExternalCount = 2;
 
 function nominationProblem(proposal: RacNomination) {
   const internal = proposal.nominees.filter((item) => item.side === "internal");

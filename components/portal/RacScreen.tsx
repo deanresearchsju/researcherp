@@ -50,7 +50,6 @@ const proposalSchema = z.object({
   internal2: nomineeSchema,
   external1: nomineeSchema,
   external2: nomineeSchema,
-  external3: nomineeSchema,
   reason: z.string().trim(),
 });
 
@@ -62,7 +61,6 @@ const slots: readonly [Slot, string, RacNominee["key"], RacNominee["side"]][] = 
   ["internal2", racCopy.internalLabel(2), "internal-2", "internal"],
   ["external1", racCopy.externalLabel(1), "external-1", "external"],
   ["external2", racCopy.externalLabel(2), "external-2", "external"],
-  ["external3", racCopy.externalLabel(3), "external-3", "external"],
 ];
 
 function blankNominee(institution: string) {
@@ -83,7 +81,6 @@ function blankValues(): ProposalValues {
     internal2: blankNominee(university.name),
     external1: blankNominee(""),
     external2: blankNominee(""),
-    external3: blankNominee(""),
     reason: "",
   };
 }

@@ -4,6 +4,15 @@ import type { NextRequest } from "next/server";
 import { canOpenMenu, isOfficeRole, resolvedMenus } from "@/lib/access";
 import { decodeSessionCookie, sessionCookieName } from "@/lib/session";
 
+/** Admin, staff and the Dean may look at scholar, supervisor and profile pages; Accounts and the Vice Chancellor may not. */
+function mayViewMemberPages(role: string) {
+  return role === "admin" || role === "staff" || role === "dean";
+}
+
+function homeOf(role: string) {
+  return isOfficeRole(role as never) ? "/admin/dashboard" : `/${role}/dashboard`;
+}
+
 function loginPath(pathname: string) {
   if (pathname.startsWith("/scholar")) return "/login/scholar";
   if (pathname.startsWith("/supervisor")) return "/login/supervisor";
@@ -23,39 +32,39 @@ export async function proxy(request: NextRequest) {
   }
   if (pathname.startsWith("/admin") && !isOfficeRole(session.role)) {
     const url = request.nextUrl.clone();
-    url.pathname = `/${session.role}/dashboard`;
+    url.pathname = homeOf(session.role);
     return NextResponse.redirect(url);
   }
   if (
     pathname.startsWith("/scholar") &&
     session.role !== "scholar" &&
-    !isOfficeRole(session.role)
+    !mayViewMemberPages(session.role)
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = `/${session.role}/dashboard`;
+    url.pathname = homeOf(session.role);
     return NextResponse.redirect(url);
   }
   if (
     pathname.startsWith("/supervisor") &&
     session.role !== "supervisor" &&
-    !isOfficeRole(session.role)
+    !mayViewMemberPages(session.role)
   ) {
     const url = request.nextUrl.clone();
-    url.pathname = `/${session.role}/dashboard`;
+    url.pathname = homeOf(session.role);
     return NextResponse.redirect(url);
   }
   if (pathname.startsWith("/login/reset") && !session.mustReset) {
     const url = request.nextUrl.clone();
-    url.pathname = `/${session.role}/dashboard`;
+    url.pathname = homeOf(session.role);
     return NextResponse.redirect(url);
   }
   if (pathname.startsWith("/login/")) {
     return NextResponse.next();
   }
   if (pathname.startsWith("/admin/profile/")) {
-    if (!isOfficeRole(session.role)) {
+    if (!mayViewMemberPages(session.role)) {
       const url = request.nextUrl.clone();
-      url.pathname = `/${session.role}/dashboard`;
+      url.pathname = homeOf(session.role);
       url.search = "";
       return NextResponse.redirect(url);
     }
@@ -65,7 +74,7 @@ export async function proxy(request: NextRequest) {
     isOfficeRole(session.role) && !pathname.startsWith("/admin") ? null : session.role;
   if (menuRole && !canOpenMenu(pathname, menuRole, resolvedMenus(session))) {
     const url = request.nextUrl.clone();
-    url.pathname = `/${session.role}/dashboard`;
+    url.pathname = homeOf(session.role);
     url.search = "";
     return NextResponse.redirect(url);
   }

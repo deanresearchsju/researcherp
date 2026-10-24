@@ -66,6 +66,16 @@ export function ReviewScreen() {
     () => currentScholarRecords("title_change"),
     () => null,
   );
+  const studyMode = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("study_mode_change", onChange),
+    () => currentScholarRecords("study_mode_change"),
+    () => null,
+  );
+  const abcId = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("abc_id", onChange),
+    () => currentScholarRecords("abc_id"),
+    () => null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
 
@@ -77,7 +87,9 @@ export function ReviewScreen() {
     !change ||
     !leave ||
     !extension ||
-    !titleChange
+    !titleChange ||
+    !studyMode ||
+    !abcId
   ) {
     return <p className="text-sm text-muted-foreground">Loading requests…</p>;
   }
@@ -117,6 +129,8 @@ export function ReviewScreen() {
     ...leave.records,
     ...extension.records,
     ...titleChange.records,
+    ...studyMode.records,
+    ...abcId.records,
   ]
     .filter((record) => isOwnScholar(record.scholarIdentifier))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -227,7 +241,7 @@ export function ReviewScreen() {
                           variant="maroon"
                           onClick={() => void decide(record, "Returned")}
                         >
-                          Return
+                          Reject
                         </Button>
                       </div>
                     </div>

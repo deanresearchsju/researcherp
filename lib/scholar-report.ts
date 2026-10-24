@@ -1,4 +1,4 @@
-import { researchRegister, type ResearchScholar } from "@/data/research-register";
+import type { ResearchScholar } from "@/data/research-register";
 import { isPartTimeMode } from "@/lib/constants";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
@@ -22,7 +22,6 @@ import {
 import { feeLedger } from "@/lib/fee-ledger";
 import { racStanding, sameId, type RacProposal } from "@/lib/office";
 import {
-  batchOf,
   originalScholar,
   scholarBySignIn,
   scholarSignInId,
@@ -31,6 +30,8 @@ import {
 import { researchTitleOf } from "@/lib/research-title";
 import type { ScholarRecord } from "@/lib/scholar-records";
 import type { ScholarRow } from "@/lib/supervision";
+import { admissionCaseForIdentifier, currentAdmission } from "@/lib/admission";
+import { allBatches, batchById, intakeOfCase } from "@/lib/batches";
 
 /** University regulation: colloquia a scholar must attend during the programme. */
 export const colloquiumRule = {
@@ -223,7 +224,13 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
   const identifier = row.identifier;
   const register = scholarBySignIn(identifier);
   const enrollment = enrollmentFor(doctoral, identifier);
-  const batchId = register?.batchId || enrollment?.batchId || "";
+  const admitted = register
+    ? null
+    : admissionCaseForIdentifier(identifier, currentAdmission()?.cases ?? []);
+  const batchId =
+    register?.batchId ||
+    enrollment?.batchId ||
+    (admitted ? intakeOfCase(currentAdmission(), admitted) : "");
   const mode = studyModeOf(identifier, doctoral);
   const papers = doctoral.registrations.filter((item) =>
     sameId(item.scholarIdentifier, identifier),
@@ -251,7 +258,7 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
     name: row.name,
     registration: row.registration,
     batchId,
-    batchName: row.batchName || batchOf(batchId)?.name || ledger.batchName || "",
+    batchName: row.batchName || batchById(batchId)?.name || ledger.batchName || "",
     subject: row.subject || register?.department || enrollment?.school || "",
     mode,
     guideName: row.currentName,
@@ -347,7 +354,7 @@ export function registerMilestones(
   today: string,
 ): RegisterMilestones {
   const live = keys.filter((key) => key.trim());
-  const find = <T,>(read: (key: string) => T | null | undefined) => {
+  const find = <T>(read: (key: string) => T | null | undefined) => {
     for (const key of live) {
       const found = read(key);
       if (found) return found;
@@ -378,8 +385,7 @@ export function registerMilestones(
   const second = find((key) => latestCommittee(doctoral, "second", key));
   const confirmation = letter
     ? joined("Letter issued", letter.refNo, when(letter.issuedOn))
-    : scholar.confirmation.trim() ||
-      (second?.status === "Approved" ? "Letter due" : "");
+    : scholar.confirmation.trim() || (second?.status === "Approved" ? "Letter due" : "");
 
   // Colloquia attended: those in the register first, then each marked present in the ERP.
   const attendedOn = [
@@ -389,7 +395,9 @@ export function registerMilestones(
       .filter(
         (item) =>
           colloquiumMarked(item) &&
-          live.some((key) => item.attendance[attendanceKey("scholar", key)] === "Present"),
+          live.some(
+            (key) => item.attendance[attendanceKey("scholar", key)] === "Present",
+          ),
       )
       .sort((left, right) => left.date.localeCompare(right.date))
       .map((item) => joined(item.name, when(item.date))),
@@ -409,10 +417,19 @@ export function registerMilestones(
     colloquium: standing
       ? `${standing.attended} of ${standing.required} · ${standing.status}`
       : "",
-    synopsis: decision(find((key) => latestSynopsis(doctoral, key)), scholar.synopsis),
-    thesis: decision(find((key) => latestThesis(doctoral, key)), scholar.thesis),
+    synopsis: decision(
+      find((key) => latestSynopsis(doctoral, key)),
+      scholar.synopsis,
+    ),
+    thesis: decision(
+      find((key) => latestThesis(doctoral, key)),
+      scholar.thesis,
+    ),
     viva: viva
-      ? joined(viva.status === "Scheduled" ? "Scheduled" : viva.status, when(viva.scheduledOn))
+      ? joined(
+          viva.status === "Scheduled" ? "Scheduled" : viva.status,
+          when(viva.scheduledOn),
+        )
       : scholar.viva.trim(),
   };
 }
@@ -443,7 +460,7 @@ export function liveMilestones(scholar: ResearchScholar, doctoral = currentDocto
 }
 
 export function batchNames() {
-  return [...researchRegister.batches]
+  return [...allBatches()]
     .sort((left, right) => left.order - right.order)
     .map((batch) => batch.name);
 }

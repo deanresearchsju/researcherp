@@ -3,7 +3,8 @@ import {
   type ResearchScholar,
   type ResearchSupervisor,
 } from "@/data/research-register";
-import { adminActionBlock, officeWriteBlock, registrationWriteBlock } from "@/lib/access";
+import { adminActionBlock, officeWriteBlock } from "@/lib/access";
+import { recordAudit } from "@/lib/audit";
 import { readPreviewSession } from "@/lib/auth";
 import { storageKeys, studyModes } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
@@ -18,9 +19,13 @@ import { toJson } from "@/lib/records";
 export const registerMigrationHint =
   "Open the Supabase SQL editor for this project and run supabase/migrations/20261013230000_research_register.sql. Until then, allotted registration numbers stay in this browser.";
 
+/** A registration number is permanent: once recorded it is never changed. */
 export type RegistrationAllotment = {
   scholarId: string;
   registrationNumber: string;
+  /** The day the number was recorded ("" for numbers recorded before dates were kept). */
+  allottedOn: string;
+  allottedBy: string;
 };
 
 export type ApprovedQuota = {
@@ -123,7 +128,74 @@ export type SupervisorEdit = {
   editedBy: string;
 };
 
+/**
+ * What the public Supervisors page shows about a supervisor: a short biography, the area of
+ * research and the Vidwan profile, beside the photograph. Kept by the research office.
+ */
+export type SupervisorProfile = {
+  /** The supervisor's sign-in id (email) or supervisor ID, in lower case. */
+  key: string;
+  name: string;
+  designation: string;
+  department: string;
+  researchArea: string;
+  bio: string;
+  /** Vidwan ID, or the full address of the Vidwan profile. */
+  vidwan: string;
+  published: boolean;
+  updatedOn: string;
+  updatedBy: string;
+};
+
+export const bioWordLimit = 200;
+
+export const sheetMarks = ["Present", "Absent"] as const;
+export type SheetMark = (typeof sheetMarks)[number] | "";
+
+/** One scholar on an attendance sheet. */
+export type AttendanceEntry = {
+  /** Sign-in id (email) or application number, in lower case. */
+  key: string;
+  name: string;
+  /** Registration number, else the application number. */
+  reference: string;
+  department: string;
+  mark: SheetMark;
+};
+
+/**
+ * An attendance sheet for a programme or event taken batch-wise: the event, its date and the
+ * scholars of the batch with their attendance.
+ */
+export type AttendanceSheet = {
+  id: string;
+  event: string;
+  date: string;
+  batchId: string;
+  batchName: string;
+  venue: string;
+  entries: AttendanceEntry[];
+  createdOn: string;
+  createdBy: string;
+  updatedOn: string;
+  updatedBy: string;
+};
+
+export function wordCount(value: string) {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
+}
+
+/** The clickable address of a Vidwan profile, from the ID or a pasted address. */
+export function vidwanLink(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) return text;
+  return `https://vidwan.inflibnet.ac.in/profile/${encodeURIComponent(text)}`;
+}
+
 export type RegisterLoad = {
+  attendance: AttendanceSheet[];
+  profiles: SupervisorProfile[];
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
   standings: SupervisorStanding[];
@@ -151,6 +223,8 @@ function parseAllotments(value: unknown): RegistrationAllotment[] {
       {
         scholarId: record.scholarId,
         registrationNumber: record.registrationNumber.trim(),
+        allottedOn: typeof record.allottedOn === "string" ? record.allottedOn : "",
+        allottedBy: typeof record.allottedBy === "string" ? record.allottedBy : "",
       },
     ];
   });
@@ -267,6 +341,72 @@ function parseScholarEdits(value: unknown): ScholarEdit[] {
   });
 }
 
+function parseAttendance(value: unknown): AttendanceSheet[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const id = text(row.id);
+    if (!id) return [];
+    const entries = Array.isArray(row.entries)
+      ? row.entries.flatMap((entry): AttendanceEntry[] => {
+          if (!entry || typeof entry !== "object") return [];
+          const mark = entry as Record<string, unknown>;
+          const key = text(mark.key).toLowerCase();
+          if (!key) return [];
+          return [
+            {
+              key,
+              name: text(mark.name),
+              reference: text(mark.reference),
+              department: text(mark.department),
+              mark: mark.mark === "Present" || mark.mark === "Absent" ? mark.mark : "",
+            },
+          ];
+        })
+      : [];
+    return [
+      {
+        id,
+        event: text(row.event),
+        date: text(row.date),
+        batchId: text(row.batchId),
+        batchName: text(row.batchName),
+        venue: text(row.venue),
+        entries,
+        createdOn: text(row.createdOn),
+        createdBy: text(row.createdBy),
+        updatedOn: text(row.updatedOn),
+        updatedBy: text(row.updatedBy),
+      },
+    ];
+  });
+}
+
+function parseProfiles(value: unknown): SupervisorProfile[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const key = text(row.key).trim().toLowerCase();
+    if (!key) return [];
+    return [
+      {
+        key,
+        name: text(row.name),
+        designation: text(row.designation),
+        department: text(row.department),
+        researchArea: text(row.researchArea),
+        bio: text(row.bio),
+        vidwan: text(row.vidwan),
+        published: row.published === true,
+        updatedOn: text(row.updatedOn),
+        updatedBy: text(row.updatedBy),
+      },
+    ];
+  });
+}
+
 function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -277,7 +417,9 @@ function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
       {
         key: text(row.key),
         fields: parseFields(row.fields, supervisorEditFields),
-        ...(typeof row.onVacancyList === "boolean" ? { onVacancyList: row.onVacancyList } : {}),
+        ...(typeof row.onVacancyList === "boolean"
+          ? { onVacancyList: row.onVacancyList }
+          : {}),
         editedOn: text(row.editedOn),
         editedBy: text(row.editedBy),
       },
@@ -291,7 +433,9 @@ const originalSupervisors = researchRegister.supervisors.map((supervisor) => ({
   ...supervisor,
 }));
 
-export function supervisorEditKey(supervisor: Pick<ResearchSupervisor, "supervisorId" | "name">) {
+export function supervisorEditKey(
+  supervisor: Pick<ResearchSupervisor, "supervisorId" | "name">,
+) {
   return supervisor.supervisorId.trim() || supervisor.name.trim();
 }
 
@@ -306,7 +450,9 @@ export function applyRegisterEdits(
   const renamed: { from: string; to: string }[] = [];
   researchRegister.supervisors.forEach((supervisor, index) => {
     const original = originalSupervisors[index];
-    const edit = supervisorEdits.find((item) => sameKey(item.key, supervisorEditKey(original)));
+    const edit = supervisorEdits.find((item) =>
+      sameKey(item.key, supervisorEditKey(original)),
+    );
     Object.assign(supervisor, original, edit?.fields ?? {});
     if (edit?.onVacancyList !== undefined) supervisor.onVacancyList = edit.onVacancyList;
     if (edit?.fields.name && edit.fields.name !== original.name) {
@@ -334,6 +480,8 @@ export function applyRegisterPayload(payload: unknown) {
 }
 
 type StoredRegister = {
+  attendance: AttendanceSheet[];
+  profiles: SupervisorProfile[];
   allotments: RegistrationAllotment[];
   quotas: ApprovedQuota[];
   standings: SupervisorStanding[];
@@ -345,6 +493,8 @@ type StoredRegister = {
 };
 
 const emptyStored = (): StoredRegister => ({
+  attendance: [],
+  profiles: [],
   allotments: [],
   quotas: [],
   standings: [],
@@ -371,6 +521,8 @@ function readStored(): StoredRegister {
     }
     const record = parsed as Record<string, unknown>;
     return {
+      attendance: parseAttendance(record.attendance),
+      profiles: parseProfiles(record.profiles),
       allotments: parseAllotments(record.allotments),
       quotas: parseQuotas(record.quotas),
       standings: parseSupervisorStandings(record.standings),
@@ -414,6 +566,8 @@ export async function loadRegister(): Promise<RegisterLoad> {
   }
   const payload = payloadOf(data?.payload);
   return {
+    attendance: parseAttendance(payload?.attendance),
+    profiles: parseProfiles(payload?.profiles),
     allotments: parseAllotments(payload?.allotments),
     quotas: parseQuotas(payload?.quotas),
     standings: parseSupervisorStandings(payload?.standings),
@@ -551,6 +705,27 @@ export function registrationOf(
   );
 }
 
+/** Registration numbers in order; a scholar without one comes after those with one. */
+export function registrationCompare(left: string, right: string) {
+  const a = left.trim();
+  const b = right.trim();
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/** The register's scholars in registration-number order (application number until allotted). */
+export function registerScholarsInOrder() {
+  const allotments = currentAllotments();
+  const key = (scholar: ResearchScholar) =>
+    registrationOf(scholar, allotments) || scholar.applicationNumber;
+  return [...researchRegister.scholars].sort(
+    (left, right) =>
+      registrationCompare(key(left), key(right)) || left.name.localeCompare(right.name),
+  );
+}
+
 export function registrationIsSaved(
   scholar: ResearchScholar,
   allotments: readonly RegistrationAllotment[],
@@ -632,13 +807,16 @@ export function supervisorBySignIn(identifier: string) {
   const index = researchRegister.supervisors.findIndex(
     (supervisor, at) => matches(supervisor) || matches(originalSupervisors[at]),
   );
-  return index >= 0 ? researchRegister.supervisors[index] : supervisorForGuide(identifier);
+  return index >= 0
+    ? researchRegister.supervisors[index]
+    : supervisorForGuide(identifier);
 }
 
 /** The edit key from the supervisor as first loaded, even after the ID or name is corrected. */
 export function originalSupervisorKey(supervisor: ResearchSupervisor) {
   const original =
-    originalSupervisors.find((item) => item.serialNo === supervisor.serialNo) ?? supervisor;
+    originalSupervisors.find((item) => item.serialNo === supervisor.serialNo) ??
+    supervisor;
   return supervisorEditKey(original);
 }
 
@@ -674,7 +852,8 @@ export async function saveScholarEdit(
   const blocked = officeWriteBlock();
   if (blocked) return blocked;
   const original = originalScholar(scholarId);
-  if (!original) return { ok: false as const, message: "That scholar is not on the register." };
+  if (!original)
+    return { ok: false as const, message: "That scholar is not on the register." };
   if ((next.name ?? original.name).trim().length < 2) {
     return { ok: false as const, message: "Enter the scholar's name." };
   }
@@ -685,14 +864,20 @@ export async function saveScholarEdit(
       (item) => item.id !== scholarId && item.email.trim().toLowerCase() === email,
     )
   ) {
-    return { ok: false as const, message: "Another scholar on the register has that email." };
+    return {
+      ok: false as const,
+      message: "Another scholar on the register has that email.",
+    };
   }
   const current = memory ?? (await loadRegister());
   const fields = editedFields(original, next, scholarEditFields);
   const rest = current.scholarEdits.filter((item) => item.scholarId !== scholarId);
   const scholarEdits =
     Object.keys(fields).length > 0
-      ? [...rest, { scholarId, fields, editedOn: new Date().toISOString(), editedBy: editor() }]
+      ? [
+          ...rest,
+          { scholarId, fields, editedOn: new Date().toISOString(), editedBy: editor() },
+        ]
       : rest;
   return persistRegister({ ...current, scholarEdits });
 }
@@ -705,7 +890,9 @@ export async function saveSupervisorEdit(
 ) {
   const blocked = officeWriteBlock();
   if (blocked) return blocked;
-  const original = originalSupervisors.find((item) => sameKey(supervisorEditKey(item), key));
+  const original = originalSupervisors.find((item) =>
+    sameKey(supervisorEditKey(item), key),
+  );
   if (!original) {
     return { ok: false as const, message: "That supervisor is not on the register." };
   }
@@ -715,7 +902,8 @@ export async function saveSupervisorEdit(
   const current = memory ?? (await loadRegister());
   const fields = editedFields(original, next, supervisorEditFields);
   const rest = current.supervisorEdits.filter((item) => !sameKey(item.key, key));
-  const changed = Object.keys(fields).length > 0 || onVacancyList !== original.onVacancyList;
+  const changed =
+    Object.keys(fields).length > 0 || onVacancyList !== original.onVacancyList;
   const supervisorEdits = changed
     ? [
         ...rest,
@@ -729,6 +917,110 @@ export async function saveSupervisorEdit(
       ]
     : rest;
   return persistRegister({ ...current, supervisorEdits });
+}
+
+const emptyAttendance: AttendanceSheet[] = [];
+
+export function currentAttendance() {
+  return memory?.attendance ?? emptyAttendance;
+}
+
+/** Creates or updates an attendance sheet (the whole sheet, with its marks). */
+export async function saveAttendanceSheet(
+  sheet: Omit<AttendanceSheet, "createdOn" | "createdBy" | "updatedOn" | "updatedBy"> &
+    Partial<Pick<AttendanceSheet, "createdOn" | "createdBy">>,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  if (sheet.event.trim().length < 3) {
+    return { ok: false as const, message: "Enter the name of the programme or event." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sheet.date)) {
+    return { ok: false as const, message: "Choose the date of the event." };
+  }
+  if (!sheet.batchId) {
+    return { ok: false as const, message: "Choose the batch." };
+  }
+  const current = memory ?? (await loadRegister());
+  const today = new Date().toISOString().slice(0, 10);
+  const earlier = current.attendance.find((item) => item.id === sheet.id);
+  const saved: AttendanceSheet = {
+    ...sheet,
+    event: sheet.event.trim(),
+    venue: sheet.venue.trim(),
+    createdOn: earlier?.createdOn || sheet.createdOn || today,
+    createdBy: earlier?.createdBy || sheet.createdBy || editor(),
+    updatedOn: today,
+    updatedBy: editor(),
+  };
+  const attendance = [saved, ...current.attendance.filter((item) => item.id !== sheet.id)];
+  return persistRegister({ ...current, attendance });
+}
+
+export async function removeAttendanceSheet(id: string) {
+  const blocked = adminActionBlock();
+  if (blocked) return blocked;
+  const current = memory ?? (await loadRegister());
+  return persistRegister({
+    ...current,
+    attendance: current.attendance.filter((item) => item.id !== id),
+  });
+}
+
+const emptyProfiles: SupervisorProfile[] = [];
+
+export function currentProfiles() {
+  return memory?.profiles ?? emptyProfiles;
+}
+
+/** The research office saves a supervisor's public profile (biography, Vidwan ID, area). */
+export async function saveSupervisorProfile(
+  profile: Omit<SupervisorProfile, "updatedOn" | "updatedBy">,
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const key = profile.key.trim().toLowerCase();
+  if (!key || profile.name.trim().length < 3) {
+    return { ok: false as const, message: "Choose the supervisor." };
+  }
+  if (wordCount(profile.bio) > bioWordLimit) {
+    return {
+      ok: false as const,
+      message: `Keep the biography within ${bioWordLimit} words.`,
+    };
+  }
+  if (
+    profile.vidwan.trim() &&
+    !/^(https?:\/\/\S+|[A-Za-z0-9_-]{3,40})$/.test(profile.vidwan.trim())
+  ) {
+    return {
+      ok: false as const,
+      message: "Enter the Vidwan ID, or the full address of the Vidwan profile.",
+    };
+  }
+  const current = memory ?? (await loadRegister());
+  const profiles = [
+    {
+      ...profile,
+      key,
+      bio: profile.bio.trim(),
+      vidwan: profile.vidwan.trim(),
+      updatedOn: new Date().toISOString().slice(0, 10),
+      updatedBy: editor(),
+    },
+    ...current.profiles.filter((item) => item.key !== key),
+  ];
+  return persistRegister({ ...current, profiles });
+}
+
+export async function removeSupervisorProfile(key: string) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const current = memory ?? (await loadRegister());
+  return persistRegister({
+    ...current,
+    profiles: current.profiles.filter((item) => item.key !== key.trim().toLowerCase()),
+  });
 }
 
 export function scholarEditOf(scholarId: string) {
@@ -992,6 +1284,8 @@ export function scholarsGuidedBy(name: string, identifier: string) {
 
 async function persistRegister(next: RegisterLoad) {
   const stored: StoredRegister = {
+    attendance: next.attendance ?? [],
+    profiles: next.profiles ?? [],
     allotments: next.allotments,
     quotas: next.quotas,
     standings: next.standings ?? [],
@@ -1143,11 +1437,17 @@ export async function allotRegistration(scholarId: string, registrationNumber: s
   if (!scholar) {
     return { ok: false as const, message: "That scholar is not on the register." };
   }
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
   const current = memory ?? (await loadRegister());
   const existing = registrationOf(scholar, current.allotments).trim();
-  const blocked = registrationWriteBlock(Boolean(existing) && existing !== number);
-  if (blocked) return blocked;
   if (existing === number) return { ok: true as const };
+  if (existing) {
+    return {
+      ok: false as const,
+      message: "A registration number is permanent and cannot be changed.",
+    };
+  }
   if (numberTaken(current, scholarId, number, [])) {
     return {
       ok: false as const,
@@ -1156,9 +1456,22 @@ export async function allotRegistration(scholarId: string, registrationNumber: s
   }
   const allotments = [
     ...current.allotments.filter((item) => item.scholarId !== scholarId),
-    { scholarId, registrationNumber: number },
+    {
+      scholarId,
+      registrationNumber: number,
+      allottedOn: new Date().toISOString().slice(0, 10),
+      allottedBy: editor(),
+    },
   ];
-  return persistRegister({ ...current, allotments });
+  const saved = await persistRegister({ ...current, allotments });
+  if (saved.ok) {
+    await recordAudit({
+      action: "registration:allot",
+      subject: `scholar:${scholarId}`,
+      detail: `${scholar.applicationNumber || scholar.id} → ${number}`,
+    });
+  }
+  return saved;
 }
 
 export function scholarForRegistrationCsv(record: {
@@ -1198,8 +1511,9 @@ export async function allotRegistrations(
   if (writeBlocked) {
     return { ...writeBlocked, saved: 0, skipped: rows.length };
   }
-  const canReplace = !adminActionBlock();
   const current = memory ?? (await loadRegister());
+  const on = new Date().toISOString().slice(0, 10);
+  const by = editor();
   const extra: RegistrationAllotment[] = [];
   let saved = 0;
   let skipped = 0;
@@ -1228,10 +1542,10 @@ export async function allotRegistrations(
       skipped += 1;
       continue;
     }
-    if (existing && !canReplace) {
+    if (existing) {
       skipped += 1;
       messages.push(
-        `${scholar.applicationNumber || scholar.id}: a saved registration number can be changed only by an administrator.`,
+        `${scholar.applicationNumber || scholar.id}: the registration number is permanent and cannot be changed.`,
       );
       continue;
     }
@@ -1242,10 +1556,15 @@ export async function allotRegistrations(
       );
       continue;
     }
+    const entry = {
+      scholarId: scholar.id,
+      registrationNumber: number,
+      allottedOn: on,
+      allottedBy: by,
+    };
     const existingIndex = extra.findIndex((item) => item.scholarId === scholar.id);
-    if (existingIndex >= 0)
-      extra[existingIndex] = { scholarId: scholar.id, registrationNumber: number };
-    else extra.push({ scholarId: scholar.id, registrationNumber: number });
+    if (existingIndex >= 0) extra[existingIndex] = entry;
+    else extra.push(entry);
     saved += 1;
   }
   if (saved === 0) {
@@ -1264,6 +1583,13 @@ export async function allotRegistrations(
   ];
   const persisted = await persistRegister({ ...current, allotments });
   if (!persisted.ok) return { ...persisted, saved: 0, skipped: rows.length };
+  await recordAudit({
+    action: "registration:allot",
+    subject: "register-scholars",
+    detail: `${saved} registration number(s): ${extra
+      .map((item) => `${item.scholarId} → ${item.registrationNumber}`)
+      .join("; ")}`,
+  });
   return {
     ok: true as const,
     saved,

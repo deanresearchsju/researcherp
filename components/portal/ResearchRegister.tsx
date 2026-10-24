@@ -1,27 +1,27 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { Columns3 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import { FormDialog, PageTitle } from "@/components/portal/Desk";
+import { DeskModal, FormDialog, PageTitle } from "@/components/portal/Desk";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { ScholarRegisterEditor } from "@/components/portal/RegisterEditors";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { applicationReviewCopy } from "@/data/application-review";
-import { registrationCopy } from "@/data/registration";
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { useCanMenuAction } from "@/lib/use-menu-action";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { currentOffice, subscribeOffice } from "@/lib/office";
-import { liveMilestones } from "@/lib/scholar-report";
 import {
   matchPhdApplication,
   scholarWideDownloadRow,
@@ -36,18 +36,31 @@ import {
 } from "@/lib/records";
 import {
   allotRegistration,
-  batchOf,
   currentAllotments,
   currentQuotas,
   currentRegister,
   registerMigrationHint,
+  registrationCompare,
   registrationIsSaved,
   registrationOf,
   scholarSignInId,
   subscribeRegister,
-  supervisorForGuide,
+  type RegistrationAllotment,
 } from "@/lib/register";
+import {
+  defaultExportIds,
+  exportPresets,
+  registerColumns,
+  registerContext,
+  registerGroups,
+  tableColumnIds,
+  type RegisterContext,
+} from "@/lib/register-columns";
 import { usePreviewSession } from "@/lib/use-preview-session";
+import { currentAdmission, subscribeAdmission } from "@/lib/admission";
+import { allBatches, intakeCasesOf, isRegisterBatch } from "@/lib/batches";
+import { university } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 const allotSchema = z.object({
   registrationNumber: z
@@ -59,6 +72,8 @@ const allotSchema = z.object({
 
 type AllotValues = z.infer<typeof allotSchema>;
 
+const exportKey = "sju-register-export-columns";
+
 function blank(value: string) {
   return value.trim() || "—";
 }
@@ -69,12 +84,6 @@ function fileSlug(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return slug || "scholar";
-}
-
-function options(values: readonly string[]) {
-  return [...new Set(values.filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right))
-    .map((value) => ({ value, label: value }));
 }
 
 function scholarApplicationFile(
@@ -103,6 +112,39 @@ function scholarApplicationFile(
   };
 }
 
+const exportEvent = "sju-register-export-change";
+
+function subscribeExportIds(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(exportEvent, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(exportEvent, onChange);
+  };
+}
+
+function savedExportText() {
+  try {
+    return window.localStorage.getItem(exportKey);
+  } catch {
+    return null;
+  }
+}
+
+function parseExportIds(text: string | null) {
+  try {
+    const saved: unknown = JSON.parse(text ?? "null");
+    if (Array.isArray(saved)) {
+      const known = new Set(registerColumns.map((column) => column.id));
+      const ids = saved.filter((id): id is string => typeof id === "string" && known.has(id));
+      if (ids.length > 0) return ids;
+    }
+  } catch {
+    // Fall back to the standard name list.
+  }
+  return [...defaultExportIds];
+}
+
 export function ResearchRegister() {
   const ready = useClientReady();
   const session = usePreviewSession();
@@ -127,46 +169,118 @@ export function ResearchRegister() {
   );
   // Milestone columns are filled from each scholar's ERP records.
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  const admission = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
   const [query, setQuery] = useState("");
-  const [batchId, setBatchId] = useState("");
-  const [department, setDepartment] = useState("");
-  const [guide, setGuide] = useState("");
-  const [researchArea, setResearchArea] = useState("");
+  const [chosen, setChosen] = useState<Record<string, string>>({});
   const [allotId, setAllotId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const savedText = useSyncExternalStore(subscribeExportIds, savedExportText, () => null);
+  const exportIds = useMemo(() => parseExportIds(savedText), [savedText]);
   const [viewing, setViewing] = useState<{
     application: StoredApplication;
     personId: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const shownAllotments = ready ? allotments : [];
-  const scholarRows = researchRegister.scholars.filter(
-    (scholar) =>
-      filterMatches(batchId, scholar.batchId) &&
-      filterMatches(department, scholar.department) &&
-      filterMatches(guide, scholar.guideName) &&
-      filterMatches(
-        researchArea,
-        supervisorForGuide(scholar.guideName)?.researchArea ?? "",
+  const shownAllotments = useMemo(() => (ready ? allotments : []), [ready, allotments]);
+
+  function saveExportIds(ids: string[]) {
+    try {
+      window.localStorage.setItem(exportKey, JSON.stringify(ids));
+      window.dispatchEvent(new Event(exportEvent));
+    } catch {
+      setNotice("Your choice could not be remembered in this browser.");
+    }
+  }
+
+  // Scholars admitted through Selection whose documents are verified belong to their intake's
+  // batch, beside the scholars already on the register.
+  const everyScholar = useMemo(() => {
+    const intakeScholars: ResearchScholar[] = allBatches()
+      .filter((batch) => !isRegisterBatch(batch.id))
+      .flatMap((batch) =>
+        intakeCasesOf(admission, batch.id).map((row, index) => ({
+          id: `intake:${row.applicationNo}`,
+          serialNo: researchRegister.scholars.length + index + 1,
+          registrationNumber: row.registrationNo,
+          fileNumber: "",
+          applicationNumber: row.applicationNo,
+          name: row.name,
+          department: row.department,
+          batchId: batch.id,
+          phone: "",
+          email: row.email,
+          title: "",
+          category: row.studyMode,
+          institution: university.name,
+          guideName: row.guideName,
+          firstDc: "",
+          secondDc: "",
+          confirmation: "",
+          colloquium1: "",
+          colloquium2: "",
+          synopsis: "",
+          thesis: "",
+          viva: "",
+        })),
+      );
+    return [...researchRegister.scholars, ...intakeScholars].sort(
+      (left, right) =>
+        registrationCompare(
+          registrationOf(left, shownAllotments) || left.applicationNumber,
+          registrationOf(right, shownAllotments) || right.applicationNumber,
+        ) || left.name.localeCompare(right.name),
+    );
+  }, [admission, shownAllotments]);
+
+  const entries = useMemo(
+    () =>
+      everyScholar.map((scholar) => ({
+        scholar,
+        context: registerContext(scholar, shownAllotments, doctoral),
+      })),
+    [everyScholar, shownAllotments, doctoral],
+  );
+
+  const filterColumns = registerColumns.filter((column) => column.filterValue);
+  const filters = filterColumns.map((column) => {
+    const values = [
+      ...new Set(
+        entries.map((entry) => column.filterValue?.(entry.context) ?? "").filter(Boolean),
+      ),
+    ];
+    const ordered =
+      column.id === "batch"
+        ? allBatches()
+            .map((batch) => batch.name)
+            .filter((name) => values.includes(name))
+        : values.sort((left, right) => left.localeCompare(right));
+    return {
+      id: column.id,
+      label: column.label,
+      value: chosen[column.id] ?? "",
+      options: ordered.map((value) => ({ value, label: value })),
+      onChange: (value: string) =>
+        setChosen((current) => ({ ...current, [column.id]: value })),
+    };
+  });
+
+  const rows = entries.filter(
+    (entry) =>
+      filterColumns.every((column) =>
+        filterMatches(chosen[column.id] ?? "", column.filterValue?.(entry.context) ?? ""),
       ) &&
-      textMatches(query, [
-        scholar.name,
-        scholar.department,
-        scholar.title,
-        scholar.email,
-        scholar.guideName,
-        scholar.applicationNumber,
-        scholar.fileNumber,
-        supervisorForGuide(scholar.guideName)?.researchArea ?? "",
-        registrationOf(scholar, shownAllotments),
-      ]),
+      textMatches(
+        query,
+        registerColumns.map((column) => column.value(entry.context)),
+      ),
   );
+
   const storedApplications = applications ?? [];
-  const scholarFileRows = scholarRows.map((scholar) =>
-    scholarWideDownloadRow(scholar, storedApplications),
-  );
-  const allScholarRows = [...researchRegister.scholars]
+  const exportColumns = registerColumns.filter((column) => exportIds.includes(column.id));
+  const allScholarRows = [...everyScholar]
     .sort(
       (left, right) =>
         left.guideName.localeCompare(right.guideName) || left.serialNo - right.serialNo,
@@ -176,6 +290,11 @@ export function ResearchRegister() {
     researchRegister.scholars.find((scholar) => scholar.id === allotId) ?? null;
   const editScholar =
     researchRegister.scholars.find((scholar) => scholar.id === editId) ?? null;
+  const opened = entries.find((entry) => entry.scholar.id === openId) ?? null;
+  const canAllotRole = session?.role === "admin" || session?.role === "staff";
+  const tableColumns = tableColumnIds.map(
+    (id) => registerColumns.find((column) => column.id === id)!,
+  );
 
   async function saveViewedApplication(next: {
     applicantName: string;
@@ -206,6 +325,13 @@ export function ResearchRegister() {
     setNotice(applicationReviewCopy.saved);
   }
 
+  function toggleBatch(name: string) {
+    setChosen((current) => ({
+      ...current,
+      batch: current.batch === name ? "" : name,
+    }));
+  }
+
   return (
     <div>
       <PageTitle kicker="Administration" title="Scholar register" />
@@ -220,115 +346,50 @@ export function ResearchRegister() {
         </p>
       ) : null}
 
-      <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {researchRegister.batches.map((batch) => {
-          const count = researchRegister.scholars.filter(
-            (scholar) => scholar.batchId === batch.id,
-          ).length;
+      <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {allBatches().map((batch) => {
+          const count = entries.filter((entry) => entry.scholar.batchId === batch.id).length;
+          const on = chosen.batch === batch.name;
           return (
-            <li
-              key={batch.id}
-              className="rounded-xl border border-border bg-card p-4 shadow-card"
-            >
-              <p className="text-xs font-semibold tracking-[0.16em] text-secondary uppercase">
-                Batch {batch.order}
-              </p>
-              <h2 className="mt-1 font-semibold text-primary">{batch.name}</h2>
-              <p className="mt-2 font-sans text-3xl font-semibold text-primary tabular-nums">
-                {count}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{batch.note}</p>
+            <li key={batch.id}>
+              <button
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleBatch(batch.name)}
+                className={cn(
+                  "w-full rounded-xl border bg-card p-3 text-left shadow-card transition hover:border-primary/50",
+                  on ? "border-primary ring-2 ring-primary/20" : "border-border",
+                )}
+              >
+                <p className="text-[0.65rem] font-semibold tracking-[0.16em] text-secondary uppercase">
+                  Batch {batch.order}
+                </p>
+                <p className="mt-0.5 font-semibold text-primary">{batch.name}</p>
+                <p className="font-sans text-2xl font-semibold text-primary tabular-nums">
+                  {count}
+                </p>
+              </button>
             </li>
           );
         })}
       </ul>
 
-      {canExport ? (
-        <>
-          <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                downloadCsv(
-                  "all-scholars.csv",
-                  toCsv(
-                    scholarWideHeaders(),
-                    researchRegister.scholars.map((scholar) =>
-                      scholarWideDownloadRow(scholar, storedApplications),
-                    ),
-                  ),
-                )
-              }
-            >
-              All scholar details
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                downloadCsv(
-                  "supervisor-wise-scholars.csv",
-                  toCsv(scholarWideHeaders(), allScholarRows),
-                )
-              }
-            >
-              Supervisor-wise scholars
-            </Button>
-          </div>
-        </>
-      ) : null}
-
-      <h2 className="mt-10 font-heading text-2xl text-primary">Scholars</h2>
       <ListToolbar
         query={query}
         onQuery={setQuery}
-        filters={[
-          {
-            id: "batch",
-            label: "Batch",
-            value: batchId,
-            options: researchRegister.batches.map((batch) => ({
-              value: batch.id,
-              label: batch.name,
-            })),
-            onChange: setBatchId,
-          },
-          {
-            id: "department",
-            label: "Department",
-            value: department,
-            options: options(
-              researchRegister.scholars.map((scholar) => scholar.department),
-            ),
-            onChange: setDepartment,
-          },
-          {
-            id: "guide",
-            label: "Guide",
-            value: guide,
-            options: options(
-              researchRegister.scholars.map((scholar) => scholar.guideName),
-            ),
-            onChange: setGuide,
-          },
-          {
-            id: "area",
-            label: "Research area",
-            value: researchArea,
-            options: options(
-              researchRegister.supervisors.map((supervisor) => supervisor.researchArea),
-            ),
-            onChange: setResearchArea,
-          },
-        ]}
-        shown={scholarRows.length}
-        total={researchRegister.scholars.length}
-        filename="scholars-filtered.csv"
-        downloadLabel="Download filtered scholars"
-        headers={scholarWideHeaders()}
-        rows={scholarFileRows}
+        filters={filters}
+        shown={rows.length}
+        total={entries.length}
+        filename="scholar-register.csv"
+        title="Scholar register"
+        headers={exportColumns.map((column) => column.label)}
+        rows={rows.map((entry) => exportColumns.map((column) => column.value(entry.context)))}
+        extra={
+          <Button type="button" variant="outline" size="sm" onClick={() => setColumnsOpen(true)}>
+            <Columns3 className="size-4" aria-hidden="true" />
+            Information to export ({exportColumns.length})
+          </Button>
+        }
       />
 
       {allotScholar ? (
@@ -345,160 +406,144 @@ export function ResearchRegister() {
       ) : null}
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-        <table className="w-full min-w-[88rem] border-collapse text-left text-sm">
+        <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
           <thead className="bg-muted text-primary">
             <tr>
-              {[
-                "S. No.",
-                "Registration number",
-                "File number",
-                "Application number",
-                "Name",
-                "Department",
-                "Batch",
-                "Phone",
-                "Mail",
-                "Title",
-                "Category",
-                "Working institution",
-                "Guide",
-                "Area of research",
-                "1st DC",
-                "2nd DC",
-                "Confirmation",
-                "Colloquium 1",
-                "Colloquium 2",
-                "Colloquium attendance",
-                "Synopsis",
-                "Thesis",
-                "Viva",
-                "Action",
-              ].map((heading) => (
-                <th key={heading} className="px-3 py-3 font-semibold whitespace-nowrap">
-                  {heading}
+              {tableColumns.map((column) => (
+                <th key={column.id} className="px-3 py-3 font-semibold whitespace-nowrap">
+                  {column.label}
                 </th>
               ))}
+              <th className="px-3 py-3 font-semibold">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {scholarRows.map((scholar) => {
-              const batch = batchOf(scholar.batchId);
-              const registration = registrationOf(scholar, shownAllotments);
-              const savedNumber = registrationIsSaved(scholar, shownAllotments);
-              const canAllot = session?.role === "admin" || session?.role === "staff";
-              const milestones = doctoral ? liveMilestones(scholar, doctoral) : null;
-              return (
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-muted-foreground" colSpan={tableColumns.length + 1}>
+                  No scholar matches.
+                </td>
+              </tr>
+            ) : (
+              rows.map(({ scholar, context }) => (
                 <tr key={scholar.id} className="border-t border-border align-top">
-                  <td className="px-3 py-3">{scholar.serialNo}</td>
-                  <td className="px-3 py-3 font-medium text-primary">
-                    {registration || "To be allotted"}
-                  </td>
-                  <td className="px-3 py-3">{blank(scholar.fileNumber)}</td>
-                  <td className="px-3 py-3">{blank(scholar.applicationNumber)}</td>
-                  <td className="px-3 py-3 font-medium text-primary">{scholar.name}</td>
-                  <td className="px-3 py-3">{blank(scholar.department)}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">{batch?.name ?? "—"}</td>
-                  <td className="px-3 py-3">{blank(scholar.phone)}</td>
-                  <td className="px-3 py-3">{blank(scholar.email)}</td>
-                  <td className="px-3 py-3 min-w-64">{blank(scholar.title)}</td>
-                  <td className="px-3 py-3">{blank(scholar.category)}</td>
-                  <td className="px-3 py-3">{blank(scholar.institution)}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    {blank(scholar.guideName)}
-                  </td>
-                  <td className="px-3 py-3">
-                    {blank(supervisorForGuide(scholar.guideName)?.researchArea ?? "")}
-                  </td>
-                  {[
-                    milestones?.firstDc ?? scholar.firstDc,
-                    milestones?.secondDc ?? scholar.secondDc,
-                    milestones?.confirmation ?? scholar.confirmation,
-                    milestones?.colloquium1 ?? scholar.colloquium1,
-                    milestones?.colloquium2 ?? scholar.colloquium2,
-                    milestones?.colloquium ?? "",
-                    milestones?.synopsis ?? scholar.synopsis,
-                    milestones?.thesis ?? scholar.thesis,
-                    milestones?.viva ?? scholar.viva,
-                  ].map((value, index) => (
-                    <td key={index} className="px-3 py-3 whitespace-nowrap">
-                      {blank(value)}
-                    </td>
-                  ))}
-                  <td className="px-3 py-3">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setViewing({
-                            application: scholarApplicationFile(
-                              scholar,
-                              storedApplications,
-                            ),
-                            personId: scholarSignInId(scholar),
-                          })
-                        }
+                  {tableColumns.map((column) => {
+                    const value = column.value(context);
+                    return (
+                      <td
+                        key={column.id}
+                        className={cn(
+                          "px-3 py-3",
+                          column.id === "name" && "font-medium text-primary",
+                          column.id === "registration" && "font-mono text-xs",
+                        )}
                       >
-                        {applicationReviewCopy.view}
-                      </Button>
-                      {canExport ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            downloadCsv(
-                              `scholar-${fileSlug(scholar.name)}.csv`,
-                              toCsv(scholarWideHeaders(), [
-                                scholarWideDownloadRow(scholar, storedApplications),
-                              ]),
-                            )
-                          }
-                        >
-                          Download
-                        </Button>
-                      ) : null}
-                      {canAllot ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setNotice(null);
-                            setEditId(scholar.id);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                      ) : null}
-                      {savedNumber && session?.role === "admin" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setAllotId(scholar.id)}
-                        >
-                          {registrationCopy.edit}
-                        </Button>
-                      ) : !savedNumber && canAllot ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setAllotId(scholar.id)}
-                        >
-                          {registrationCopy.allot}
-                        </Button>
-                      ) : null}
-                    </div>
+                        {column.id === "registration" && !value ? (
+                          <span className="font-sans text-muted-foreground">To be allotted</span>
+                        ) : column.id === "stage" ? (
+                          <Badge variant={value === "Admitted" ? "outline" : "gold"}>{value}</Badge>
+                        ) : (
+                          blank(value)
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-3 text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-readonly-allow
+                      onClick={() => setOpenId(scholar.id)}
+                    >
+                      Details
+                    </Button>
                   </td>
                 </tr>
-              );
-            })}
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      {canExport ? (
+        <section className="mt-6 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="font-semibold text-primary">Full application files:</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "all-scholars.csv",
+                toCsv(
+                  scholarWideHeaders(),
+                  everyScholar.map((scholar) =>
+                    scholarWideDownloadRow(scholar, storedApplications),
+                  ),
+                ),
+              )
+            }
+          >
+            All scholar details
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              downloadCsv("supervisor-wise-scholars.csv", toCsv(scholarWideHeaders(), allScholarRows))
+            }
+          >
+            Supervisor-wise scholars
+          </Button>
+        </section>
+      ) : null}
+
+      {opened ? (
+        <DetailsDialog
+          entry={opened}
+          canExport={canExport}
+          canAllot={canAllotRole && !opened.scholar.id.startsWith("intake:")}
+          numberSaved={registrationIsSaved(opened.scholar, shownAllotments)}
+          onClose={() => setOpenId(null)}
+          onViewApplication={() => {
+            setViewing({
+              application: scholarApplicationFile(opened.scholar, storedApplications),
+              personId: scholarSignInId(opened.scholar),
+            });
+            setOpenId(null);
+          }}
+          onDownload={() =>
+            downloadCsv(
+              `scholar-${fileSlug(opened.scholar.name)}.csv`,
+              toCsv(scholarWideHeaders(), [
+                scholarWideDownloadRow(opened.scholar, storedApplications),
+              ]),
+            )
+          }
+          onEdit={() => {
+            setNotice(null);
+            setEditId(opened.scholar.id);
+            setOpenId(null);
+          }}
+          onAllot={() => {
+            setAllotId(opened.scholar.id);
+            setOpenId(null);
+          }}
+        />
+      ) : null}
+
+      {columnsOpen ? (
+        <ExportColumnsDialog
+          chosen={exportIds}
+          onChange={saveExportIds}
+          onClose={() => setColumnsOpen(false)}
+        />
+      ) : null}
+
       {editScholar ? (
         <ScholarRegisterEditor
           key={editScholar.id}
@@ -524,6 +569,146 @@ export function ResearchRegister() {
   );
 }
 
+function DetailsDialog({
+  entry,
+  canExport,
+  canAllot,
+  numberSaved,
+  onClose,
+  onViewApplication,
+  onDownload,
+  onEdit,
+  onAllot,
+}: {
+  entry: { scholar: ResearchScholar; context: RegisterContext };
+  canExport: boolean;
+  canAllot: boolean;
+  numberSaved: boolean;
+  onClose: () => void;
+  onViewApplication: () => void;
+  onDownload: () => void;
+  onEdit: () => void;
+  onAllot: () => void;
+}) {
+  return (
+    <DeskModal title={entry.scholar.name} size="lg" onClose={onClose}>
+      <div className="space-y-5 text-sm">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={onViewApplication}>
+            {applicationReviewCopy.view}
+          </Button>
+          {canExport ? (
+            <Button type="button" size="sm" variant="outline" onClick={onDownload}>
+              Download
+            </Button>
+          ) : null}
+          {canAllot ? (
+            <Button type="button" size="sm" variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
+          ) : null}
+          {canAllot && !numberSaved ? (
+            <Button type="button" size="sm" variant="outline" onClick={onAllot}>
+              Allot number
+            </Button>
+          ) : null}
+        </div>
+        {registerGroups.map((group) => (
+          <section key={group}>
+            <h3 className="text-[0.7rem] font-bold tracking-[0.16em] text-secondary uppercase">
+              {group}
+            </h3>
+            <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              {registerColumns
+                .filter((column) => column.group === group)
+                .map((column) => (
+                  <div key={column.id} className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">{column.label}</dt>
+                    <dd className="font-medium break-words text-foreground">
+                      {blank(column.value(entry.context))}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </DeskModal>
+  );
+}
+
+function ExportColumnsDialog({
+  chosen,
+  onChange,
+  onClose,
+}: {
+  chosen: string[];
+  onChange: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const toggle = (id: string) =>
+    onChange(
+      registerColumns
+        .map((column) => column.id)
+        .filter((item) => (item === id ? !chosen.includes(id) : chosen.includes(item))),
+    );
+  return (
+    <DeskModal title="Information to export" size="lg" onClose={onClose}>
+      <div className="space-y-4 text-sm">
+        <p className="text-muted-foreground">
+          Tick what each downloaded Excel and PDF list should carry. The scholars in it are the
+          ones shown after the filters, and every item marked &quot;also a filter&quot; can be
+          used as a filter. Your choice is remembered.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {exportPresets.map((preset) => (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onChange([...preset.ids])}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+        {registerGroups.map((group) => (
+          <fieldset key={group}>
+            <legend className="text-[0.7rem] font-bold tracking-[0.16em] text-secondary uppercase">
+              {group}
+            </legend>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              {registerColumns
+                .filter((column) => column.group === group)
+                .map((column) => (
+                  <label
+                    key={column.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={chosen.includes(column.id)}
+                      onChange={() => toggle(column.id)}
+                    />
+                    <span>{column.label}</span>
+                    {column.filterValue ? (
+                      <span className="ml-auto text-[0.65rem] text-muted-foreground">
+                        also a filter
+                      </span>
+                    ) : null}
+                  </label>
+                ))}
+            </div>
+          </fieldset>
+        ))}
+        <p className="text-muted-foreground">{chosen.length} item(s) chosen.</p>
+      </div>
+    </DeskModal>
+  );
+}
+
 function AllotForm({
   scholar,
   allotments,
@@ -531,7 +716,7 @@ function AllotForm({
   onCancel,
 }: {
   scholar: ResearchScholar;
-  allotments: readonly { scholarId: string; registrationNumber: string }[];
+  allotments: readonly RegistrationAllotment[];
   onDone: (message: string) => void;
   onCancel: () => void;
 }) {

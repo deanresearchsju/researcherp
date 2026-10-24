@@ -50,7 +50,7 @@ function toForm(settings: SiteSettings): SiteFormValues {
   };
 }
 
-function PhdWindowDialog({
+export function PhdWindowDialog({
   settings,
   onClose,
   onSaved,

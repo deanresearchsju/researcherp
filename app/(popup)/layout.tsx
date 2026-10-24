@@ -35,7 +35,14 @@ export default function PopupLayout({ children }: { children: React.ReactNode })
 async function OfficeOnly({ children }: { children: React.ReactNode }) {
   const jar = await cookies();
   const signedIn = await decodeSessionCookie(jar.get(sessionCookieName)?.value);
-  if (!signedIn || !isOfficeRole(signedIn.role)) {
+  if (
+    !signedIn ||
+    !isOfficeRole(signedIn.role) ||
+    signedIn.role === "accounts" ||
+    signedIn.role === "vc" ||
+    signedIn.role === "coe" ||
+    signedIn.role === "coeverify"
+  ) {
     redirect("/login/admin");
   }
   return children;

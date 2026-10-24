@@ -17,6 +17,7 @@ import {
 } from "@/lib/admission";
 import { university } from "@/lib/constants";
 import { clientToday, formatIsoDate } from "@/lib/dates";
+import { seatLabel } from "@/lib/seating";
 import type { PhdReceipt } from "@/lib/scholar-progress";
 
 export type HallTicketInput = {
@@ -225,7 +226,7 @@ function drawTicket(doc: jsPDF, input: HallTicketInput, logo: string | null) {
     ["Written test begins", clockLabel(schedule.examTime) || "—"],
     ["Marks", `Written test ${writtenMax} + Interview ${interviewMax}`],
     ["Examination centre", campus?.name || "—"],
-    ["Hall / room", row.examRoom || "As displayed at the centre"],
+    ["Hall / room", seatLabel(row) || "As displayed at the centre"],
   ];
   const cellW = innerW / 2;
   doc.setDrawColor(210, 200, 225);

@@ -1,10 +1,11 @@
 import { issueApplicationNo } from "@/lib/applications";
 import { adminActionBlock, officeWriteBlock } from "@/lib/access";
-import { fileToDataUrl } from "@/lib/files";
 import { sendMailEvent } from "@/lib/mail-client";
 import { createSupabase } from "@/lib/supabase/client";
 import { assertPhdUploads } from "@/lib/upload-guard";
 import type { Json } from "@/types/database";
+import { isFileValue } from "@/lib/file-ref";
+import { storeFile } from "@/lib/file-store";
 
 export const applicationStatuses = [
   "Acknowledgement sent",
@@ -140,7 +141,7 @@ export async function attachmentFiles(
   const stored: Record<string, { fileName: string; fileData: string }> = {};
   for (const [key, slot] of Object.entries(files)) {
     if (!slot?.file) continue;
-    const fileData = await fileToDataUrl(slot.file).catch(() => "");
+    const fileData = await storeFile(slot.file, "applications").catch(() => "");
     if (!fileData) continue;
     stored[key] = { fileName: slot.file.name, fileData };
   }
@@ -423,6 +424,14 @@ export function currentApplications() {
   return applicationMemory;
 }
 
+/** Drops deleted applications from every list on screen. */
+export function forgetApplications(ids: readonly string[]) {
+  if (!applicationMemory) return;
+  const gone = new Set(ids);
+  applicationMemory = applicationMemory.filter((item) => !gone.has(item.id));
+  notifyApplications();
+}
+
 export function subscribeApplications(onChange: () => void) {
   applicationListeners.add(onChange);
   if (!applicationStarted) {
@@ -584,7 +593,7 @@ export async function attachApplicationFile(
 ) {
   const blocked = officeWriteBlock();
   if (blocked) return { ok: false as const, message: blocked.message };
-  if (!isStoredApplication(id) || !fileData.startsWith("data:")) {
+  if (!isStoredApplication(id) || !isFileValue(fileData)) {
     return { ok: false as const, message: saveError };
   }
   const supabase = createSupabase();

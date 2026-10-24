@@ -77,7 +77,7 @@ export const selectionSteps = [
   { id: "provisional", label: "Guide", title: "Provisional list & guide allotment" },
   { id: "letter", label: "Letters", title: "Provisional admission letters" },
   { id: "certificates", label: "Reporting", title: "Reporting & document verification" },
-  { id: "fees", label: "Admission", title: "Fee payment & close admission" },
+  { id: "fees", label: "Finish", title: "Waiting list, archive & finish selection" },
 ] as const;
 
 export type SelectionStepId = (typeof selectionSteps)[number]["id"];
@@ -250,8 +250,11 @@ export const defaultLetter = {
   refPrefix: "SJU/Research/Adm/2026",
   issueDate: "10/09/2026",
   reportBy: "26 September 2026",
+  applicationFee: "500",
   fullTimeFee: "70000",
   partTimeFee: "50000",
+  synopsisFee: "0",
+  thesisFee: "0",
   accountName: "St. Joseph University Tuition Fee",
   accountNumber: "5594831736",
   bankName: "Central Bank of India",

@@ -30,6 +30,10 @@ const dashboards: Record<Role, string> = {
   admin: "/admin/dashboard",
   staff: "/admin/dashboard",
   dean: "/admin/dashboard",
+  accounts: "/admin/dashboard",
+  vc: "/admin/dashboard",
+  coe: "/admin/dashboard",
+  coeverify: "/admin/dashboard",
 };
 
 export function portalHome(role: Role) {
@@ -37,7 +41,17 @@ export function portalHome(role: Role) {
 }
 
 export function loginHref(role: Role) {
-  if (role === "admin" || role === "staff" || role === "dean") return "/login/admin";
+  if (
+    role === "admin" ||
+    role === "staff" ||
+    role === "dean" ||
+    role === "accounts" ||
+    role === "vc" ||
+    role === "coe" ||
+    role === "coeverify"
+  ) {
+    return "/login/admin";
+  }
   return `/login/${role}`;
 }
 

@@ -7,9 +7,9 @@ export const evaluatorGroups = ["indian", "foreign", "local"] as const;
 export type EvaluatorGroup = (typeof evaluatorGroups)[number];
 
 export const evaluatorGroupLabel: Record<EvaluatorGroup, string> = {
-  indian: "Indian",
+  indian: "Indian (outside Tamil Nadu)",
   foreign: "Foreign",
-  local: "Local",
+  local: "Local (within Tamil Nadu)",
 };
 
 /** Names the supervisor gives in each group. */
@@ -56,6 +56,10 @@ export type EvaluationRecord = {
   domain: string;
   nominees: Record<EvaluatorGroup, Evaluator[]>;
   nominatedOn: string;
+  /** The Dean checked the nominees (area of specialisation) and forwarded them to the Vice Chancellor. */
+  approvedBy: string;
+  approvedOn: string;
+  /** The Vice Chancellor's first, second and third choice in each group. */
   selection: Record<EvaluatorGroup, GroupPanel> | null;
   selectedBy: string;
   selectedOn: string;
@@ -65,7 +69,7 @@ export type EvaluationRecord = {
 /** What a supervisor may see: own nominations only, never the Dean's choice or invitations. */
 export type SupervisorEvaluationView = Omit<
   EvaluationRecord,
-  "selection" | "selectedBy" | "selectedOn"
+  "selection" | "selectedBy" | "selectedOn" | "approvedBy" | "approvedOn"
 > & { locked: boolean };
 
 export function scholarKeyOf(identifier: string) {
@@ -178,6 +182,8 @@ export function parseEvaluationPayload(
     domain: text(data.domain),
     nominees,
     nominatedOn: text(data.nominatedOn),
+    approvedBy: text(data.approvedBy),
+    approvedOn: text(data.approvedOn),
     selection,
     selectedBy: text(data.selectedBy),
     selectedOn: text(data.selectedOn),
@@ -191,6 +197,8 @@ export function evaluationPayload(record: EvaluationRecord) {
     domain: record.domain,
     nominees: record.nominees,
     nominatedOn: record.nominatedOn,
+    approvedBy: record.approvedBy,
+    approvedOn: record.approvedOn,
     selection: record.selection,
     selectedBy: record.selectedBy,
     selectedOn: record.selectedOn,
@@ -209,7 +217,7 @@ export function supervisorView(record: EvaluationRecord): SupervisorEvaluationVi
     nominees: record.nominees,
     nominatedOn: record.nominatedOn,
     updatedAt: record.updatedAt,
-    locked: record.selection !== null,
+    locked: record.selection !== null || Boolean(record.approvedOn),
   };
 }
 

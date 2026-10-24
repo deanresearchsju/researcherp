@@ -1,7 +1,8 @@
 import { scholarDeclaration } from "@/data/declarations";
 import { scholarDocuments } from "@/data/documents";
 import { phdSheetCopy } from "@/data/phd-application-sheet";
-import { applicationFeeInr, university } from "@/lib/constants";
+import { university } from "@/lib/constants";
+import { currentFees } from "@/lib/fee-settings";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
 import { subjectLine, type PhdReceipt } from "@/lib/scholar-progress";
@@ -307,7 +308,7 @@ async function buildPdf(receipt: PhdReceipt) {
     { label: phdSheetCopy.paymentMode, value: values.paymentMode, span: 5 },
     {
       label: phdSheetCopy.amount,
-      value: `Rs. ${formatInr(applicationFeeInr)}`,
+      value: `Rs. ${formatInr(currentFees().application)}`,
       span: 3,
     },
     { label: phdSheetCopy.transactionNo, value: values.transactionNumber, span: 5 },

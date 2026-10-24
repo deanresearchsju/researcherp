@@ -348,6 +348,12 @@ export type Database = {
         Update: { payload?: Json; updated_at?: string };
         Relationships: [];
       };
+      exam_office: {
+        Row: { id: string; payload: Json; updated_at: string };
+        Insert: { id: string; payload: Json; updated_at?: string };
+        Update: { payload?: Json; updated_at?: string };
+        Relationships: [];
+      };
       research_register: {
         Row: { id: string; payload: Json; updated_at: string };
         Insert: { id: string; payload: Json; updated_at?: string };

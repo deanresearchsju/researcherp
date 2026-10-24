@@ -32,6 +32,7 @@ import {
   loadEvaluations,
   nominateEvaluators,
   recordInvitation,
+  approveNominations,
   reopenNominations,
   selectEvaluators,
   type EvaluationLoad,
@@ -458,6 +459,95 @@ function SelectDialog({
   );
 }
 
+function ReviewDialog({
+  record,
+  onClose,
+  onSaved,
+}: {
+  record: EvaluationRecord;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    const saved = await approveNominations(record.scholarIdentifier);
+    setBusy(false);
+    if (!saved.ok) {
+      setError(saved.message);
+      return;
+    }
+    onSaved(`Nominations for ${record.scholarName} forwarded to the Vice Chancellor.`);
+  }
+
+  return (
+    <FormDialog
+      title={`Check nominees · ${record.scholarName}`}
+      onClose={onClose}
+      onSubmit={(event) => void submit(event)}
+      busy={busy}
+      submitLabel="Approve & forward to the Vice Chancellor"
+      size="lg"
+    >
+      {error ? (
+        <p role="alert" className="text-sm text-secondary">
+          {error}
+        </p>
+      ) : null}
+      <p className="text-sm">
+        <span className="font-semibold text-primary">{record.title}</span> ·{" "}
+        {record.domain}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Check that each nominee&apos;s area of specialisation fits the thesis, and that
+        there are three foreign, three Indian (outside Tamil Nadu) and three local (within
+        Tamil Nadu) nominees.
+      </p>
+      {evaluatorGroups.map((group) => (
+        <section key={group} className="space-y-2">
+          <h3 className="text-sm font-bold tracking-[0.12em] text-secondary uppercase">
+            {evaluatorGroupLabel[group]}
+          </h3>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[40rem] text-left text-sm">
+              <thead className="bg-muted text-primary">
+                <tr>
+                  <th className="px-3 py-2">Nominee</th>
+                  <th className="px-3 py-2">Institution</th>
+                  <th className="px-3 py-2">Area of specialisation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.nominees[group].map((person, index) => (
+                  <tr key={index} className="border-t border-border align-top">
+                    <td className="px-3 py-2">
+                      <p className="font-semibold text-primary">{person.name}</p>
+                      <p className="text-muted-foreground">{person.designation}</p>
+                    </td>
+                    <td className="px-3 py-2">
+                      {person.institution}
+                      {person.address ? (
+                        <p className="text-muted-foreground">{person.address}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">
+                      {person.specialization || "Not stated"}
+                      <p className="text-muted-foreground">{person.email}</p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+    </FormDialog>
+  );
+}
+
 function InvitationDialog({
   record,
   onClose,
@@ -624,6 +714,7 @@ function OfficeView() {
   const session = usePortalSession();
   const { load, refresh } = useEvaluations();
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [inviting, setInviting] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -634,11 +725,13 @@ function OfficeView() {
   if (!load.ok) return <GateBanner tone="danger">{load.message}</GateBanner>;
   const allRecords = load.role === "office" ? load.records : [];
   const stageOf = (record: EvaluationRecord) =>
-    !record.selection
-      ? "Awaiting selection"
-      : panelComplete(record)
-        ? "Panel complete"
-        : "Inviting";
+    !record.approvedOn
+      ? "Awaiting Dean's check"
+      : !record.selection
+        ? "With Vice Chancellor"
+        : panelComplete(record)
+          ? "Panel complete"
+          : "Inviting";
   const records = allRecords.filter(
     (record) =>
       filterMatches(stageFilter, stageOf(record)) &&
@@ -659,13 +752,15 @@ function OfficeView() {
       : `${record.nominees[group][index]?.name ?? ""} (${groupState(panel)})`;
   };
   const isDean = session?.role === "dean" || session?.role === "admin";
+  const isVc = session?.role === "vc" || session?.role === "admin";
   const find = (key: string | null) =>
     records.find((item) => item.scholarKey === key) ?? null;
 
   return (
     <div className="space-y-4">
       <GateBanner>
-        Confidential. Scholars and supervisors cannot see this page.
+        Confidential. Scholars cannot see this page, and supervisors see only their own
+        nominations.
       </GateBanner>
       {notice ? (
         <p role="status" className="text-sm font-medium text-secondary">
@@ -680,12 +775,15 @@ function OfficeView() {
             id: "stage",
             label: "Stage",
             value: stageFilter,
-            options: ["Awaiting selection", "Inviting", "Panel complete"].map(
-              (value) => ({
-                value,
-                label: value,
-              }),
-            ),
+            options: [
+              "Awaiting Dean's check",
+              "With Vice Chancellor",
+              "Inviting",
+              "Panel complete",
+            ].map((value) => ({
+              value,
+              label: value,
+            })),
             onChange: setStageFilter,
           },
           {
@@ -772,7 +870,17 @@ function OfficeView() {
                       if (!panel) {
                         return (
                           <td key={group} className="px-4 py-3 text-muted-foreground">
-                            Awaiting selection
+                            <p>
+                              {record.approvedOn
+                                ? "Awaiting the Vice Chancellor"
+                                : "Awaiting the Dean's check"}
+                            </p>
+                            <p className="text-xs">
+                              {record.nominees[group]
+                                .map((person) => person.name)
+                                .filter(Boolean)
+                                .join(", ")}
+                            </p>
                           </td>
                         );
                       }
@@ -790,7 +898,20 @@ function OfficeView() {
                     })}
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-end gap-2">
-                        {isDean && !invited ? (
+                        {isDean && !record.approvedOn ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="gold"
+                            onClick={() => {
+                              setNotice(null);
+                              setReviewing(record.scholarKey);
+                            }}
+                          >
+                            Check & forward to VC
+                          </Button>
+                        ) : null}
+                        {isVc && record.approvedOn && !invited ? (
                           <Button
                             type="button"
                             size="sm"
@@ -802,7 +923,7 @@ function OfficeView() {
                             {record.selection ? "Change selection" : "Select evaluators"}
                           </Button>
                         ) : null}
-                        {record.selection ? (
+                        {record.selection && isDean ? (
                           <Button
                             type="button"
                             size="sm"
@@ -862,6 +983,17 @@ function OfficeView() {
           </table>
         </div>
       )}
+      {reviewing && find(reviewing) ? (
+        <ReviewDialog
+          record={find(reviewing)!}
+          onClose={() => setReviewing(null)}
+          onSaved={(message) => {
+            setReviewing(null);
+            setNotice(message);
+            void refresh();
+          }}
+        />
+      ) : null}
       {selecting && find(selecting) ? (
         <SelectDialog
           record={find(selecting)!}

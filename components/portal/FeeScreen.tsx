@@ -30,7 +30,7 @@ import {
   ordinal,
   type FeeYear,
 } from "@/lib/fees";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import { currentReminders, subscribeRegister } from "@/lib/register";
 import {
   currentScholarRecords,
@@ -40,6 +40,7 @@ import {
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { cn, formatInr } from "@/lib/utils";
+import { storeFile } from "@/lib/file-store";
 
 const yearTone: Record<FeeYear["status"], "gold" | "maroon" | "purple" | "outline"> = {
   Paid: "gold",
@@ -138,7 +139,7 @@ function PayDialog({
       return;
     }
     setBusy(true);
-    const data = await fileToDataUrl(receipt.file).catch(() => "");
+    const data = await storeFile(receipt.file, "receipts").catch(() => "");
     const saved = await saveScholarRecord({
       kind: "payment",
       scholarIdentifier: identifier,

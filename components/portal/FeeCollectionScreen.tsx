@@ -23,7 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { feeRoster } from "@/lib/fee-ledger";
-import { annualResearchFee, ordinal, type FeeYear } from "@/lib/fees";
+import { useFees } from "@/lib/fee-settings";
+import { ordinal, type FeeYear } from "@/lib/fees";
 import {
   clearFeeReminder,
   currentPassedOut,
@@ -151,6 +152,7 @@ function ReminderDialog({
 }
 
 export function FeeCollectionScreen() {
+  const fees = useFees();
   const ready = useClientReady();
   const session = usePreviewSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
@@ -318,8 +320,8 @@ export function FeeCollectionScreen() {
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        Annual research fee: Full time ₹{formatInr(annualResearchFee.fullTime)} · Part
-        time ₹{formatInr(annualResearchFee.partTime)} · up to three instalments a year.
+        Annual research fee: Full time ₹{formatInr(fees.fullTime)} · Part time ₹
+        {formatInr(fees.partTime)} · up to three instalments a year.
       </p>
       <DeskTabs
         tabs={[

@@ -110,11 +110,36 @@ type MenuHolder = {
   menus?: string[] | null;
 };
 
+/**
+ * Accounts, the Vice Chancellor and the two Controller of Examinations sign-ins have a fixed
+ * set of menus; they do not start dashboard-only.
+ */
+export function fixedMenuRole(role: Role) {
+  return (
+    role === "accounts" || role === "vc" || role === "coe" || role === "coeverify"
+  );
+}
+
+function fixedMenus(role: Role) {
+  const hrefs = menuHrefs(role);
+  const pages = hrefs.filter((href) => !href.endsWith("/dashboard"));
+  const actions =
+    role === "accounts" || role === "coe" || role === "coeverify"
+      ? pages.flatMap((href) => [
+          menuActionKey(href, "edit"),
+          menuActionKey(href, "approve"),
+          menuActionKey(href, "export"),
+        ])
+      : pages.map((href) => menuActionKey(href, "export"));
+  return [...hrefs, ...actions, rightsMarker];
+}
+
 export function resolvedMenus(user: MenuHolder | null | undefined): string[] | null {
   if (!user) return [];
   if (isPrincipalAdmin(user)) return null;
   if (Array.isArray(user.menus)) return user.menus;
   if (user.role === "scholar" || user.role === "supervisor") return menuHrefs(user.role);
+  if (fixedMenuRole(user.role)) return fixedMenus(user.role);
   return dashboardHrefs(user.role);
 }
 
@@ -203,6 +228,7 @@ export function storedMenus(role: Role, selected: readonly string[]) {
 
 export function defaultMenuHrefs(role: Role) {
   if (role === "scholar" || role === "supervisor") return menuHrefs(role);
+  if (fixedMenuRole(role)) return fixedMenus(role);
   return dashboardHrefs(role);
 }
 
@@ -244,7 +270,10 @@ export function officeWriteBlock() {
   const viewing = officeViewWriteBlock();
   if (viewing) return viewing;
   const session = readPreviewSession();
-  if (!session || (session.role !== "admin" && session.role !== "staff")) {
+  if (
+    !session ||
+    (session.role !== "admin" && session.role !== "staff" && session.role !== "accounts")
+  ) {
     return {
       ok: false as const,
       message:

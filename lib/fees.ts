@@ -1,9 +1,7 @@
-import { researchRegister } from "@/data/research-register";
+import { allBatches } from "@/lib/batches";
 import { isPartTimeMode } from "@/lib/constants";
+import { currentFees } from "@/lib/fee-settings";
 import type { ScholarRecord } from "@/lib/scholar-records";
-
-/** Annual research fee in rupees. */
-export const annualResearchFee = { fullTime: 70000, partTime: 50000 } as const;
 
 /** A year's fee can be paid in at most three instalments. */
 export const maxInstallments = 3;
@@ -72,14 +70,13 @@ function shortMonth(isoDate: string) {
 }
 
 export function annualFeeFor(studyMode: string) {
-  return isPartTimeMode(studyMode)
-    ? annualResearchFee.partTime
-    : annualResearchFee.fullTime;
+  const fees = currentFees();
+  return isPartTimeMode(studyMode) ? fees.partTime : fees.fullTime;
 }
 
 /** Programme start: the admission batch's session, else January of the given fallback year. */
 export function programmeStart(batchId: string, fallbackYear: number) {
-  const batch = researchRegister.batches.find((item) => item.id === batchId);
+  const batch = allBatches().find((item) => item.id === batchId);
   if (batch) {
     return iso(batch.year, monthIndex[batch.session.toLowerCase()] ?? 0);
   }

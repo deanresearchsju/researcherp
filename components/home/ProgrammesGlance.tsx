@@ -1,11 +1,19 @@
+"use client";
+
 import Link from "next/link";
 
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { feeGlance } from "@/data/fees";
 import { homeCopy } from "@/data/home";
+import { rupees, useFees } from "@/lib/fee-settings";
 
 export function ProgrammesGlance() {
+  const fees = useFees();
+  const feeOf = (id: string) =>
+    id === "application"
+      ? rupees(fees.application)
+      : `${rupees(id === "full-time" ? fees.fullTime : fees.partTime)} per year`;
   return (
     <section className="bg-white py-8 sm:py-10" aria-labelledby="programmes-glance-title">
       <Container>
@@ -22,7 +30,7 @@ export function ProgrammesGlance() {
             >
               <h3 className="font-semibold text-primary">{item.name}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{item.line}</p>
-              <p className="mt-2 font-heading text-xl text-primary">{item.fee}</p>
+              <p className="mt-2 font-heading text-xl text-primary">{feeOf(item.id)}</p>
             </li>
           ))}
         </ul>

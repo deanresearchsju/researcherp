@@ -15,7 +15,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { menuRightsCopy, officeWorkHrefs, portalGroups } from "@/data/portal";
-import { roleProfiles } from "@/data/roles";
+import { roleNames } from "@/data/roles";
 import {
   actionsForMenu,
   defaultMenuHrefs,
@@ -52,7 +52,17 @@ const userFormSchema = z.object({
 
 type UserFormValues = z.infer<typeof userFormSchema>;
 
-const accessRoles = ["scholar", "supervisor", "admin", "staff", "dean"] as const;
+const accessRoles = [
+  "scholar",
+  "supervisor",
+  "admin",
+  "staff",
+  "dean",
+  "accounts",
+  "vc",
+  "coe",
+  "coeverify",
+] as const;
 
 const createFormSchema = z.object({
   role: z.enum(accessRoles),
@@ -205,7 +215,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
     createForm.reset({ role: "scholar", name: "", identifier: "", password: "" });
     setCreating(false);
     setNotice(
-      `${saved.user.name} can sign in as ${roleProfiles[saved.user.role].label} with ${saved.user.identifier}. They choose a new password the first time they sign in.`,
+      `${saved.user.name} can sign in as ${roleNames[saved.user.role]} with ${saved.user.identifier}. They choose a new password the first time they sign in.`,
     );
   }
 
@@ -342,7 +352,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
         title={`Users · ${roleTab === "all" ? "all" : tabLabels[roleTab]}`}
         headers={["Access", "Name", "Sign-in", "Rights"]}
         rows={listed.map((user) => [
-          roleProfiles[user.role].label,
+          roleNames[user.role],
           user.name,
           user.identifier,
           rightsSummary(user),
@@ -373,7 +383,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
               <NativeSelect id="createRole" {...createForm.register("role")}>
                 {accessRoles.map((role) => (
                   <option key={role} value={role}>
-                    {roleProfiles[role].label}
+                    {roleNames[role]}
                   </option>
                 ))}
               </NativeSelect>
@@ -532,7 +542,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={isOfficeRole(user.role) ? "purple" : "outline"}>
-                      {roleProfiles[user.role].label}
+                      {roleNames[user.role]}
                     </Badge>
                     {user.mustReset ? (
                       <p className="mt-1 text-xs text-secondary">
@@ -610,12 +620,26 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   );
 }
 
-const tabOrder = ["scholar", "supervisor", "staff", "dean", "admin"] as const;
+const tabOrder = [
+  "scholar",
+  "supervisor",
+  "staff",
+  "dean",
+  "accounts",
+  "vc",
+  "coe",
+  "coeverify",
+  "admin",
+] as const;
 const tabLabels: Record<(typeof tabOrder)[number], string> = {
   scholar: "Scholars",
   supervisor: "Supervisors",
   staff: "Staff",
   dean: "Dean",
+  accounts: "Accounts",
+  vc: "Vice Chancellor",
+  coe: "COE · Marks entry",
+  coeverify: "COE · Verification",
   admin: "Administrators",
 };
 
@@ -697,7 +721,7 @@ function MenuPicker({
   return (
     <fieldset className="sm:col-span-2">
       <legend className="text-sm font-semibold text-primary">
-        {menuRightsCopy.title} · {roleProfiles[role].label}
+        {menuRightsCopy.title} · {roleNames[role]}
       </legend>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onSelectAll}>

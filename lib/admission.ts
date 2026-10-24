@@ -9,6 +9,7 @@ import {
   writtenMax,
   type SelectionStepId,
 } from "@/data/admission";
+import { researchRegister } from "@/data/research-register";
 import { schools } from "@/data/schools";
 import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { clientNowIso, isValidIsoDate } from "@/lib/dates";
@@ -51,6 +52,11 @@ export type AdmissionCase = {
   selected: boolean;
   guideName: string;
   guideIdentifier: string;
+  /** The application says the research is interdisciplinary; such a candidate needs a co-supervisor. */
+  interdisciplinary: boolean;
+  interdisciplinaryNote: string;
+  coGuideName: string;
+  coGuideIdentifier: string;
   verification: "Pending" | "Approved";
   checks: Partial<Record<string, CheckMark>>;
   uploads: Partial<Record<string, { fileName: string; fileData: string }>>;
@@ -81,13 +87,17 @@ export type AdmissionCase = {
   /** Entrance test centre and hall, and the hall ticket issued for it. */
   examCampusId: string;
   examRoom: string;
+  /** Seat number inside the room, from the seating arrangement. */
+  examSeat: string;
   hallTicketNo: string;
   hallTicketOn: string;
   /** The day the document checklist was submitted and ERP access opened. */
   checklistSubmittedOn: string;
-  /** Registration number, allotted once the tuition fee receipt is approved. */
+  /** Registration number given by the Controller of Examinations; permanent once recorded. */
   registrationNo: string;
   registrationOn: string;
+  /** The intake (batch id) this file was admitted in, stamped when the selection is finished. */
+  intake: string;
 };
 
 export const scrutinyMarks = ["Eligible", "Not eligible"] as const;
@@ -101,7 +111,15 @@ export type EntranceScore = {
   interview: number | null;
 };
 
-export type ExamCampus = { id: string; name: string; address: string };
+/** A hall or class at a venue, with the number of candidates it seats. */
+export type ExamRoom = { id: string; name: string; capacity: number };
+
+export type ExamCampus = {
+  id: string;
+  name: string;
+  address: string;
+  rooms: ExamRoom[];
+};
 
 export type InterviewExpert = { name: string; designation: string; institution: string };
 
@@ -233,6 +251,8 @@ export type SelectionProgress = {
   qualifyingTotal: number | null;
   /** Approval of the provisional list by the Research Advisory Board or the Vice Chancellor. */
   approval: ApprovalRecord;
+  /** The day every batch was promoted, so the fresh batch starts in semester 1 ("" = not yet). */
+  promotedOn: string;
 };
 
 export const approvalBodies = ["Research Advisory Board", "Vice Chancellor"] as const;
@@ -263,7 +283,8 @@ export const emptyApproval: ApprovalRecord = {
 /** The provisional list as the approving body sees it: who, in which subject, with which guide. */
 export function provisionalListKey(cases: readonly AdmissionCase[]) {
   const selected = provisionalOrder(cases).map(
-    (row) => `${row.applicationId}|${row.department}|${row.guideName}`,
+    (row) =>
+      `${row.applicationId}|${row.department}|${row.guideName}${row.coGuideName ? `|co:${row.coGuideName}` : ""}`,
   );
   const waiting = waitlistOrder(cases).map(
     (row) => `${row.applicationId}|${row.department}|W${row.waitlistRank}`,
@@ -309,6 +330,7 @@ export const defaultSelectionProgress: SelectionProgress = {
   entranceReady: false,
   qualifyingTotal: null,
   approval: { ...emptyApproval },
+  promotedOn: "",
 };
 
 /** Session and month-year fixed at the start; date and venue fixed at the entrance step. */
@@ -356,6 +378,84 @@ export function completeSelectionProgress(progress: SelectionProgress) {
   };
 }
 
+/**
+ * Reopening a step deletes everything done in that step, so the step is worked again in full.
+ * Returns the cases and progress as they stand after the reset, and whether the saved marks
+ * must be cleared too.
+ */
+export function resetStepData(
+  cases: readonly AdmissionCase[],
+  progress: SelectionProgress,
+  step: SelectionStepId,
+) {
+  let nextProgress = progress;
+  let clearScores = false;
+  const change = (patch: Partial<AdmissionCase>) =>
+    cases.map((row) => (row.sessionClosed ? row : { ...row, ...patch }));
+  let nextCases: AdmissionCase[] = cases.slice();
+  switch (step) {
+    case "applications":
+      nextCases = change({ scrutiny: "", scrutinyNote: "" });
+      break;
+    case "shortlist":
+      nextCases = change({ shortlisted: false });
+      break;
+    case "entrance":
+      nextCases = change({
+        attendance: "",
+        hallTicketNo: "",
+        hallTicketOn: "",
+        examCampusId: "",
+        examRoom: "",
+        examSeat: "",
+      });
+      break;
+    case "marks":
+      nextCases = change({ written: null, interview: null });
+      nextProgress = {
+        ...progress,
+        entrance: { ...progress.entrance, panels: [] },
+      };
+      clearScores = true;
+      break;
+    case "selection":
+      nextCases = change({
+        selected: false,
+        meritRank: null,
+        waitlistRank: null,
+        fromWaitlist: false,
+      });
+      nextProgress = { ...progress, qualifyingTotal: null };
+      break;
+    case "provisional":
+      nextCases = change({
+        guideName: "",
+        guideIdentifier: "",
+        coGuideName: "",
+        coGuideIdentifier: "",
+      });
+      nextProgress = { ...progress, approval: { ...emptyApproval } };
+      break;
+    case "letter":
+      nextCases = change({ letterIssued: false, letterNo: null, letterIssuedOn: "" });
+      break;
+    case "certificates":
+      nextCases = change({
+        checks: {},
+        verification: "Pending",
+        checklistSubmittedOn: "",
+        reporting: "",
+        reportingNote: "",
+        reportingOn: "",
+      });
+      break;
+    case "fees":
+      nextCases = change({ registrationNo: "", registrationOn: "" });
+      break;
+  }
+  return { cases: nextCases, progress: nextProgress, clearScores };
+}
+
 export function clearSelectionProgress(progress: SelectionProgress, count: 1 | 2) {
   if (progress.completed.length === 0) {
     return {
@@ -377,6 +477,11 @@ export function clearSelectionProgress(progress: SelectionProgress, count: 1 | 2
     current,
     entranceReady: unlockEntrance ? false : progress.entranceReady,
   };
+}
+
+/** The batch id of an intake, as the batch lists use it (July sessions run as "june"). */
+export function intakeIdOf(session: string, year: string | number) {
+  return `${String(year).trim()}-${session.trim() === "July" ? "june" : "january"}`;
 }
 
 export function archiveSessionId(session: string, year: string) {
@@ -484,6 +589,10 @@ export function blankCase(application: StoredApplication): AdmissionCase {
     selected: false,
     guideName: "",
     guideIdentifier: "",
+    interdisciplinary: payloadText(application.payload, "interdisciplinary") === "Yes",
+    interdisciplinaryNote: payloadText(application.payload, "interdisciplinaryNote"),
+    coGuideName: "",
+    coGuideIdentifier: "",
     verification: "Pending",
     checks: {},
     uploads: {},
@@ -506,11 +615,13 @@ export function blankCase(application: StoredApplication): AdmissionCase {
     sessionClosed: false,
     examCampusId: "",
     examRoom: "",
+    examSeat: "",
     hallTicketNo: "",
     hallTicketOn: "",
     checklistSubmittedOn: "",
     registrationNo: "",
     registrationOn: "",
+    intake: "",
   };
 }
 
@@ -535,6 +646,8 @@ export function mergeApplications(
       email: fresh.email,
       department: existing.department || fresh.department,
       studyMode: fresh.studyMode || existing.studyMode,
+      interdisciplinary: fresh.interdisciplinary,
+      interdisciplinaryNote: fresh.interdisciplinaryNote,
     };
   });
   const known = new Set(merged.map((item) => item.applicationNo));
@@ -572,6 +685,18 @@ export function admissionCaseForIdentifier(
     cases.find((row) => row.email.trim().toLowerCase() === id) ??
     null
   );
+}
+
+/** The permanent registration number of a scholar admitted through Selection ("" if none yet). */
+export function admittedRegistration(identifier: string) {
+  const key = identifier.trim().toLowerCase();
+  if (!key) return "";
+  const row = currentAdmission()?.cases.find(
+    (item) =>
+      item.email.trim().toLowerCase() === key ||
+      item.applicationNo.trim().toLowerCase() === key,
+  );
+  return row?.registrationNo ?? "";
 }
 
 export function scholarIsAdmitted(
@@ -794,6 +919,8 @@ export function releaseSeat(
         reportingOn: on,
         guideName: "",
         guideIdentifier: "",
+        coGuideName: "",
+        coGuideIdentifier: "",
         verification: "Pending" as const,
       };
     }
@@ -825,6 +952,7 @@ export function stepCompletionBlock(
   step: SelectionStepId,
   cases: readonly AdmissionCase[],
   progress: SelectionProgress,
+  context: { applicationWindowOpen?: boolean } = {},
 ): string | null {
   const live = cases.filter((row) => !admissionFileFrozen(row) || row.selected);
   switch (step) {
@@ -837,6 +965,10 @@ export function stepCompletionBlock(
       return open > 0 ? `${open} application(s) still need the scrutiny decision.` : null;
     }
     case "shortlist":
+      // Selection starts once applications are closed: no new application may arrive after.
+      if (context.applicationWindowOpen) {
+        return "Close the Ph.D. application window (Application window menu) before completing the shortlist.";
+      }
       return live.some((row) => row.shortlisted)
         ? null
         : "Shortlist at least one eligible candidate.";
@@ -867,6 +999,12 @@ export function stepCompletionBlock(
     case "provisional": {
       const open = live.filter((row) => row.selected && !row.guideName).length;
       if (open > 0) return `Allot a guide to ${open} selected candidate(s).`;
+      const noCo = live.filter(
+        (row) => row.selected && row.interdisciplinary && !row.coGuideName,
+      ).length;
+      if (noCo > 0) {
+        return `Allot a co-supervisor to ${noCo} interdisciplinary candidate(s).`;
+      }
       const state = approvalState(progress, cases);
       if (state === "none") {
         return "Print the approval sheet, get the list approved by the Research Advisory Board or the Vice Chancellor, then record the approval.";
@@ -877,7 +1015,11 @@ export function stepCompletionBlock(
     }
     case "letter": {
       const open = live.filter((row) => row.selected && !row.letterIssued).length;
-      return open > 0 ? `Issue the provisional letter to ${open} candidate(s).` : null;
+      if (open > 0) return `Issue the provisional letter to ${open} candidate(s).`;
+      // Reporting opens after every batch is promoted, so the fresh batch starts in semester 1.
+      return progress.promotedOn
+        ? null
+        : "Promote all batches (semester) before Reporting opens.";
     }
     case "certificates": {
       const open = live.filter(
@@ -1037,6 +1179,10 @@ function parseCase(value: unknown): AdmissionCase | null {
     selected,
     guideName: selected ? text(row.guideName) : "",
     guideIdentifier: selected ? text(row.guideIdentifier) : "",
+    interdisciplinary: row.interdisciplinary === true,
+    interdisciplinaryNote: text(row.interdisciplinaryNote),
+    coGuideName: selected ? text(row.coGuideName) : "",
+    coGuideIdentifier: selected ? text(row.coGuideIdentifier) : "",
     verification: selected && row.verification === "Approved" ? "Approved" : "Pending",
     checks,
     uploads,
@@ -1059,6 +1205,7 @@ function parseCase(value: unknown): AdmissionCase | null {
     sessionClosed: row.sessionClosed === true,
     examCampusId: row.shortlisted === true ? text(row.examCampusId) : "",
     examRoom: row.shortlisted === true ? text(row.examRoom) : "",
+    examSeat: row.shortlisted === true ? text(row.examSeat) : "",
     hallTicketNo: row.shortlisted === true ? text(row.hallTicketNo) : "",
     hallTicketOn: row.shortlisted === true ? text(row.hallTicketOn) : "",
     checklistSubmittedOn:
@@ -1067,6 +1214,7 @@ function parseCase(value: unknown): AdmissionCase | null {
       selected && row.verification === "Approved" ? text(row.registrationNo) : "",
     registrationOn:
       selected && row.verification === "Approved" ? text(row.registrationOn) : "",
+    intake: text(row.intake),
   };
 }
 
@@ -1105,7 +1253,18 @@ function parseSchedule(value: unknown): EntranceSchedule {
         const campus = item as Record<string, unknown>;
         const id = text(campus.id);
         const name = text(campus.name);
-        return id && name ? [{ id, name, address: text(campus.address) }] : [];
+        const rooms: ExamRoom[] = Array.isArray(campus.rooms)
+          ? campus.rooms.flatMap((entry) => {
+              if (!entry || typeof entry !== "object") return [];
+              const room = entry as Record<string, unknown>;
+              const roomName = text(room.name);
+              const capacity = Number(room.capacity);
+              return roomName && Number.isInteger(capacity) && capacity > 0
+                ? [{ id: text(room.id) || roomName, name: roomName, capacity }]
+                : [];
+            })
+          : [];
+        return id && name ? [{ id, name, address: text(campus.address), rooms }] : [];
       })
     : [];
   return {
@@ -1166,7 +1325,7 @@ function parseSchedule(value: unknown): EntranceSchedule {
     campuses:
       campuses.length > 0 || !venue
         ? campuses
-        : [{ id: "campus-1", name: venue, address: "" }],
+        : [{ id: "campus-1", name: venue, address: "", rooms: [] }],
   };
 }
 
@@ -1200,6 +1359,7 @@ function parseProgress(value: unknown): SelectionProgress {
         ? qualifying
         : null,
     approval: parseApproval(row.approval),
+    promotedOn: text(row.promotedOn),
   };
 }
 
@@ -1641,7 +1801,12 @@ export async function closeAdmissionSession(applications: readonly StoredApplica
     cases: current.cases.map((row) =>
       keys.has(row.applicationId) || keys.has(row.applicationNo)
         ? row
-        : { ...row, sessionClosed: true, correctionOpen: false },
+        : {
+            ...row,
+            sessionClosed: true,
+            correctionOpen: false,
+            intake: row.intake || intakeIdOf(session, year),
+          },
     ),
     letter: current.letter,
     entranceScores: current.entranceScores,
@@ -1655,6 +1820,96 @@ export async function closeAdmissionSession(applications: readonly StoredApplica
     detail: `${archiveSessionLabel(session, year)} admission closed`,
   });
   return { ok: true as const, archived: archived.ok ? archived.count : 0 };
+}
+
+/**
+ * Records the registration numbers given by the Controller of Examinations against admitted
+ * scholars. A number is permanent: one already recorded is never changed.
+ */
+export async function allotIntakeRegistrations(
+  rows: readonly { applicationNo: string; registrationNumber: string }[],
+) {
+  const blocked = officeWriteBlock();
+  if (blocked) return { ...blocked, saved: 0, skipped: rows.length };
+  const current = memory ?? (await ensureAdmission());
+  const taken = new Set(
+    [
+      ...researchRegister.scholars.map((item) => item.registrationNumber),
+      ...current.cases.map((item) => item.registrationNo),
+    ]
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const byNo = new Map<string, string>();
+  const messages: string[] = [];
+  let skipped = 0;
+  for (const entry of rows) {
+    const number = entry.registrationNumber.trim();
+    const no = entry.applicationNo.trim().toLowerCase();
+    const row = current.cases.find(
+      (item) =>
+        item.applicationNo.trim().toLowerCase() === no && item.verification === "Approved",
+    );
+    if (!number) continue;
+    if (!row) {
+      skipped += 1;
+      messages.push(`${entry.applicationNo || "A row"} is not an admitted scholar.`);
+      continue;
+    }
+    if (row.registrationNo) {
+      skipped += 1;
+      messages.push(
+        `${row.applicationNo}: the registration number is permanent and cannot be changed.`,
+      );
+      continue;
+    }
+    if (number.length < 8 || number.length > 20) {
+      skipped += 1;
+      messages.push(`${row.applicationNo}: registration number is not valid.`);
+      continue;
+    }
+    if (taken.has(number.toLowerCase())) {
+      skipped += 1;
+      messages.push(`${row.applicationNo}: that registration number is already allotted.`);
+      continue;
+    }
+    taken.add(number.toLowerCase());
+    byNo.set(row.applicationNo, number);
+  }
+  if (byNo.size === 0) {
+    return {
+      ok: false as const,
+      message: messages[0] ?? "Enter the registration number for each scholar.",
+      saved: 0,
+      skipped,
+    };
+  }
+  const on = clientNowIso().slice(0, 10);
+  const saved = await saveAdmission({
+    cases: current.cases.map((row) =>
+      byNo.has(row.applicationNo)
+        ? { ...row, registrationNo: byNo.get(row.applicationNo) ?? "", registrationOn: on }
+        : row,
+    ),
+    letter: current.letter,
+  });
+  if (!saved.ok) return { ...saved, saved: 0, skipped };
+  await recordAudit({
+    action: "registration:allot",
+    subject: "admitted-scholars",
+    detail: `${byNo.size} registration number(s): ${[...byNo.entries()]
+      .map(([no, number]) => `${no} → ${number}`)
+      .join("; ")}`,
+  });
+  return {
+    ok: true as const,
+    saved: byNo.size,
+    skipped,
+    message:
+      skipped > 0
+        ? `${byNo.size} registration numbers were recorded. ${skipped} rows were skipped.`
+        : `${byNo.size} registration numbers were recorded.`,
+  };
 }
 
 /** Records on the admission file that the provisional letter was issued from Letters. */
@@ -1831,6 +2086,7 @@ export async function saveEntrancePage(
 export async function decideApplicationFees(
   applications: readonly StoredApplication[],
   payment: Exclude<PaymentMark, "Pending">,
+  comment = "",
 ) {
   const blocked = officeWriteBlock();
   if (blocked) return { ...blocked, changed: 0 };
@@ -1874,7 +2130,7 @@ export async function decideApplicationFees(
         detail:
           payment === "Approved"
             ? "The research office verified your application fee. Your application is now with the selection committee."
-            : "The research office returned your application fee. Please contact the research office.",
+            : `The application fee receipt was returned${comment.trim() ? `: ${comment.trim()}` : ""}. Please contact the research office.`,
       });
     }
   }

@@ -2,6 +2,11 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 
+import {
+  admissionCaseForIdentifier,
+  currentAdmission,
+  subscribeAdmission,
+} from "@/lib/admission";
 import { clientToday } from "@/lib/dates";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { currentOffice, subscribeOffice } from "@/lib/office";
@@ -11,6 +16,7 @@ import {
   currentPassedOut,
   currentQuotas,
   currentStandings,
+  scholarBySignIn,
   subscribeRegister,
 } from "@/lib/register";
 import {
@@ -63,6 +69,7 @@ export function useScholarReports():
     currentPassedOut,
     currentPassedOut,
   );
+  const admission = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
   const payments = useRecords("payment");
   const sixMonth = useRecords("six_month_report");
   const publications = useRecords("publication");
@@ -79,9 +86,16 @@ export function useScholarReports():
       personal: personal?.records ?? [],
       today: clientToday(),
     };
-    const reports = scholarRows(office.allocations, allotments).map((row) =>
-      scholarReport(row, sources),
-    );
+    // A candidate with a guide is a scholar of the ERP only once the documents are verified
+    // and the checklist submitted; until then the candidate is still on the Selection desk.
+    const cases = admission?.cases ?? [];
+    const reports = scholarRows(office.allocations, allotments)
+      .filter((row) => {
+        if (scholarBySignIn(row.identifier)) return true;
+        const file = admissionCaseForIdentifier(row.identifier, cases);
+        return !file || file.verification === "Approved";
+      })
+      .map((row) => scholarReport(row, sources));
     const guides = guideOptions(
       office.allocations,
       users?.users ?? [],
@@ -94,6 +108,7 @@ export function useScholarReports():
   }, [
     doctoral,
     office,
+    admission,
     users,
     quotas,
     standings,

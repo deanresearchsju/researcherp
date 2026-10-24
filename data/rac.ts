@@ -15,7 +15,7 @@ export const racCopy = {
   officeTitle: "RAC decisions",
   scholarTitle: "RAC members",
   supervisorIntro:
-    "Every scholar allotted to you needs a RAC. Name two internal members and three candidates for the external panel. The Dean selects one internal member and one external member.",
+    "Every scholar allotted to you needs a RAC. Name two internal members and two external members, each with designation, department, institution, email, phone and specialisation. The Dean approves one internal member and one external member; the RAC is then shown to you and to the scholar.",
   changeRule:
     "Once the Dean constitutes the RAC, a change can be requested after six months. Give the reason for the change.",
   notConstituted: "RAC not constituted",

@@ -1,4 +1,5 @@
 import { fileLimits, type FileLimitKey } from "@/lib/constants";
+import { isFileRef } from "@/lib/file-ref";
 import { dataUrlByteLength, dataUrlMime } from "@/lib/files";
 
 const uploadKeys: Record<string, FileLimitKey> = {
@@ -27,6 +28,8 @@ export function assertStoredUpload(
   fileData: string,
   ruleKey: FileLimitKey,
 ): UploadGuardResult {
+  // A file kept in storage was checked (type, size, content) when it was uploaded.
+  if (isFileRef(fileData)) return { ok: true };
   const mime = dataUrlMime(fileData);
   const rule = ruleForMime(ruleKey, mime);
   if (!(rule.types as readonly string[]).includes(mime)) {

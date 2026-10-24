@@ -12,7 +12,6 @@ import {
 } from "@/components/portal/Desk";
 import { filterMatches, ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
-import { applicationFee } from "@/data/fees";
 import {
   paymentCopy,
   paymentKinds,
@@ -38,6 +37,7 @@ import {
   setScholarRecordStatus,
   subscribeScholarRecords,
 } from "@/lib/scholar-records";
+import { rupees, useFees } from "@/lib/fee-settings";
 import { formatInr } from "@/lib/utils";
 
 function courseGroups(rows: readonly CourseRegistration[]) {
@@ -78,6 +78,7 @@ function courseGroups(rows: readonly CourseRegistration[]) {
 }
 
 export function PaymentApprovalsScreen() {
+  const fees = useFees();
   const admission = useSyncExternalStore(
     subscribeAdmission,
     currentAdmission,
@@ -180,7 +181,7 @@ export function PaymentApprovalsScreen() {
             displayName(row),
             row.applicationNo,
             row.department,
-            String(applicationFee.amount),
+            rupees(fees.application),
             row.payment,
           ]),
           total: allApplications.length,
@@ -281,7 +282,7 @@ export function PaymentApprovalsScreen() {
                   <p className="text-muted-foreground">{row.applicationNo}</p>
                 </td>
                 <td className="px-4 py-3">{row.department}</td>
-                <td className="px-4 py-3">{applicationFee.amount}</td>
+                <td className="px-4 py-3">{rupees(fees.application)}</td>
                 <td className="px-4 py-3">
                   <StatusPill status={row.payment} />
                 </td>

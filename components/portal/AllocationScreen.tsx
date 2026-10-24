@@ -9,20 +9,13 @@ import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { NativeSelect } from "@/components/ui/native-select";
-import { researchRegister } from "@/data/research-register";
 import {
   currentOffice,
   removeAllocation,
   saveAllocation,
   subscribeOffice,
 } from "@/lib/office";
-import {
-  currentPassedOut,
-  currentQuotas,
-  currentStandings,
-  isPassedOut,
-  subscribeRegister,
-} from "@/lib/register";
+import { currentPassedOut, currentQuotas, currentStandings, isPassedOut, subscribeRegister, registerScholarsInOrder } from "@/lib/register";
 import { guideOptions } from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
@@ -50,7 +43,7 @@ export function AllocationScreen() {
     return <p className="text-sm text-muted-foreground">Loading allotments…</p>;
   }
 
-  const registerScholars = researchRegister.scholars.map((scholar) => ({
+  const registerScholars = registerScholarsInOrder().map((scholar) => ({
     id: scholar.id,
     identifier:
       scholar.email ||

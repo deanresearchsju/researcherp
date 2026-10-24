@@ -17,7 +17,6 @@ import {
   GateBanner,
   ProcessFlow,
   ScholarIdentityHeader,
-  StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
@@ -36,7 +35,7 @@ import {
 } from "@/data/portal-desk";
 import { sixMonthOnlineFrom } from "@/data/doctoral";
 import { university } from "@/lib/constants";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import {
   currentDoctoral,
   decideAccess,
@@ -55,6 +54,11 @@ import {
   type ScholarRecord,
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { storeFile } from "@/lib/file-store";
+import { ApprovalBadge } from "@/components/portal/ApprovalTrail";
+import { recordSummary } from "@/lib/approval-flow";
+import { allocationFor, currentOffice, subscribeOffice } from "@/lib/office";
+import { scholarBySignIn, supervisorForGuide } from "@/lib/register";
 
 const schema = z.object({
   progress: z.string().trim().min(10, "Describe the work done in this period."),
@@ -97,6 +101,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   const ready = useClientReady();
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const load = useSyncExternalStore(
     (onChange) => subscribeScholarRecords("six_month_report", onChange),
     () => currentScholarRecords("six_month_report"),
@@ -161,6 +166,20 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
     return current?.label === label;
   }
 
+  function findGuide() {
+    if (!session) return null;
+    const allotment = allocationFor(office?.allocations ?? [], session.identifier);
+    if (allotment) return allotment;
+    const scholar = scholarBySignIn(session.identifier);
+    const guide = scholar ? supervisorForGuide(scholar.guideName) : null;
+    return guide || scholar?.guideName
+      ? {
+          supervisorIdentifier: guide?.supervisorId.trim() || scholar?.guideName || "",
+          supervisorName: guide?.name || scholar?.guideName || "",
+        }
+      : null;
+  }
+
   async function upload(values: Values) {
     if (!session || !period) {
       setNotice("Select a period.");
@@ -175,7 +194,8 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice(problem ?? "Attach the report.");
       return;
     }
-    const data = await fileToDataUrl(file.file).catch(() => "");
+    const guideFor = findGuide();
+    const data = await storeFile(file.file, "records").catch(() => "");
     const existing = reportFor(period, ownReports);
     const saved = await saveScholarRecord(
       {
@@ -195,10 +215,18 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
         },
         fileName: file.file.name,
         fileData: data || null,
+        supervisorIdentifier: guideFor?.supervisorIdentifier ?? "",
+        supervisorName: guideFor?.supervisorName ?? "",
       },
       existing?.status === "Returned" ? existing.id : undefined,
     );
-    setNotice(saved.ok ? "Report submitted for the research office." : saved.message);
+    setNotice(
+      saved.ok
+        ? guideFor
+          ? "Report submitted to your supervisor."
+          : "Report submitted to the Dean."
+        : saved.message,
+    );
     if (saved.ok) {
       setReporting(false);
       form.reset();
@@ -302,7 +330,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                       {record.payload.period} · {record.createdAt.slice(0, 10)}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusPill status={record.status} />
+                      <ApprovalBadge summary={recordSummary(record, false)} showDetail />
                     </td>
                     <td className="px-4 py-3">{record.payload.remarks || "—"}</td>
                     <td className="px-4 py-3 text-right">
@@ -861,7 +889,15 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
             </div>
             <p className="text-sm text-muted-foreground">{record.payload.progress}</p>
             {mode === "admin" &&
-            (record.status === "Submitted" || record.status === "Supervisor approved") ? (
+            record.status === "Submitted" &&
+            record.supervisorIdentifier.trim() ? (
+              <p className="text-sm text-muted-foreground">
+                Waiting for the supervisor&apos;s approval.
+              </p>
+            ) : null}
+            {mode === "admin" &&
+            (record.status === "Supervisor approved" ||
+              (record.status === "Submitted" && !record.supervisorIdentifier.trim())) ? (
               <div className="space-y-2">
                 <Textarea
                   aria-label="Remarks"

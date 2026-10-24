@@ -28,7 +28,6 @@ import { countries } from "@/data/countries";
 import { saveSubmission } from "@/lib/applications";
 import {
   admissionYear,
-  applicationFeeInr,
   bloodGroups,
   communities,
   communityNeedsName,
@@ -80,6 +79,7 @@ import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
 import { fieldMessage, nestedMessage } from "@/lib/form-errors";
 import { formatInr } from "@/lib/utils";
 import { emptyExperience, scholarSchema, type ScholarFormValues } from "@/lib/validation";
+import { useFees } from "@/lib/fee-settings";
 const steps = [
   {
     label: "Personal",
@@ -182,6 +182,7 @@ function documentRequired(
 }
 
 export function ScholarApplication() {
+  const applicationFeeInr = useFees().application;
   const [step, setStep] = useState(0);
   const [files, setFiles] = useState<ScholarFiles>(emptyFiles);
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
@@ -1200,6 +1201,7 @@ export function ScholarApplication() {
 }
 
 function BankAccountCard() {
+  const applicationFeeInr = useFees().application;
   return <PaymentInstructions amount={applicationFeeInr} purpose="Application fee" />;
 }
 

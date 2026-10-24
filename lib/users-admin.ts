@@ -2,7 +2,7 @@ import { parseMenuRights } from "@/lib/access";
 import { hashSecret } from "@/lib/passwords";
 import { createAdminSupabase, portalAuthClient } from "@/lib/supabase/admin";
 import { isRetiredSignIn, type PortalUser } from "@/lib/users";
-import type { Role } from "@/types";
+import { ROLES, type Role } from "@/types";
 
 type UserRow = {
   id: string;
@@ -23,10 +23,10 @@ function missingResetColumn(message: string) {
 
 function mapPublicUser(row: UserRow): PortalUser | null {
   const role = row.role;
-  if (role !== "scholar" && role !== "supervisor" && role !== "admin") return null;
+  if (!(ROLES as readonly string[]).includes(role)) return null;
   return {
     id: row.id,
-    role,
+    role: role as Role,
     name: row.name,
     identifier: row.identifier,
     password: "",
@@ -65,7 +65,10 @@ export async function listPortalUsers() {
   const data = last?.data ?? chosen.data;
   const error = last ? last.error : chosen.error;
   if (error || !data) {
-    return { ok: false as const, message: error?.message ?? "Users could not be loaded." };
+    return {
+      ok: false as const,
+      message: error?.message ?? "Users could not be loaded.",
+    };
   }
   return {
     ok: true as const,
@@ -224,6 +227,20 @@ export async function createPortalUserRow(input: {
     ? mapPublicUser({ ...data, must_reset: true, menu_rights: input.menus })
     : null;
   if (error || !user) {
+    // The database may not yet accept the Accounts / Vice Chancellor / Staff / Dean types.
+    if (error && /role_check|check constraint/i.test(error.message)) {
+      return {
+        ok: false as const,
+        message:
+          "The database does not accept this sign-in type yet. Run supabase/migrations/20261023100000_office_roles.sql in the Supabase SQL editor, then try again.",
+      };
+    }
+    if (error && /duplicate|unique/i.test(error.message)) {
+      return {
+        ok: false as const,
+        message: "That sign-in id already exists for this access type.",
+      };
+    }
     return { ok: false as const, message: "That user could not be created." };
   }
   return { ok: true as const, user };
@@ -265,10 +282,11 @@ export async function updatePortalUserRow(
       return { ok: false as const, message: "That user could not be saved." };
     }
   } else if (saved.error && missingResetColumn(saved.error.message)) {
-    const retryFields: { name: string; menu_rights: string[] | null; password?: string } = {
-      name: fields.name,
-      menu_rights: fields.menu_rights,
-    };
+    const retryFields: { name: string; menu_rights: string[] | null; password?: string } =
+      {
+        name: fields.name,
+        menu_rights: fields.menu_rights,
+      };
     if (fields.password) retryFields.password = fields.password;
     const retry = await supabase.from("portal_users").update(retryFields).eq("id", id);
     if (retry.error) {

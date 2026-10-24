@@ -10,7 +10,8 @@ export type JsonBlobTable =
   | "research_register"
   | "news_board"
   | "research_areas"
-  | "thesis_panels";
+  | "thesis_panels"
+  | "exam_office";
 
 export async function saveJsonBlob(
   table: JsonBlobTable,

@@ -37,6 +37,7 @@ import type { GuideOption } from "@/lib/supervision";
 import { useScholarReports } from "@/lib/use-report-sources";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { cn } from "@/lib/utils";
+import { MarkButtons, markSummary, type Mark } from "@/components/portal/AttendanceControls";
 
 type Tab = "events" | "scholars" | "supervisors" | "batches";
 
@@ -1178,61 +1179,58 @@ function AttendanceDialog({
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
-  const initial = new Set(
-    Object.entries(event.attendance)
-      .filter(([, mark]) => mark === "Absent")
-      .map(([key]) => key),
+  const people = [
+    ...event.scholars.map((person) => ({ role: "scholar" as const, person })),
+    ...event.supervisors.map((person) => ({ role: "supervisor" as const, person })),
+  ];
+  // A first sitting starts with everyone present, to be corrected; a saved one is shown as saved.
+  const saved = Object.keys(event.attendance).length > 0;
+  const [marks, setMarks] = useState<Record<string, Mark>>(() =>
+    Object.fromEntries(
+      people.map(({ role, person }) => {
+        const key = attendanceKey(role, person.identifier);
+        return [key, event.attendance[key] ?? (saved ? "" : "Present")];
+      }),
+    ),
   );
-  const [absent, setAbsent] = useState<Set<string>>(initial);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const group = (role: "scholar" | "supervisor", people: Colloquium["scholars"]) => {
-    const shown = people.filter((person) =>
+  const setAll = (value: Mark) =>
+    setMarks((current) =>
+      Object.fromEntries(Object.keys(current).map((key) => [key, value])),
+    );
+
+  const group = (role: "scholar" | "supervisor", list: Colloquium["scholars"]) => {
+    const shown = list.filter((person) =>
       textMatches(query, [person.name, person.identifier]),
     );
     return (
       <fieldset className="space-y-2">
         <legend className="font-semibold text-primary">
           {role === "scholar" ? "Scholars" : "Supervisors"} ·{" "}
-          {people.length -
-            people.filter((p) => absent.has(attendanceKey(role, p.identifier)))
-              .length}{" "}
+          {
+            list.filter(
+              (person) => marks[attendanceKey(role, person.identifier)] === "Present",
+            ).length
+          }{" "}
           present
         </legend>
-        <ul className="grid max-h-72 gap-1 overflow-y-auto rounded-xl border border-border p-2 sm:grid-cols-2">
+        <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-xl border border-border">
           {shown.map((person) => {
             const key = attendanceKey(role, person.identifier);
-            const isAbsent = absent.has(key);
             return (
-              <li key={key}>
-                <label
-                  className={cn(
-                    "flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm",
-                    isAbsent ? "bg-secondary/10 text-secondary" : "hover:bg-muted",
-                  )}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-secondary"
-                      checked={isAbsent}
-                      onChange={() =>
-                        setAbsent((current) => {
-                          const next = new Set(current);
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
-                          return next;
-                        })
-                      }
-                    />
-                    {person.name}
-                  </span>
-                  <span className="text-xs font-semibold">
-                    {isAbsent ? "Absent" : "Present"}
-                  </span>
-                </label>
+              <li
+                key={key}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+              >
+                <span className="font-medium text-primary">{person.name}</span>
+                <MarkButtons
+                  name={person.name}
+                  value={marks[key] ?? ""}
+                  onChange={(next) => setMarks((current) => ({ ...current, [key]: next }))}
+                />
               </li>
             );
           })}
@@ -1251,36 +1249,47 @@ function AttendanceDialog({
       onSubmit={(submit) => {
         submit.preventDefault();
         const attendance: Record<string, ColloquiumMark> = {};
-        for (const person of event.scholars) {
-          const key = attendanceKey("scholar", person.identifier);
-          attendance[key] = absent.has(key) ? "Absent" : "Present";
+        for (const { role, person } of people) {
+          const key = attendanceKey(role, person.identifier);
+          const mark = marks[key];
+          if (mark !== "Present" && mark !== "Absent") {
+            setError("Mark everyone present or absent before saving.");
+            return;
+          }
+          attendance[key] = mark;
         }
-        for (const person of event.supervisors) {
-          const key = attendanceKey("supervisor", person.identifier);
-          attendance[key] = absent.has(key) ? "Absent" : "Present";
-        }
+        setError("");
         setBusy(true);
-        void markColloquiumAttendance(event.id, attendance).then((saved) => {
+        void markColloquiumAttendance(event.id, attendance).then((result) => {
           setBusy(false);
-          if (!saved.ok) return setError(saved.message);
-          const missing = Object.values(attendance).filter(
+          if (!result.ok) return setError(result.message);
+          const absent = Object.values(attendance).filter(
             (mark) => mark === "Absent",
           ).length;
           onSaved(
-            `Attendance saved: ${Object.keys(attendance).length - missing} present, ${missing} absent.`,
+            `Attendance saved: ${Object.keys(attendance).length - absent} present, ${absent} absent.`,
           );
         });
       }}
     >
       <div className="space-y-4 text-sm">
-        <p className="rounded-lg bg-accent/15 px-3 py-2 font-medium text-primary">
-          Tick only those who were absent. Everyone else is marked present.
-        </p>
-        <Input
-          placeholder="Search a name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            placeholder="Search a name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={() => setAll("Present")}>
+            All present
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setAll("")}>
+            Clear all
+          </Button>
+          <span className="ml-auto text-muted-foreground">
+            {markSummary(Object.values(marks))}
+          </span>
+        </div>
         {group("scholar", event.scholars)}
         {event.supervisors.length > 0 ? group("supervisor", event.supervisors) : null}
         {error ? <p className="text-secondary">{error}</p> : null}

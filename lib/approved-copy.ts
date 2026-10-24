@@ -1,7 +1,9 @@
 "use client";
 
 import { university } from "@/lib/constants";
+import { formatMoment } from "@/lib/approval-flow";
 import { formatIsoDate } from "@/lib/dates";
+import { fileAsDataUrl } from "@/lib/file-store";
 
 export type ApprovalStep = { label: string; by: string; on: string; note?: string };
 
@@ -13,6 +15,10 @@ export type ApprovalStamp = {
   reference?: string;
   approvedOn: string;
   approvedBy: string;
+  /** The guide's approval, when the document went through the guide, with date and time. */
+  supervisor?: { by: string; at: string };
+  /** The Dean's approval with date and time. */
+  dean?: { by: string; at: string };
   steps?: readonly ApprovalStep[];
   details?: readonly { label: string; value: string }[];
 };
@@ -29,6 +35,11 @@ function bytesFromDataUrl(dataUrl: string) {
 
 function dateLabel(value: string) {
   return value ? formatIsoDate(value.slice(0, 10)) : "—";
+}
+
+/** A date and, when it was recorded, the time. */
+function momentLabel(value: string) {
+  return value ? formatMoment(value) || dateLabel(value) : "—";
 }
 
 async function logoBytes() {
@@ -81,7 +92,7 @@ export async function buildApprovedCopy(
   const grey = rgb(0.35, 0.35, 0.35);
 
   let doc = await PDFDocument.create();
-  const data = fileData ?? "";
+  const data = fileData ? await fileAsDataUrl(fileData).catch(() => "") : "";
   if (data.startsWith("data:application/pdf")) {
     doc = await PDFDocument.load(bytesFromDataUrl(data), { ignoreEncryption: true });
   } else if (data.startsWith("data:image/")) {
@@ -102,16 +113,37 @@ export async function buildApprovedCopy(
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const measure = (text: string, size: number) => font.widthOfTextAtSize(text, size);
-  const approvedLine = `Approved on ${dateLabel(stamp.approvedOn)} by ${stamp.approvedBy} · ${university.researchOffice}, ${university.name}${
+  const deanBy = stamp.dean?.by || stamp.approvedBy;
+  const deanAt = stamp.dean?.at || stamp.approvedOn;
+  const supervisorLine = stamp.supervisor
+    ? `Approved by Supervisor: ${stamp.supervisor.by || "—"} · ${momentLabel(stamp.supervisor.at)}`
+    : "";
+  const approvedLine = `${stamp.supervisor ? "Approved by Dean" : "Approved"}: ${deanBy} · ${momentLabel(deanAt)} · ${university.researchOffice}, ${university.name}${
     stamp.reference ? ` · Ref ${stamp.reference}` : ""
   }`;
+  const bandHeight = supervisorLine ? 26 : 18;
 
   // Stamp the uploaded pages.
   const uploaded = doc.getPages();
   uploaded.forEach((page, index) => {
     const { width } = page.getSize();
-    page.drawRectangle({ x: 0, y: 0, width, height: 18, color: rgb(0.96, 0.94, 0.98) });
-    page.drawText(approvedLine.slice(0, 160), {
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height: bandHeight,
+      color: rgb(0.96, 0.94, 0.98),
+    });
+    if (supervisorLine) {
+      page.drawText(supervisorLine.slice(0, 160), {
+        x: 14,
+        y: 15,
+        size: 7,
+        font,
+        color: purple,
+      });
+    }
+    page.drawText(approvedLine.slice(0, 170), {
       x: 14,
       y: 6,
       size: 7,
@@ -126,41 +158,57 @@ export async function buildApprovedCopy(
       color: grey,
     });
     if (index === 0) {
-      const boxWidth = 168;
+      const boxWidth = 196;
       const x = width - boxWidth - 18;
-      const y = page.getSize().height - 74;
+      const boxHeight = stamp.supervisor ? 100 : 58;
+      const y = page.getSize().height - boxHeight - 16;
       page.drawRectangle({
         x,
         y,
         width: boxWidth,
-        height: 58,
+        height: boxHeight,
         borderColor: green,
         borderWidth: 1.6,
         color: rgb(1, 1, 1),
         opacity: 0.92,
         borderOpacity: 1,
       });
+      const top = y + boxHeight;
       page.drawText("APPROVED", {
         x: x + 10,
-        y: y + 38,
+        y: top - 20,
         size: 15,
         font: bold,
         color: green,
       });
-      page.drawText(dateLabel(stamp.approvedOn), {
-        x: x + 10,
-        y: y + 24,
-        size: 8.5,
-        font,
-        color: green,
-      });
-      page.drawText(stamp.approvedBy.slice(0, 34), {
-        x: x + 10,
-        y: y + 13,
-        size: 8,
-        font,
-        color: green,
-      });
+      let lineY = top - 33;
+      const stampLine = (label: string, by: string, at: string) => {
+        page.drawText(label, { x: x + 10, y: lineY, size: 6.6, font: bold, color: green });
+        lineY -= 9;
+        page.drawText(by.slice(0, 40), { x: x + 10, y: lineY, size: 8, font, color: green });
+        lineY -= 9;
+        page.drawText(momentLabel(at), { x: x + 10, y: lineY, size: 8, font, color: green });
+        lineY -= 11;
+      };
+      if (stamp.supervisor) {
+        stampLine("SUPERVISOR", stamp.supervisor.by || "—", stamp.supervisor.at);
+        stampLine("DEAN", deanBy, deanAt);
+      } else {
+        page.drawText(momentLabel(deanAt), {
+          x: x + 10,
+          y: lineY,
+          size: 8.5,
+          font,
+          color: green,
+        });
+        page.drawText(deanBy.slice(0, 40), {
+          x: x + 10,
+          y: lineY - 11,
+          size: 8,
+          font,
+          color: green,
+        });
+      }
       page.drawText("Office of the Dean · Center for Research", {
         x: x + 10,
         y: y + 3.5,
@@ -239,8 +287,18 @@ export async function buildApprovedCopy(
     ...(stamp.details ?? []).map((item) => [item.label, item.value] as [string, string]),
     ["Document", fileName?.trim() || "Recorded by the research office"],
     ["Status", "APPROVED"],
-    ["Approved on", dateLabel(stamp.approvedOn)],
-    ["Approved by", stamp.approvedBy],
+    ...(stamp.supervisor
+      ? ([
+          [
+            "Approved by Supervisor",
+            `${stamp.supervisor.by || "—"} · ${momentLabel(stamp.supervisor.at)}`,
+          ],
+          ["Approved by Dean", `${deanBy} · ${momentLabel(deanAt)}`],
+        ] as [string, string][])
+      : ([
+          ["Approved on", momentLabel(deanAt)],
+          ["Approved by", deanBy],
+        ] as [string, string][])),
     ...(stamp.reference ? ([["Reference", stamp.reference]] as [string, string][]) : []),
   ];
   for (const [label, value] of rows) {
@@ -276,7 +334,7 @@ export async function buildApprovedCopy(
         font: bold,
         color: rgb(0.1, 0.1, 0.1),
       });
-      page.drawText(`${step.by || "—"} · ${dateLabel(step.on)}`, {
+      page.drawText(`${step.by || "—"} · ${momentLabel(step.on)}`, {
         x: 300,
         y,
         size: 9.5,

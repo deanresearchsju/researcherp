@@ -78,6 +78,7 @@ export const storageKeys = {
   racProposals: "sju-rac-proposals",
   siteSettings: "sju-site-settings",
   doctoral: "sju-doctoral",
+  exam: "sju-exam-office",
   thesisPanels: "sju-thesis-panels",
   admission: "sju-admission",
   register: "sju-research-register",

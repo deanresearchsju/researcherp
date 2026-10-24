@@ -63,6 +63,14 @@ export type ScholarRecordMenu = {
 
 const paymentModes = ["UPI", "Net Banking"] as const;
 
+/** What a scholar's payment is for. Synopsis and thesis fees are fixed by the administrator. */
+export const paymentPurposes = [
+  "Annual research fee",
+  "Synopsis fee",
+  "Thesis fee",
+  "Other",
+] as const;
+
 export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
   {
     slug: "abc-id",
@@ -73,7 +81,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "ABC ID card",
     fileRequired: true,
     fileRule: "document",
-    needsSupervisor: false,
+    needsSupervisor: true,
     fields: [
       { name: "abcId", label: "ABC ID", kind: "text", required: true, minLength: 6 },
       {
@@ -290,7 +298,13 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
         required: true,
         minLength: 4,
       },
-      { name: "purpose", label: "Purpose", kind: "text", required: true, minLength: 2 },
+      {
+        name: "purpose",
+        label: "Purpose",
+        kind: "select",
+        required: true,
+        options: paymentPurposes,
+      },
     ],
   },
   {
@@ -360,7 +374,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "No-objection certificate",
     fileRequired: true,
     fileRule: "document",
-    needsSupervisor: false,
+    needsSupervisor: true,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
       {
@@ -578,7 +592,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     fileLabel: "Report",
     fileRequired: true,
     fileRule: "document",
-    needsSupervisor: false,
+    needsSupervisor: true,
     fields: [
       {
         name: "period",

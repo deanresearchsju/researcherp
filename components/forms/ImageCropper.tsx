@@ -46,7 +46,10 @@ export function ImageCropper({
       const originY = (frameHeight - displayHeight) / 2 + offset.y;
       const sx = Math.max(0, ((0 - originX) / displayWidth) * natural.width);
       const sy = Math.max(0, ((0 - originY) / displayHeight) * natural.height);
-      const sw = Math.min(natural.width - sx, (frameWidth / displayWidth) * natural.width);
+      const sw = Math.min(
+        natural.width - sx,
+        (frameWidth / displayWidth) * natural.width,
+      );
       const sh = Math.min(
         natural.height - sy,
         (frameHeight / displayHeight) * natural.height,

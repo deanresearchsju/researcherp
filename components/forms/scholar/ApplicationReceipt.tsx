@@ -17,7 +17,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { scholarDeclaration } from "@/data/declarations";
 import { scholarDocuments } from "@/data/documents";
 import { scholarFormCopy } from "@/data/forms";
-import { applicationFeeInr, isPartTimeMode, paymentStatus } from "@/lib/constants";
+import { isPartTimeMode, paymentStatus } from "@/lib/constants";
+import { useFees } from "@/lib/fee-settings";
 import { formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
@@ -39,6 +40,7 @@ function addressOf(address: PhdReceipt["values"]["communication"]) {
 }
 
 export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
+  const applicationFee = useFees().application;
   const { values } = receipt;
   const experience = values.experience.filter((row) => row.organization.trim());
   const permanent = values.sameAddress ? values.communication : values.permanent;
@@ -296,7 +298,7 @@ export function ApplicationReceipt({ receipt }: { receipt: PhdReceipt }) {
           <PrintSection title="7. Payment details">
             <PrintGrid>
               <PrintCell label="Mode" value={values.paymentMode} />
-              <PrintCell label="Amount" value={formatInr(applicationFeeInr)} />
+              <PrintCell label="Amount" value={formatInr(applicationFee)} />
               <PrintCell label="Transaction number" value={values.transactionNumber} />
               <PrintCell
                 label="Date of payment"

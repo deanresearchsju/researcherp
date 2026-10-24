@@ -36,6 +36,39 @@ body {
   }
 }
 
+/* Column headings that sort their list when clicked (see TableSorter). */
+th[data-sortable] {
+  cursor: pointer;
+  user-select: none;
+}
+
+th[data-sortable]:hover {
+  text-decoration: underline;
+}
+
+th[data-sortable]::after {
+  content: "\2195";
+  margin-left: 0.35em;
+  font-size: 0.8em;
+  opacity: 0.35;
+}
+
+th[data-sortable][aria-sort="ascending"]::after {
+  content: "\25B2";
+  opacity: 1;
+}
+
+th[data-sortable][aria-sort="descending"]::after {
+  content: "\25BC";
+  opacity: 1;
+}
+
+@media print {
+  th[data-sortable]::after {
+    content: none;
+  }
+}
+
 section[id],
 div[id] {
   scroll-margin-top: 8rem;

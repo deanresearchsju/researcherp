@@ -40,10 +40,11 @@ import {
   type ExaminerOutcome,
   type ThesisSubmission,
 } from "@/lib/doctoral";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import { acceptedEvaluators, useEvaluationPanels } from "@/lib/thesis-evaluation";
 import { evaluatorGroupLabel } from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { storeFile } from "@/lib/file-store";
 
 export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
   const ready = useClientReady();
@@ -88,7 +89,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice(problem);
       return;
     }
-    const data = slot?.file ? await fileToDataUrl(slot.file).catch(() => "") : "";
+    const data = slot?.file ? await storeFile(slot.file, "documents").catch(() => "") : "";
     const saved = await saveExaminerReport({
       thesisId: thesis.id,
       scholarIdentifier: thesis.scholarIdentifier,
@@ -115,7 +116,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice(problem ?? "Attach the revised thesis.");
       return;
     }
-    const data = await fileToDataUrl(reviseFile.file).catch(() => "");
+    const data = await storeFile(reviseFile.file, "documents").catch(() => "");
     const saved = await reviseThesis(mine.id, {
       fileName: reviseFile.file.name,
       fileData: data || null,

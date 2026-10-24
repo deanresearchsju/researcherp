@@ -1,12 +1,19 @@
 "use client";
 
-import { Check, FileDown, FileSpreadsheet, Filter, Search, X } from "lucide-react";
+import { Check, Columns3, FileDown, FileSpreadsheet, Filter, Search, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { downloadSheet } from "@/lib/sheet";
 import { filterValues, joinFilterValues } from "@/lib/list-filter";
 import { downloadTablePdf } from "@/lib/table-pdf";
 import { useCanMenuAction } from "@/lib/use-menu-action";
@@ -214,6 +221,70 @@ function FilterBox({ filters }: { filters: readonly ListFilter[] }) {
   );
 }
 
+const columnsEvent = "sju-columns-change";
+
+function subscribeColumns(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(columnsEvent, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(columnsEvent, onChange);
+  };
+}
+
+/** The columns a person has switched off on this list, remembered in this browser. */
+function useHiddenColumns(key: string) {
+  const read = () => {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const text = useSyncExternalStore(subscribeColumns, read, () => null);
+  const hidden = useMemo(() => {
+    try {
+      const saved: unknown = JSON.parse(text ?? "[]");
+      return Array.isArray(saved)
+        ? saved.filter((item): item is string => typeof item === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }, [text]);
+  const save = (next: readonly string[]) => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(next));
+      window.dispatchEvent(new Event(columnsEvent));
+    } catch {
+      // The choice then lasts only until the page is reloaded.
+    }
+  };
+  return [hidden, save] as const;
+}
+
+const normal = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/** Hides or shows a column of an on-screen table, by the heading it carries. */
+function applyColumnChoice(toolbar: HTMLElement, hidden: readonly string[]) {
+  const off = new Set(hidden.map(normal));
+  const tables = Array.from(
+    toolbar.closest("main")?.querySelectorAll("table") ?? [],
+  );
+  const table = tables.find(
+    (item) => toolbar.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  const head = table?.tHead?.rows[0];
+  if (!table || !head) return;
+  Array.from(head.cells).forEach((cell, index) => {
+    const hide = off.has(normal(cell.textContent ?? "")) && normal(cell.textContent ?? "") !== "";
+    for (const row of Array.from(table.rows)) {
+      const target = row.cells[index];
+      if (target && target.colSpan === 1) target.style.display = hide ? "none" : "";
+    }
+  });
+}
+
 function pageHeading() {
   if (typeof document === "undefined") return "";
   return (
@@ -232,6 +303,7 @@ export function ListToolbar({
   headers,
   rows,
   title,
+  extra,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -243,13 +315,49 @@ export function ListToolbar({
   rows: readonly (readonly string[])[];
   /** Report heading in the PDF. Defaults to the page heading. */
   title?: string;
-  /** Kept for older callers; the buttons read "Export CSV" and "Export PDF". */
+  /** Kept for older callers; the buttons read "Export Excel" and "Export PDF". */
   downloadLabel?: string;
+  /** Shown beside the export buttons, for example a choice of the columns to export. */
+  extra?: ReactNode;
 }) {
   const pathname = usePathname();
   const session = usePreviewSession();
   const canExport = useCanMenuAction("export");
   const [busy, setBusy] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [hidden, saveHidden] = useHiddenColumns(`sju-columns:${pathname}:${filename}`);
+  // A page that brings its own choice of columns (the Scholar register) is left alone.
+  const choosable = extra === undefined && headers.length > 3;
+  const shownIndexes = headers
+    .map((header, index) => (choosable && hidden.includes(header) ? -1 : index))
+    .filter((index) => index >= 0);
+  const outHeaders = shownIndexes.map((index) => headers[index]);
+  const outRows = rows.map((row) => shownIndexes.map((index) => row[index] ?? ""));
+
+  useEffect(() => {
+    const toolbar = root.current;
+    if (!toolbar || !choosable) return;
+    let frame = 0;
+    const apply = () => applyColumnChoice(toolbar, hidden);
+    apply();
+    const main = toolbar.closest("main");
+    if (!main) return;
+    const observer = new MutationObserver(() => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        apply();
+      });
+    });
+    observer.observe(main, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      // Leave the table whole when this list goes away.
+      applyColumnChoice(toolbar, []);
+    };
+  }, [hidden, choosable]);
   const officeLead = session?.role === "admin" || session?.role === "dean";
   const allowDownload =
     (canExport || officeLead) &&
@@ -274,8 +382,8 @@ export function ListToolbar({
       await downloadTablePdf({
         title: title ?? (pageHeading() || "Report"),
         criteria: criteria(),
-        headers,
-        rows,
+        headers: outHeaders,
+        rows: outRows,
         filename,
         generatedBy: session ? session.name.trim() || session.identifier : undefined,
       });
@@ -286,6 +394,7 @@ export function ListToolbar({
 
   return (
     <div
+      ref={root}
       data-readonly-allow=""
       className="mt-6 space-y-3 rounded-xl border border-border bg-card p-4 shadow-card"
     >
@@ -330,15 +439,79 @@ export function ListToolbar({
           ) : null}
         </div>
         {allowDownload ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="relative flex flex-wrap gap-2">
+            {extra}
+            {choosable ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-expanded={columnsOpen}
+                  onClick={() => setColumnsOpen((value) => !value)}
+                >
+                  <Columns3 className="size-4" aria-hidden="true" />
+                  Columns ({outHeaders.length} of {headers.length})
+                </Button>
+                {columnsOpen ? (
+                  <div
+                    role="dialog"
+                    aria-label="Choose columns"
+                    className="absolute right-0 bottom-full z-50 mb-2 w-72 max-w-[90vw] rounded-xl border border-border bg-card p-3 shadow-lift"
+                  >
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      Choose the columns carried into the Excel and PDF downloads. A column
+                      that is also in the table on this page is shown or hidden there too.
+                      Your choice is remembered.
+                    </p>
+                    <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto">
+                      {headers.map((header) => {
+                        const on = !hidden.includes(header);
+                        return (
+                          <li key={header}>
+                            <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-muted">
+                              <input
+                                type="checkbox"
+                                className="size-4 accent-primary"
+                                checked={on}
+                                onChange={() =>
+                                  saveHidden(
+                                    on
+                                      ? [...hidden, header]
+                                      : hidden.filter((item) => item !== header),
+                                  )
+                                }
+                              />
+                              <span className="truncate">{header}</span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-secondary hover:underline"
+                        onClick={() => saveHidden([])}
+                      >
+                        Show all
+                      </button>
+                      <Button type="button" size="sm" onClick={() => setColumnsOpen(false)}>
+                        Done
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => downloadCsv(filename, toCsv(headers, rows))}
+              onClick={() => void downloadSheet(filename, outHeaders, outRows)}
             >
               <FileSpreadsheet className="size-4" aria-hidden="true" />
-              Export CSV
+              Export Excel
             </Button>
             <Button
               type="button"

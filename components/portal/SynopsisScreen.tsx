@@ -18,7 +18,6 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,14 +27,13 @@ import {
   synopsisChecklist,
 } from "@/data/doctoral";
 import { processFlows } from "@/data/portal-desk";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import {
   currentDoctoral,
   decideSynopsis,
   enrollmentFor,
   latestCommittee,
   latestSynopsis,
-  latestThesis,
   plagiarismIssued,
   publicationEligibility,
   reportTarget,
@@ -45,6 +43,12 @@ import {
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { researchTitleOf } from "@/lib/research-title";
+import Link from "next/link";
+import { useFees } from "@/lib/fee-settings";
+import { submissionFeeBlock } from "@/lib/submission-fees";
+import { storeFile } from "@/lib/file-store";
+import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
+import { submissionSummary } from "@/lib/approval-flow";
 
 const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
 
@@ -65,6 +69,12 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
   const titleChanges = useSyncExternalStore(
     (onChange) => subscribeScholarRecords("title_change", onChange),
     () => currentScholarRecords("title_change"),
+    () => null,
+  );
+  useFees();
+  const payments = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("payment", onChange),
+    () => currentScholarRecords("payment"),
     () => null,
   );
   const [file, setFile] = useState<StoredFile | null>(null);
@@ -122,12 +132,21 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
       );
       return;
     }
+    const feeBlocked = submissionFeeBlock(
+      "synopsis",
+      session.identifier,
+      payments?.records ?? [],
+    );
+    if (feeBlocked) {
+      setNotice(feeBlocked);
+      return;
+    }
     const problem = fileError(file?.file ?? null, "document", true);
     if (problem || !file?.file) {
       setNotice(problem ?? "Attach the synopsis.");
       return;
     }
-    const data = await fileToDataUrl(file.file).catch(() => "");
+    const data = await storeFile(file.file, "thesis").catch(() => "");
     const saved = await saveSynopsis({
       scholarIdentifier: session.identifier,
       scholarName: session.name,
@@ -172,7 +191,6 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
   });
 
-  const thesis = latestThesis(doctoral, identifier);
 
   return (
     <DeskPage title="Synopsis">
@@ -191,34 +209,6 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
       ) : null}
       {mode === "scholar" && tab === "details" ? (
         <>
-          <DeskSection title="Indian examiner">
-            <DeskTable
-              headers={["Name", "Institution", "Email"]}
-              empty={(thesis?.indian.length ?? 0) === 0}
-            >
-              {(thesis?.indian ?? []).map((person) => (
-                <tr key={`${person.email}-in`} className="border-t border-border">
-                  <td className="px-4 py-3">{person.name}</td>
-                  <td className="px-4 py-3">{person.institution}</td>
-                  <td className="px-4 py-3">{person.email}</td>
-                </tr>
-              ))}
-            </DeskTable>
-          </DeskSection>
-          <DeskSection title="Foreign examiner">
-            <DeskTable
-              headers={["Name", "Institution", "Email"]}
-              empty={(thesis?.foreign.length ?? 0) === 0}
-            >
-              {(thesis?.foreign ?? []).map((person) => (
-                <tr key={`${person.email}-fr`} className="border-t border-border">
-                  <td className="px-4 py-3">{person.name}</td>
-                  <td className="px-4 py-3">{person.institution}</td>
-                  <td className="px-4 py-3">{person.email}</td>
-                </tr>
-              ))}
-            </DeskTable>
-          </DeskSection>
           <DeskSection title="Synopsis details">
             <DeskTable headers={["File", "Status", "Remarks", ""]} empty={!own}>
               {own ? (
@@ -261,12 +251,30 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
             The research office will verify the checklist and issue the plagiarism
             certificate. The synopsis upload opens after that.
           </GateBanner>
+        ) : submissionFeeBlock(
+            "synopsis",
+            session?.identifier ?? "",
+            payments?.records ?? [],
+          ) ? (
+          <GateBanner>
+            {submissionFeeBlock(
+              "synopsis",
+              session?.identifier ?? "",
+              payments?.records ?? [],
+            )}{" "}
+            <Link
+              href="/scholar/records/payment-history"
+              className="font-semibold underline"
+            >
+              Go to Payment history
+            </Link>
+          </GateBanner>
         ) : (
           <div className="space-y-3 rounded-xl border border-border bg-card p-4">
             {own?.status === "Rejected" ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-secondary">
-                  Returned: {own.remarks}. Upload the corrected synopsis.
+                  Rejected: {own.remarks}. Upload the corrected synopsis.
                 </p>
                 <ViewFilesButton
                   fileName={own.fileName}
@@ -385,20 +393,21 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                     data={item.fileData}
                     onMissing={setNotice}
                   />
-                  <Badge
-                    variant={
-                      item.status === "Approved"
-                        ? "gold"
-                        : item.status === "Rejected"
-                          ? "maroon"
-                          : "purple"
-                    }
-                  >
-                    {item.status}
-                  </Badge>
+                  <ApprovalBadge summary={submissionSummary(item)} />
                 </div>
               </div>
-              {mode === "admin" && item.status === "Submitted" ? (
+              <ApprovalTrail summary={submissionSummary(item)} />
+              {mode === "admin" &&
+              item.status === "Submitted" &&
+              item.needsSupervisor &&
+              item.supervisorStatus !== "Recommended" ? (
+                <p className="text-sm text-muted-foreground">
+                  Waiting for the supervisor&apos;s approval.
+                </p>
+              ) : null}
+              {mode === "admin" &&
+              item.status === "Submitted" &&
+              (!item.needsSupervisor || item.supervisorStatus === "Recommended") ? (
                 <div className="space-y-2">
                   <Textarea
                     aria-label="Remarks"

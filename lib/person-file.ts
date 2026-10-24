@@ -1,18 +1,9 @@
 import { researchRegister, type ResearchScholar } from "@/data/research-register";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { admittedRegistration } from "@/lib/admission";
+import { toCsv } from "@/lib/csv";
+import { downloadCsvAsSheet } from "@/lib/sheet";
 import { currentOffice } from "@/lib/office";
-import {
-  currentAllotments,
-  currentQuotas,
-  registrationOf,
-  scholarBySignIn,
-  scholarDownloadHeaders,
-  scholarDownloadRow,
-  scholarSignInId,
-  supervisorBySignIn,
-  supervisorDownloadHeaders,
-  supervisorDownloadRow,
-} from "@/lib/register";
+import { currentAllotments, currentQuotas, registrationOf, scholarBySignIn, scholarDownloadHeaders, scholarDownloadRow, scholarSignInId, supervisorBySignIn, supervisorDownloadHeaders, supervisorDownloadRow, registerScholarsInOrder } from "@/lib/register";
 import { formatNetQualification } from "@/lib/net-exam";
 import { currentApplications, type StoredApplication } from "@/lib/records";
 import { scholarSemesterLabel } from "@/lib/scholar-identity";
@@ -347,7 +338,10 @@ export function scholarPersonSections(
     section("Register", [
       pair("Name", scholar?.name || textOf(payload.fullName) || name),
       pair("Title", title),
-      pair("Registration number", scholar ? registrationOf(scholar, allotments) : ""),
+      pair(
+        "Registration number",
+        scholar ? registrationOf(scholar, allotments) : admittedRegistration(identifier),
+      ),
       pair("File number", scholar?.fileNumber ?? ""),
       pair(
         "Application number",
@@ -495,7 +489,10 @@ export function downloadPersonSections(
   filename: string,
   sections: readonly PersonFileSection[],
 ) {
-  downloadCsv(filename, toCsv(["Section", "Field", "Value"], sectionsToRows(sections)));
+  void downloadCsvAsSheet(
+    filename,
+    toCsv(["Section", "Field", "Value"], sectionsToRows(sections)),
+  );
 }
 
 export function downloadScholarPersonFile(identifier: string, name: string) {
@@ -556,11 +553,11 @@ export function supervisorWideHeaders() {
 
 export function downloadAllScholarDetails() {
   const applications = currentApplications() ?? [];
-  downloadCsv(
+  void downloadCsvAsSheet(
     "all-scholar-details.csv",
     toCsv(
       scholarWideHeaders(),
-      researchRegister.scholars.map((scholar) => scholarWideRow(scholar, applications)),
+      registerScholarsInOrder().map((scholar) => scholarWideRow(scholar, applications)),
     ),
   );
 }
@@ -569,7 +566,7 @@ export function downloadAllSupervisorDetails() {
   const applications = currentApplications() ?? [];
   const quotas = currentQuotas();
   const allocations = currentOffice()?.allocations ?? [];
-  downloadCsv(
+  void downloadCsvAsSheet(
     "all-supervisor-details.csv",
     toCsv(
       supervisorWideHeaders(),

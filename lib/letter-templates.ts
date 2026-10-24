@@ -63,11 +63,30 @@ function registrationNo(identifier: string) {
 
 /* ------------------------------ Provisional ------------------------------ */
 
+/** The postal address of an applicant, as short lines, from the application. */
+export function addressLinesOf(payload: unknown): string[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+  const record = payload as Record<string, unknown>;
+  const source = record.communication;
+  if (!source || typeof source !== "object") return [];
+  const address = source as Record<string, unknown>;
+  const part = (key: string) =>
+    typeof address[key] === "string" ? (address[key] as string).trim() : "";
+  const country = part("country");
+  return [
+    [part("door"), part("street")].filter(Boolean).join(", "),
+    [part("city"), part("district")].filter(Boolean).join(", "),
+    [part("state"), part("pin")].filter(Boolean).join(" - "),
+    country && !/^india$/i.test(country) ? country : "",
+  ].filter(Boolean);
+}
+
 export function provisionalDraft(
   row: AdmissionCase,
   letter: LetterConfig,
   serial: number,
   today: string,
+  address: readonly string[] = [],
 ): LetterDraft {
   const documents = letter.documents
     .split("\n")
@@ -82,7 +101,7 @@ export function provisionalDraft(
     refNo: `${letter.refPrefix}/${String(row.letterNo ?? serial).padStart(2, "0")}`,
     issuedOn: row.letterIssuedOn || isoFromDisplay(letter.issueDate, today),
     title: `Provisional Admission Letter · ${letter.programme}`,
-    toLines: [displayName(row), `App. No.: ${row.applicationNo}`, row.email],
+    toLines: [displayName(row), ...address, `App. No.: ${row.applicationNo}`, row.email],
     subject: `Provisional selection for admission to the ${letter.programme} (${letter.sessionLabel})`,
     reference: `Your application No. ${row.applicationNo} for admission to the ${letter.programme}.`,
     details: [

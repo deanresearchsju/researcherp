@@ -4,7 +4,8 @@ import { scholarDeclaration } from "@/data/declarations";
 import { scholarDocuments } from "@/data/documents";
 import { scholarFormCopy } from "@/data/forms";
 import { phdSheetCopy } from "@/data/phd-application-sheet";
-import { applicationFeeInr, university } from "@/lib/constants";
+import { university } from "@/lib/constants";
+import { currentFees } from "@/lib/fee-settings";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { formatNetQualification } from "@/lib/net-exam";
 import { subjectLine, type PhdReceipt } from "@/lib/scholar-progress";
@@ -267,7 +268,7 @@ export function PhdApplicationSheet({
                 <Cell label={phdSheetCopy.paymentMode} value={values.paymentMode} />
                 <Cell
                   label={phdSheetCopy.amount}
-                  value={`Rs. ${formatInr(applicationFeeInr)}`}
+                  value={`Rs. ${formatInr(currentFees().application)}`}
                 />
                 <Cell
                   label={phdSheetCopy.transactionNo}

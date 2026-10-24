@@ -19,6 +19,7 @@ export const portalModules = {
   website: "Website",
   reports: "Letters & reports",
   administration: "Administration",
+  accounts: "Fee verification",
   scholars: "Scholars",
 } as const;
 
@@ -70,7 +71,10 @@ const doctoralItems = (role: "admin" | "scholar") => [
     ? [{ label: "Thesis evaluators", href: "/admin/evaluators", ready: true }]
     : []),
   { label: "Thesis", href: `/${role}/thesis`, ready: true },
-  { label: "Examiner reports", href: `/${role}/examiner-reports`, ready: true },
+  // Examiner reports are for the research office only; scholars do not see them.
+  ...(role === "admin"
+    ? [{ label: "Examiner reports", href: "/admin/examiner-reports", ready: true }]
+    : []),
   { label: "Viva", href: `/${role}/viva`, ready: true },
   { label: "Completion", href: `/${role}/completion`, ready: true },
 ];
@@ -120,10 +124,10 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.scholarRecords,
     items: [
       record("admin", "abc-id", "ABC ID"),
-      record("admin", "hall-ticket", "Hall ticket"),
       { label: "Fee collection", href: "/admin/fee", ready: true },
       { label: "Fee approvals", href: "/admin/payments", ready: true },
       { label: "Approved documents", href: "/admin/approved", ready: true },
+      { label: "Attendance sheets", href: "/admin/attendance", ready: true },
     ],
   },
   {
@@ -134,6 +138,9 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.courseWork,
     items: [
       { label: "Registration", href: "/admin/course-work", ready: true },
+      { label: "Exam setup", href: "/admin/exam-setup", ready: true },
+      { label: "Hall tickets & seating", href: "/admin/exam-tickets", ready: true },
+      { label: "Result approval", href: "/admin/exam-results", ready: true },
       { label: "Semester promotion", href: "/admin/promotions", ready: true },
       { label: "Results", href: "/admin/results", ready: true },
     ],
@@ -157,11 +164,15 @@ const adminGroups: PortalNavGroup[] = [
       { label: "Helpdesk", href: "/admin/helpdesk", ready: true },
       { label: "Research areas", href: "/admin/research-areas", ready: true },
       { label: "Our Team", href: "/admin/team", ready: true },
+      { label: "Supervisor profiles", href: "/admin/supervisor-profiles", ready: true },
     ],
   },
   {
     heading: portalModules.administration,
-    items: [{ label: "Users", href: "/admin/users", ready: true }],
+    items: [
+      { label: "Users", href: "/admin/users", ready: true },
+      { label: "Fee settings", href: "/admin/fee-settings", ready: true },
+    ],
   },
 ];
 
@@ -186,7 +197,6 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       heading: portalModules.scholarRecords,
       items: [
         record("scholar", "abc-id", "ABC ID"),
-        record("scholar", "hall-ticket", "Hall ticket"),
         { label: "Fee", href: "/scholar/fee", ready: true },
         { label: "Approved documents", href: "/scholar/approved", ready: true },
         { label: "Forms & formats", href: "/scholar/forms", ready: true },
@@ -200,6 +210,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       heading: portalModules.courseWork,
       items: [
         { label: "Registration", href: "/scholar/course-work", ready: true },
+        { label: "Hall ticket", href: "/scholar/exam-hall-ticket", ready: true },
         { label: "Results", href: "/scholar/results", ready: true },
       ],
     },
@@ -229,6 +240,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [
         { label: "RAC proposal", href: "/supervisor/rac", ready: true },
         { label: "Doctoral committees", href: "/supervisor/committees", ready: true },
+        { label: "Synopsis & thesis", href: "/supervisor/submissions", ready: true },
         { label: "Thesis evaluators", href: "/supervisor/evaluators", ready: true },
         { label: "Approved documents", href: "/supervisor/approved", ready: true },
         { label: "Colloquium", href: "/supervisor/colloquium", ready: true },
@@ -239,6 +251,63 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
   admin: officeGroups(true),
   staff: officeGroups(false),
   dean: officeGroups(true),
+  accounts: [
+    {
+      heading: "",
+      items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
+    },
+    {
+      heading: portalModules.accounts,
+      items: [
+        { label: "Registration fee", href: "/admin/accounts/registration", ready: true },
+        {
+          label: "Course-work registration fee",
+          href: "/admin/accounts/course-work",
+          ready: true,
+        },
+        { label: "Annual fee", href: "/admin/accounts/annual", ready: true },
+        { label: "Synopsis fee", href: "/admin/accounts/synopsis", ready: true },
+        { label: "Thesis fee", href: "/admin/accounts/thesis", ready: true },
+      ],
+    },
+  ],
+  coe: [
+    {
+      heading: "",
+      items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
+    },
+    {
+      heading: "Examinations",
+      items: [{ label: "Marks entry", href: "/admin/coe/marks", ready: true }],
+    },
+  ],
+  coeverify: [
+    {
+      heading: "",
+      items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
+    },
+    {
+      heading: "Examinations",
+      items: [{ label: "Verify & freeze marks", href: "/admin/coe/verify", ready: true }],
+    },
+  ],
+  vc: [
+    {
+      heading: "",
+      items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
+    },
+    {
+      heading: portalModules.registers,
+      items: [
+        { label: "Scholar register", href: "/admin/register", ready: true },
+        { label: "Supervisor register", href: "/admin/supervisors", ready: true },
+      ],
+    },
+    {
+      heading: portalModules.doctoralProgress,
+      items: [{ label: "Thesis evaluators", href: "/admin/evaluators", ready: true }],
+    },
+  ],
 };
 
 export const portalShellCopy = {
@@ -273,6 +342,26 @@ export const portalIntro: Record<Role, { title: string; summary: string }> = {
     title: "Dean dashboard",
     summary:
       "Monitor admissions as staff complete each step. Changes to a blocked step stay with the administrator.",
+  },
+  accounts: {
+    title: "Accounts dashboard",
+    summary:
+      "Check each receipt and verify the registration, course-work registration and annual fee payments.",
+  },
+  coe: {
+    title: "Controller of Examinations · Marks entry",
+    summary:
+      "Enter the course-work marks subject by subject, campus by campus or batch by batch, then send them for verification.",
+  },
+  coeverify: {
+    title: "Controller of Examinations · Verification",
+    summary:
+      "Check the marks entered, freeze them (a frozen mark cannot be changed), print the sheet for your records and submit it to the research office.",
+  },
+  vc: {
+    title: "Vice Chancellor dashboard",
+    summary:
+      "The scholar and supervisor registers, and the thesis evaluators the Dean has forwarded for your selection.",
   },
 };
 

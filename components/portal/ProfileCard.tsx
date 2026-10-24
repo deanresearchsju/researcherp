@@ -51,8 +51,26 @@ function scholarFacts(identifier: string, name: string) {
   const enrollment = doctoral?.enrollments.find((item) =>
     sameId(item.scholarIdentifier, identifier),
   );
-  const subject = scholar?.department.trim() || enrollment?.school.trim() || "";
-  const mode = enrollment?.studyMode.trim() || scholar?.category.trim() || "";
+  // Scholars admitted through Selection are not on the register: their admission file fills in.
+  const office = currentAdmission();
+  const admitted = scholar
+    ? null
+    : admissionCaseForIdentifier(identifier, office?.cases ?? []);
+  const subject =
+    scholar?.department.trim() ||
+    enrollment?.school.trim() ||
+    admitted?.department.trim() ||
+    "";
+  const mode =
+    enrollment?.studyMode.trim() ||
+    scholar?.category.trim() ||
+    admitted?.studyMode.trim() ||
+    "";
+  const intake = office?.progress.entrance;
+  const admittedBatch =
+    admitted && intake && intake.session
+      ? `${intake.session} ${intake.monthYear.slice(0, 4)}`.trim()
+      : "—";
   return {
     title: scholar?.name || name,
     subtitle: subject ? `Ph.D. · ${subject}` : "Ph.D. scholar",
@@ -61,9 +79,9 @@ function scholarFacts(identifier: string, name: string) {
         "Registration No.",
         scholar
           ? registrationOf(scholar, allotments) || "To be allotted"
-          : "To be allotted",
+          : admitted?.registrationNo || "To be allotted",
       ],
-      ["Batch", scholar ? (batchOf(scholar.batchId)?.name ?? "—") : "—"],
+      ["Batch", scholar ? (batchOf(scholar.batchId)?.name ?? "—") : admittedBatch],
       ["Mode", mode || "—"],
       ["Semester", scholarSemesterLabel(identifier)],
     ] as [string, string][],
@@ -112,7 +130,13 @@ function supervisorFacts(identifier: string, name: string) {
 function guideFacts(identifier: string) {
   const allocation = allocationFor(currentOffice()?.allocations ?? [], identifier);
   const scholar = scholarBySignIn(identifier);
-  const name = allocation?.supervisorName.trim() || scholar?.guideName.trim() || "";
+  const admitted = scholar
+    ? null
+    : admissionCaseForIdentifier(identifier, currentAdmission()?.cases ?? []);
+  const name =
+    allocation?.supervisorName.trim() ||
+    scholar?.guideName.trim() ||
+    (admitted?.verification === "Approved" ? admitted.guideName.trim() : "");
   if (!name) return null;
   const guide =
     supervisorForGuide(name) ??

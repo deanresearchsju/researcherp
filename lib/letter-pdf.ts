@@ -8,7 +8,7 @@ export type LetterSigner = { name: string; title: string; signature?: string };
 
 const pageW = 210;
 const pageH = 297;
-const margin = 22;
+const margin = 15;
 const innerW = pageW - margin * 2;
 const bottom = 276;
 const ink: [number, number, number] = [28, 23, 48];
@@ -236,23 +236,29 @@ function renderLetter(
     y += 2.4 * k;
   }
 
-  room(34 * k);
-  y += 1 * k;
-  write(letter.closing || "Best wishes,");
-  const signY = y;
-  if (signer.signature)
-    fit(doc, signer.signature, pageW - margin - 50, signY, 50, 16 * k);
+  // The closing, signature, name and designation sit in one block on the right, all centred
+  // on the same line so the signature lines up with the name beneath it.
+  room(36 * k);
+  y += 2 * k;
+  const blockW = 70;
+  const centre = pageW - margin - blockW / 2;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(size);
+  doc.setTextColor(...ink);
+  doc.text(letter.closing || "Best wishes,", centre, y, { align: "center" });
+  const signY = y + 2 * k;
+  if (signer.signature) fit(doc, signer.signature, centre - 25, signY, 50, 16 * k);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(size);
-  doc.text(signer.name || "Dean Research", pageW - margin, signY + 22 * k, {
-    align: "right",
-  });
+  doc.text(signer.name || "Dean Research", centre, signY + 21 * k, { align: "center" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9 * k);
-  doc.text(signer.title || "Dean Research", pageW - margin, signY + 27 * k, {
-    align: "right",
-  });
-  y = signY + 34 * k;
+  const titleRows = doc.splitTextToSize(
+    signer.title || "Dean Research",
+    blockW,
+  ) as string[];
+  doc.text(titleRows, centre, signY + 25.5 * k, { align: "center" });
+  y = signY + (25.5 + titleRows.length * 4) * k + 4 * k;
 
   const copies = letter.copyTo.filter((row) => row.trim());
   if (copies.length > 0) {

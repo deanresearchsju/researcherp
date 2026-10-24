@@ -16,28 +16,18 @@ import {
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-select";
-import {
-  examCopy,
-  examOutcomes,
-  examPageSize,
-  examYears,
-  type ExamOutcome,
-} from "@/data/exams";
-import { resultGradeKey } from "@/data/portal-desk";
-import { months } from "@/lib/constants";
-import { clientToday } from "@/lib/dates";
+import { examCopy, examOutcomes, examPageSize } from "@/data/exams";
 import {
   currentDoctoral,
   examSessionLabel,
   paperOf,
-  publishResults,
   resultFor,
   resultsFor,
   subscribeDoctoral,
   type CourseRegistration,
 } from "@/lib/doctoral";
 import { pageCount, pageSlice } from "@/lib/paging";
+import { currentExam, subscribeExam } from "@/lib/exam-office";
 import { usePortalSession } from "@/lib/use-preview-session";
 
 function outcomeLabel(
@@ -51,17 +41,13 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
   const ready = useClientReady();
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const exam = useSyncExternalStore(subscribeExam, currentExam, () => null);
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState("");
   const [semester, setSemester] = useState("");
   const [tab, setTab] = useState("grades");
   const [gradeKey, setGradeKey] = useState(false);
-  const [sessionMonth, setSessionMonth] = useState("");
-  const [sessionYear, setSessionYear] = useState("");
   const [page, setPage] = useState(1);
-  const [drafts, setDrafts] = useState<Record<string, ExamOutcome | "">>({});
-  const [busy, setBusy] = useState(false);
   const [historyId, setHistoryId] = useState<string | null>(null);
 
   if (!ready || !doctoral)
@@ -83,50 +69,25 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
   });
 
+  const bands = [...(exam?.settings.grades ?? [])].sort((left, right) => right.min - left.min);
+  const gradeRows = [
+    ...bands.map((band, index) => ({
+      grade: band.grade,
+      range: `${band.min}${index === 0 ? ` – ${exam?.settings.maxMarks ?? 100}` : ` – below ${bands[index - 1].min}`}`,
+      result: "PASS",
+    })),
+    {
+      grade: "RA",
+      range: `Below ${exam?.settings.passMark ?? 50}`,
+      result: "RA (re-appearance)",
+    },
+    { grade: "AAA", range: "Absent", result: "AAA" },
+  ];
   const pages = pageCount(rows.length, examPageSize);
   const shown = pageSlice(rows, Math.min(page, pages), examPageSize);
   const failed = rows.filter((row) => resultFor(doctoral, row.id)?.outcome === "RA");
   const absent = rows.filter((row) => resultFor(doctoral, row.id)?.outcome === "AAA");
   const history = historyId && doctoral ? resultsFor(doctoral, historyId) : [];
-
-  async function save(advance: boolean) {
-    if (!doctoral) return;
-    if (!sessionMonth || !sessionYear) {
-      setNotice("Select the month and year of the exam session.");
-      return;
-    }
-    const entries = shown.rows.flatMap((row) => {
-      const chosen = drafts[row.id];
-      if (!chosen) return [];
-      return [{ registrationId: row.id, outcome: chosen }];
-    });
-    if (entries.length === 0) {
-      setNotice("Mark Pass, RA or Absent on this page before saving.");
-      return;
-    }
-    setBusy(true);
-    const saved = await publishResults(entries, sessionMonth, sessionYear, clientToday());
-    setBusy(false);
-    if (!saved.ok) {
-      setNotice(saved.message);
-      return;
-    }
-    setDrafts((current) => {
-      const next = { ...current };
-      shown.rows.forEach((row) => {
-        delete next[row.id];
-      });
-      return next;
-    });
-    if (advance && shown.page < pages) {
-      setPage(shown.page + 1);
-      setNotice(`Page ${shown.page} saved. Continue with the next 25 papers.`);
-      return;
-    }
-    setNotice(
-      "This page of results is saved. Earlier sittings stay in the exam history.",
-    );
-  }
 
   return (
     <DeskPage title={examCopy.resultsTitle}>
@@ -147,42 +108,10 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
       ) : (
         <>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            {examCopy.resultsDetail}
+            The published results of every course-work paper. Results are no longer typed
+            here: the Controller of Examinations enters and freezes the marks, the passing
+            board approves them, and you publish them under Result approval.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="space-y-1.5 text-sm">
-              <span className="font-semibold text-primary">
-                {examCopy.sessionLabel} month
-              </span>
-              <NativeSelect
-                aria-label="Exam month"
-                value={sessionMonth}
-                onChange={(event) => setSessionMonth(event.target.value)}
-              >
-                <option value="">Select month</option>
-                {months.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
-            <label className="space-y-1.5 text-sm">
-              <span className="font-semibold text-primary">Year</span>
-              <NativeSelect
-                aria-label="Exam year"
-                value={sessionYear}
-                onChange={(event) => setSessionYear(event.target.value)}
-              >
-                <option value="">Select year</option>
-                {examYears.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
-          </div>
         </>
       )}
       {mode === "admin" ? (
@@ -247,7 +176,6 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
           })}
         />
       ) : null}
-      {notice ? <p className="text-sm text-secondary">{notice}</p> : null}
       {mode === "scholar" ? (
         <>
           {tab === "grades" ? (
@@ -269,8 +197,9 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                   "Semester",
                   "Month / year",
                   "Code",
-                  "Description",
-                  "Credit",
+                  "Subject",
+                  "Marks",
+                  "Grade",
                   "Result",
                 ]}
                 empty={rows.length === 0}
@@ -286,7 +215,8 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                       </td>
                       <td className="px-4 py-3">{paper.code || "—"}</td>
                       <td className="px-4 py-3">{paper.name || "—"}</td>
-                      <td className="px-4 py-3">{paper.credits || "—"}</td>
+                      <td className="px-4 py-3">{result?.marks ?? "—"}</td>
+                      <td className="px-4 py-3">{result?.grade || "—"}</td>
                       <td className="px-4 py-3">
                         <StatusPill status={result?.outcome ?? examCopy.pending} />
                       </td>
@@ -376,15 +306,14 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                   <th className="px-3 py-3 font-semibold">Scholar</th>
                   <th className="px-3 py-3 font-semibold">Paper</th>
                   <th className="px-3 py-3 font-semibold">Latest</th>
-                  <th className="px-3 py-3 font-semibold">This session</th>
                   <th className="px-3 py-3 font-semibold">History</th>
                 </tr>
               </thead>
               <tbody>
                 {shown.rows.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
-                      No course-work paper is waiting on this page.
+                    <td className="px-3 py-4 text-muted-foreground" colSpan={4}>
+                      No course-work paper is registered yet.
                     </td>
                   </tr>
                 ) : (
@@ -392,13 +321,6 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                     const paper = paperOf(doctoral, row);
                     const result = resultFor(doctoral, row.id);
                     const attempts = resultsFor(doctoral, row.id);
-                    const locked =
-                      attempts.some((item) => item.outcome === "Pass") ||
-                      attempts.some(
-                        (item) =>
-                          item.sessionMonth === sessionMonth &&
-                          item.sessionYear === sessionYear,
-                      );
                     return (
                       <tr key={row.id} className="border-t border-border align-top">
                         <td className="px-3 py-3">
@@ -421,29 +343,6 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                           )}
                         </td>
                         <td className="px-3 py-3">
-                          <NativeSelect
-                            aria-label={`Result for ${row.scholarName} ${paper.code}`}
-                            disabled={locked}
-                            title={
-                              locked ? "This result is published and locked." : undefined
-                            }
-                            value={locked ? "" : (drafts[row.id] ?? "")}
-                            onChange={(event) =>
-                              setDrafts((current) => ({
-                                ...current,
-                                [row.id]: event.target.value as ExamOutcome | "",
-                              }))
-                            }
-                          >
-                            <option value="">{locked ? "Locked" : "Not marked"}</option>
-                            {examOutcomes.map((item) => (
-                              <option key={item} value={item}>
-                                {item === "AAA" ? "Absent" : item}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        </td>
-                        <td className="px-3 py-3">
                           <Button
                             type="button"
                             size="sm"
@@ -459,24 +358,6 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                 )}
               </tbody>
             </table>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void save(false)}
-            >
-              {examCopy.savePage}
-            </Button>
-            <Button
-              type="button"
-              variant="gold"
-              disabled={busy}
-              onClick={() => void save(true)}
-            >
-              {examCopy.saveContinue}
-            </Button>
           </div>
         </div>
       )}
@@ -500,8 +381,8 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
       ) : null}
       {gradeKey ? (
         <DeskModal title="Grade details" onClose={() => setGradeKey(false)}>
-          <DeskTable headers={["Grade", "Range", "Result"]} empty={false}>
-            {resultGradeKey.map((row) => (
+          <DeskTable headers={["Grade", "Marks", "Result"]} empty={false}>
+            {gradeRows.map((row) => (
               <tr key={row.grade} className="border-t border-border">
                 <td className="px-4 py-3">{row.grade}</td>
                 <td className="px-4 py-3">{row.range}</td>

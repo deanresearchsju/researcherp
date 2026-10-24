@@ -3,7 +3,8 @@ import { admissionCaseForIdentifier, currentAdmission } from "@/lib/admission";
 import { currentDoctoral, enrollmentFor } from "@/lib/doctoral";
 import { feePlan, programmeStart, type FeeYear } from "@/lib/fees";
 import { sameId } from "@/lib/office";
-import { batchOf, isPassedOut, scholarBySignIn, scholarSignInId } from "@/lib/register";
+import { batchById, intakeOfCase } from "@/lib/batches";
+import { isPassedOut, scholarBySignIn, scholarSignInId, registerScholarsInOrder } from "@/lib/register";
 import type { ScholarRecord } from "@/lib/scholar-records";
 
 export type FeeLedger = {
@@ -43,6 +44,8 @@ export function feeLedger(
   const batchId =
     scholar?.batchId ||
     enrollment?.batchId ||
+    // Admitted through Selection: the intake the scholar applied for.
+    (admitted ? intakeOfCase(currentAdmission(), admitted) : "") ||
     // Newly admitted and not yet on the register: the latest intake that has started.
     [...researchRegister.batches]
       .sort((left, right) => right.order - left.order)
@@ -61,7 +64,7 @@ export function feeLedger(
     identifier,
     name: scholar?.name || name || identifier,
     batchName:
-      batchOf(batchId)?.name ??
+      batchById(batchId)?.name ??
       doctoral?.batches.find((item) => item.id === batchId)?.name ??
       "",
     studyMode,
@@ -77,7 +80,7 @@ export function feeLedger(
 /** Every active scholar's ledger: the register plus scholars enrolled later. */
 export function feeRoster(records: readonly ScholarRecord[], today: string): FeeLedger[] {
   const doctoral = currentDoctoral();
-  const fromRegister = researchRegister.scholars.map((scholar) => ({
+  const fromRegister = registerScholarsInOrder().map((scholar) => ({
     identifier: scholarSignInId(scholar),
     name: scholar.name,
   }));

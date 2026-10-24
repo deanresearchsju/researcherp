@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
 import { incompleteApplicationsCopy as copy } from "@/data/incomplete-applications";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { toCsv } from "@/lib/csv";
+import { downloadCsvAsSheet } from "@/lib/sheet";
 import { formatIsoDate } from "@/lib/dates";
 import { officeWriteBlock } from "@/lib/access";
 import { useCanMenuAction } from "@/lib/use-menu-action";
@@ -166,7 +167,10 @@ export function IncompleteApplications({ initial }: { initial: IncompleteLoad })
             variant="gold"
             disabled={rows.length === 0}
             onClick={() =>
-              downloadCsv("incomplete-applications.csv", toCsv(csvHeaders, csvRows(rows)))
+              void downloadCsvAsSheet(
+                "incomplete-applications.csv",
+                toCsv(csvHeaders, csvRows(rows)),
+              )
             }
           >
             {copy.exportAll}

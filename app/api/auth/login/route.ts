@@ -16,7 +16,7 @@ import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { portalAuthClient } from "@/lib/supabase/admin";
 import { isRetiredSignIn } from "@/lib/users";
 import type { Json } from "@/types/database";
-import { ROLES, type Role } from "@/types";
+import { ROLES, officeRoles, type Role } from "@/types";
 
 const roles: readonly Role[] = ROLES;
 
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
     .from("portal_users")
     .select("id, role, name, identifier, password, must_reset, menu_rights");
   const scoped = officeSignIn
-    ? lookup.in("role", ["admin", "staff", "dean"]).ilike("identifier", identifier)
+    ? lookup.in("role", [...officeRoles]).ilike("identifier", identifier)
     : lookup.eq("role", input.role).ilike("identifier", identifier);
   const full = await scoped.maybeSingle();
   const fallback =
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
           ? supabase
               .from("portal_users")
               .select("id, role, name, identifier, password, must_reset")
-              .in("role", ["admin", "staff", "dean"])
+              .in("role", [...officeRoles])
               .ilike("identifier", identifier)
               .maybeSingle()
           : supabase

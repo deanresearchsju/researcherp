@@ -45,7 +45,7 @@ import { researchRegister, type ResearchBatch } from "@/data/research-register";
 import { scholarSchoolName } from "@/lib/admission";
 import { paymentModes } from "@/lib/constants";
 import { clientToday, formatIsoDate, isOnOrBefore, isValidIsoDate } from "@/lib/dates";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import { batchOf, scholarBySignIn } from "@/lib/register";
 import {
   batchSemesterFloor,
@@ -63,8 +63,11 @@ import {
   type CourseWindow,
   type DoctoralState,
 } from "@/lib/doctoral";
+import { currentExam, subscribeExam } from "@/lib/exam-office";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
+import { allBatches } from "@/lib/batches";
+import { storeFile } from "@/lib/file-store";
 
 const windowSchema = z.object({
   enabled: z.boolean(),
@@ -119,7 +122,7 @@ type PaymentValues = z.infer<typeof paymentSchema>;
 function batchLabel(batchId: string) {
   return (
     batchOf(batchId)?.name ??
-    researchRegister.batches.find((batch) => batch.id === batchId)?.name ??
+    allBatches().find((batch) => batch.id === batchId)?.name ??
     batchId
   );
 }
@@ -272,6 +275,10 @@ function RegistrationForm({
   const [receipt, setReceipt] = useState<StoredFile | null>(null);
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The campuses where the examination is written are set up by the research office.
+  const exam = useSyncExternalStore(subscribeExam, currentExam, () => null);
+  const centres = exam?.settings.centres ?? [];
+  const [centreId, setCentreId] = useState("");
   const arrearCodes = new Set(arrears.map((paper) => paper.code));
   const freshPicked = picked.filter((code) => !arrearCodes.has(code));
   const total = picked.length * courseWorkFee;
@@ -297,6 +304,10 @@ function RegistrationForm({
       setError("Select at least one subject.");
       return;
     }
+    if (centres.length > 0 && !centreId) {
+      setError("Choose the campus where you will write the examination.");
+      return;
+    }
     if (!receipt?.file) {
       setReceiptMessage("Upload the payment receipt.");
       return;
@@ -304,7 +315,7 @@ function RegistrationForm({
     const problem = fileError(receipt.file, "document", true);
     setReceiptMessage(problem);
     if (problem) return;
-    const receiptData = await fileToDataUrl(receipt.file).catch(() => "");
+    const receiptData = await storeFile(receipt.file, "receipts").catch(() => "");
     if (!receiptData) {
       setReceiptMessage("The receipt could not be read.");
       return;
@@ -325,6 +336,7 @@ function RegistrationForm({
       paymentDate: values.paymentDate,
       receiptName: receipt.file.name,
       receiptData,
+      examCentreId: centreId,
     });
     setBusy(false);
     if (!saved.ok) {
@@ -423,6 +435,31 @@ function RegistrationForm({
       <p className="rounded-lg bg-accent/15 px-3 py-2 text-sm font-semibold text-primary">
         {picked.length} paper(s) × ₹{formatInr(courseWorkFee)} = ₹{formatInr(total)}
       </p>
+      {centres.length > 0 ? (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <FormField
+            label="Campus where you will write the examination"
+            htmlFor="exam-centre"
+            required
+          >
+            <NativeSelect
+              id="exam-centre"
+              value={centreId}
+              onChange={(event) => setCentreId(event.target.value)}
+            >
+              <option value="">Choose a campus</option>
+              {centres.map((centre) => (
+                <option key={centre.id} value={centre.id}>
+                  {centre.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </FormField>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Your hall ticket is issued for this campus once Accounts approves the fee.
+          </p>
+        </div>
+      ) : null}
       <PaymentInstructions amount={total} purpose="Course-work fee" />
       <div className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
         <h3 className="font-semibold text-primary sm:col-span-2">Payment details</h3>
@@ -950,9 +987,9 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
   }
 
   const batchOptions = [
-    ...researchRegister.batches.map((batch) => ({ id: batch.id, name: batch.name })),
+    ...allBatches().map((batch) => ({ id: batch.id, name: batch.name })),
     ...doctoral.batches
-      .filter((batch) => !researchRegister.batches.some((item) => item.id === batch.id))
+      .filter((batch) => !allBatches().some((item) => item.id === batch.id))
       .map((batch) => ({ id: batch.id, name: batch.name })),
   ];
   const registrations = doctoral.registrations.filter((row) => {
@@ -1033,7 +1070,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
       const problem = fileError(syllabus.file, "document", true);
       setSyllabusMessage(problem);
       if (problem) return;
-      const data = await fileToDataUrl(syllabus.file).catch(() => "");
+      const data = await storeFile(syllabus.file, "documents").catch(() => "");
       if (!data) {
         setSyllabusMessage("That syllabus could not be read.");
         return;
@@ -1114,7 +1151,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
 
       {tab === "windows" ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {researchRegister.batches.map((batch) => {
+          {allBatches().map((batch) => {
             const window = doctoral.windows.find((item) => item.batchId === batch.id);
             const floor = batchSemesterFloor(doctoral, batch.id);
             const open =
@@ -1161,9 +1198,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
       ) : null}
       {windowBatch
         ? (() => {
-            const batch = researchRegister.batches.find(
-              (item) => item.id === windowBatch,
-            );
+            const batch = allBatches().find((item) => item.id === windowBatch);
             if (!batch) return null;
             return (
               <BatchWindowDialog
@@ -1187,7 +1222,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
                 id: "batch",
                 label: "Batch",
                 value: batchFilter,
-                options: researchRegister.batches.map((batch) => ({
+                options: allBatches().map((batch) => ({
                   value: batch.id,
                   label: batch.name,
                 })),

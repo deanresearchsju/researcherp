@@ -1,3 +1,5 @@
+"use client";
+
 import { Check } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -5,6 +7,7 @@ import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { applicationFee, feePlans } from "@/data/fees";
 import { sectionCopy } from "@/data/sections";
+import { rupees, useFees } from "@/lib/fee-settings";
 import { cn } from "@/lib/utils";
 
 const feeWidth: Record<string, string> = {
@@ -15,6 +18,11 @@ const feeWidth: Record<string, string> = {
 
 export function FeeCards() {
   const copy = sectionCopy.fees;
+  // Fees come from Fee settings, so a change shows here at once.
+  const fees = useFees();
+  const annual = (id: string) =>
+    rupees(id === "full-time" ? fees.fullTime : fees.partTime);
+  const application = rupees(fees.application);
 
   return (
     <section
@@ -40,7 +48,7 @@ export function FeeCards() {
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {plan.summary}
               </p>
-              <p className="mt-6 font-heading text-4xl text-primary">{plan.annualFee}</p>
+              <p className="mt-6 font-heading text-4xl text-primary">{annual(plan.id)}</p>
               <p className="text-sm text-muted-foreground">
                 {plan.period} · {plan.duration}
               </p>
@@ -63,7 +71,7 @@ export function FeeCards() {
                       className="mt-1 size-4 shrink-0 text-secondary"
                       aria-hidden="true"
                     />
-                    <span>{point}</span>
+                    <span>{point.replace(/₹[\d,]+/, annual(plan.id))}</span>
                   </li>
                 ))}
               </ul>
@@ -72,13 +80,13 @@ export function FeeCards() {
         </ul>
         <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-accent bg-muted/70 p-5 sm:flex-row sm:items-center">
           <p className="grid size-16 shrink-0 place-items-center rounded-full bg-accent font-heading text-lg text-accent-foreground">
-            {applicationFee.amount}
+            {application}
           </p>
           <p className="text-sm leading-6 text-muted-foreground">
             <span className="font-semibold text-foreground">
-              Application fee {applicationFee.amount}.
+              Application fee {application}.
             </span>{" "}
-            {applicationFee.detail}
+            {applicationFee.detail.replace(/₹[\d,]+/, application)}
           </p>
         </div>
       </Container>

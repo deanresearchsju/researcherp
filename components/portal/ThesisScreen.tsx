@@ -13,7 +13,6 @@ import {
   FormDialog,
   GateBanner,
   ScholarIdentityHeader,
-  StatusPill,
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
@@ -34,7 +33,7 @@ import {
   thesisOpensOn,
   type ThesisSubmission,
 } from "@/lib/doctoral";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import { loadEvaluations } from "@/lib/thesis-evaluation";
 import {
   panelComplete,
@@ -44,6 +43,12 @@ import {
 import { usePortalSession } from "@/lib/use-preview-session";
 import { researchTitleOf } from "@/lib/research-title";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
+import Link from "next/link";
+import { useFees } from "@/lib/fee-settings";
+import { submissionFeeBlock } from "@/lib/submission-fees";
+import { storeFile } from "@/lib/file-store";
+import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
+import { submissionSummary } from "@/lib/approval-flow";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Enter the title."),
@@ -57,6 +62,12 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
   const titleChanges = useSyncExternalStore(
     (onChange) => subscribeScholarRecords("title_change", onChange),
     () => currentScholarRecords("title_change"),
+    () => null,
+  );
+  useFees();
+  const payments = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("payment", onChange),
+    () => currentScholarRecords("payment"),
     () => null,
   );
   const [file, setFile] = useState<StoredFile | null>(null);
@@ -74,7 +85,8 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
     doctoral.theses
       .filter((item) => item.scholarIdentifier === identifier)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null;
-  const blocked = thesisBlocked(doctoral, identifier);
+  const feeBlocked = submissionFeeBlock("thesis", identifier, payments?.records ?? []);
+  const blocked = thesisBlocked(doctoral, identifier) ?? feeBlocked;
   const lockedTitle = researchTitleOf(
     doctoral,
     identifier,
@@ -87,12 +99,16 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
       setNotice("The research office has to issue the plagiarism certificate first.");
       return;
     }
+    if (feeBlocked) {
+      setNotice(feeBlocked);
+      return;
+    }
     const problem = fileError(file?.file ?? null, "document", true);
     if (problem || !file?.file) {
       setNotice(problem ?? "Attach the thesis.");
       return;
     }
-    const data = await fileToDataUrl(file.file).catch(() => "");
+    const data = await storeFile(file.file, "thesis").catch(() => "");
     const saved = await saveThesis({
       scholarIdentifier: identifier,
       scholarName: name,
@@ -122,7 +138,10 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
             <p className="font-semibold text-primary">{own.title}</p>
             <p className="text-muted-foreground">{own.domain}</p>
             <div className="mt-2">
-              <StatusPill status={own.status === "Approved" ? "Approved" : "Submitted"} />
+              <ApprovalBadge summary={submissionSummary(own)} showDetail />
+            </div>
+            <div className="mt-3">
+              <ApprovalTrail summary={submissionSummary(own)} />
             </div>
           </div>
           <ViewFilesButton
@@ -132,12 +151,25 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
           />
         </div>
       ) : blocked ? (
-        <GateBanner tone="danger">{blocked}</GateBanner>
+        <GateBanner tone={feeBlocked && blocked === feeBlocked ? undefined : "danger"}>
+          {blocked}
+          {feeBlocked && blocked === feeBlocked ? (
+            <>
+              {" "}
+              <Link
+                href="/scholar/records/payment-history"
+                className="font-semibold underline"
+              >
+                Go to Payment history
+              </Link>
+            </>
+          ) : null}
+        </GateBanner>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
           <p className="text-sm text-muted-foreground">
             {own?.status === "Rejected"
-              ? `Returned: ${own.remarks}. Submit the corrected thesis.`
+              ? `Rejected: ${own.remarks}. Submit the corrected thesis.`
               : `Open since ${opens ? formatIsoDate(opens) : formatIsoDate(clientToday())}.`}
           </p>
           <Button
@@ -245,6 +277,9 @@ function OfficeThesis() {
       return "Thesis plagiarism certificate not issued.";
     }
     if (!canDecide) return "Only the Dean or the administrator accepts the thesis.";
+    if (thesis.needsSupervisor && thesis.supervisorStatus !== "Recommended") {
+      return "Waiting for the supervisor's approval.";
+    }
     const panel = panels?.find(
       (item) => item.scholarKey === scholarKeyOf(thesis.scholarIdentifier),
     );
@@ -352,15 +387,7 @@ function OfficeThesis() {
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusPill
-                        status={
-                          thesis.status === "Approved"
-                            ? "Approved"
-                            : thesis.status === "Rejected"
-                              ? "Returned"
-                              : "Submitted"
-                        }
-                      />
+                      <ApprovalBadge summary={submissionSummary(thesis)} />
                       {waiting ? (
                         <p className="mt-1 text-xs text-muted-foreground">{waiting}</p>
                       ) : null}
@@ -393,7 +420,7 @@ function OfficeThesis() {
                                 setReturning(thesis);
                               }}
                             >
-                              Return
+                              Reject
                             </Button>
                           </>
                         ) : null}
@@ -408,10 +435,10 @@ function OfficeThesis() {
       </div>
       {returning ? (
         <FormDialog
-          title={`Return thesis · ${returning.scholarName}`}
+          title={`Reject thesis · ${returning.scholarName}`}
           onClose={() => setReturning(null)}
           onSubmit={(event) => void sendBack(event)}
-          submitLabel="Return thesis"
+          submitLabel="Reject thesis"
           size="sm"
         >
           {notice ? (

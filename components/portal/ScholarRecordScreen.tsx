@@ -30,7 +30,7 @@ import { processFlows } from "@/data/portal-desk";
 import { portalModules } from "@/data/portal";
 import type { ScholarRecordKind, ScholarRecordMenu } from "@/data/scholar-records";
 import { formatIsoDate } from "@/lib/dates";
-import { fileError, fileToDataUrl, type StoredFile } from "@/lib/files";
+import { fileError, type StoredFile } from "@/lib/files";
 import {
   currentScholarRecords,
   loadRecordFile,
@@ -56,6 +56,9 @@ import { currentPortalUsers } from "@/lib/users";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { researchTitleOf, titleRuleText } from "@/lib/research-title";
+import { storeFile } from "@/lib/file-store";
+import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
+import { recordSummary } from "@/lib/approval-flow";
 
 function flowFor(kind: ScholarRecordKind) {
   if (kind === "publication") return processFlows.publication;
@@ -145,7 +148,7 @@ export function RecordForm({
     if (problem) return;
     setBusy(true);
     setNotice(null);
-    const fileData = file?.file ? await fileToDataUrl(file.file).catch(() => "") : "";
+    const fileData = file?.file ? await storeFile(file.file, "records").catch(() => "") : "";
     const saved = await saveScholarRecord(
       {
         kind: menu.kind,
@@ -517,6 +520,14 @@ export function ScholarRecordScreen({
                   <td className="px-4 py-3">{record.payload.purpose || "—"}</td>
                   <td className="px-4 py-3">
                     <StatusPill status={record.status} />
+                    {record.status === "Returned" ? (
+                      <p className="mt-1 max-w-[14rem] text-xs text-secondary">
+                        Returned
+                        {record.payload.remarks ? `: ${record.payload.remarks}` : ""}. Add
+                        the payment again with the correct receipt and submit it for
+                        approval.
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap justify-end gap-2">
@@ -556,7 +567,10 @@ export function ScholarRecordScreen({
                       "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusPill status={record.status} />
+                    <ApprovalBadge
+                      summary={recordSummary(record, menu.needsSupervisor)}
+                      showDetail
+                    />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap justify-end gap-2">
@@ -810,7 +824,7 @@ export function ScholarRecordScreen({
                         disabled={busyId === record.id}
                         onClick={() => void decide(record, "Returned")}
                       >
-                        Return
+                        Reject
                       </Button>
                     </div>
                   </td>
@@ -839,8 +853,12 @@ export function ScholarRecordScreen({
               ))}
               <div className="grid grid-cols-[12rem_1fr] gap-3 px-4 py-3 text-sm">
                 <dt className="text-muted-foreground">Status</dt>
-                <dd>
-                  <StatusPill status={opened.status} />
+                <dd className="space-y-2">
+                  <ApprovalBadge
+                    summary={recordSummary(opened, menu.needsSupervisor)}
+                    showDetail
+                  />
+                  <ApprovalTrail summary={recordSummary(opened, menu.needsSupervisor)} />
                 </dd>
               </div>
               {opened.fileName ? (

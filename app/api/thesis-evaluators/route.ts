@@ -169,8 +169,14 @@ async function synopsisAccepted(
   });
 }
 
+/** The Dean (and the administrator) check the nominees, forward them, and run the invitations. */
 function canDecide(role: string) {
   return role === "dean" || role === "admin";
+}
+
+/** Only the Vice Chancellor (or the administrator, to correct an error) orders the nominees. */
+function canSelect(role: string) {
+  return role === "vc" || role === "admin";
 }
 
 export async function GET(request: NextRequest) {
@@ -182,6 +188,16 @@ export async function GET(request: NextRequest) {
     const records = await loadRows(supabase);
     if (!records) return fail(migrationHint, 503);
     return NextResponse.json({ ok: true, role: "office", records });
+  }
+  if (session.role === "vc") {
+    // The Vice Chancellor sees only what the Dean has forwarded.
+    const records = await loadRows(supabase);
+    if (!records) return fail(migrationHint, 503);
+    return NextResponse.json({
+      ok: true,
+      role: "office",
+      records: records.filter((record) => record.approvedOn),
+    });
   }
   if (session.role === "supervisor") {
     const records = await loadRows(supabase, session.identifier);
@@ -253,8 +269,10 @@ export async function POST(request: NextRequest) {
     if (!(await synopsisAccepted(supabase, scholarIdentifier))) {
       return fail("Nominations open after the Dean accepts the synopsis.");
     }
-    if (existing?.selection) {
-      return fail("The Dean has already decided on these nominations.");
+    if (existing?.selection || existing?.approvedOn) {
+      return fail(
+        "These nominations have already been forwarded to the Vice Chancellor.",
+      );
     }
     if (existing && !same(existing.supervisorIdentifier, session.identifier)) {
       return fail("Another supervisor has nominated evaluators for this scholar.", 403);
@@ -279,6 +297,8 @@ export async function POST(request: NextRequest) {
       domain,
       nominees,
       nominatedOn: today(),
+      approvedBy: "",
+      approvedOn: "",
       selection: null,
       selectedBy: "",
       selectedOn: "",
@@ -289,12 +309,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (!canDecide(session.role)) {
-    return fail("Only the Dean or the administrator can do this.", 403);
+  if (!canDecide(session.role) && !canSelect(session.role)) {
+    return fail(
+      "Only the Dean, the Vice Chancellor or the administrator can do this.",
+      403,
+    );
   }
   if (!existing) return fail("The supervisor has not nominated evaluators yet.");
 
+  if (action === "approve") {
+    if (!canDecide(session.role))
+      return fail("Only the Dean can forward nominations.", 403);
+    if (existing.selection)
+      return fail("The Vice Chancellor has already made the selection.");
+    const record = {
+      ...existing,
+      approvedBy: session.name || session.identifier,
+      approvedOn: today(),
+    };
+    if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
+    await audit(supabase, session, "evaluators:forwarded", scholarIdentifier);
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "select") {
+    if (!canSelect(session.role)) {
+      return fail("The Vice Chancellor selects the evaluators.", 403);
+    }
+    if (!existing.approvedOn) {
+      return fail("The Dean has to check and forward the nominations first.");
+    }
     const orderRaw =
       body.order && typeof body.order === "object"
         ? (body.order as Record<string, unknown>)
@@ -343,7 +387,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "invite") {
-    if (!existing.selection) return fail("The Dean has to select the evaluators first.");
+    if (!canDecide(session.role))
+      return fail("Only the Dean can record invitations.", 403);
+    if (!existing.selection) {
+      return fail("The Vice Chancellor has to select the evaluators first.");
+    }
     const group = body.group;
     if (
       typeof group !== "string" ||
@@ -395,7 +443,16 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "reopen") {
-    const record = { ...existing, selection: null, selectedBy: "", selectedOn: "" };
+    if (!canDecide(session.role))
+      return fail("Only the Dean can reopen nominations.", 403);
+    const record = {
+      ...existing,
+      approvedBy: "",
+      approvedOn: "",
+      selection: null,
+      selectedBy: "",
+      selectedOn: "",
+    };
     if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
     await audit(supabase, session, "evaluators:reopened", scholarIdentifier);
     return NextResponse.json({ ok: true });

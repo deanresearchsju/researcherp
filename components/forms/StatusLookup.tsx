@@ -20,7 +20,7 @@ import {
 } from "@/lib/admission";
 import { downloadHallTickets } from "@/lib/hall-ticket-pdf";
 import { downloadLetter } from "@/lib/letter-pdf";
-import { provisionalDraft } from "@/lib/letter-templates";
+import { addressLinesOf, provisionalDraft } from "@/lib/letter-templates";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import { trackPhdApplication, type PhdReceipt } from "@/lib/scholar-progress";
 import { statusSchema } from "@/lib/validation";
@@ -66,21 +66,37 @@ export function StatusLookup() {
           item.applicationNo.trim().toLowerCase() ===
           found.receipt.applicationNo.trim().toLowerCase(),
       );
-      // Selection and waiting-list results are not shown until the list is approved.
-      const pending = Boolean(
+      // Once the entrance test is over and attendance is marked, the result stays "Under
+      // process" until the RAB / Vice Chancellor approves the list. Admitted scholars are sent
+      // to their portal.
+      const admittedNow = row?.verification === "Approved";
+      const listApproved = Boolean(
         office &&
-        row &&
-        (row.selected || row.waitlistRank !== null) &&
-        row.verification !== "Approved" &&
         approvalState(
           office.progress,
           office.cases.filter((item) => !item.sessionClosed),
-        ) !== "approved",
+        ) === "approved",
       );
+      const tested = Boolean(
+        row && (row.attendance || row.selected || row.waitlistRank !== null),
+      );
+      const pending = Boolean(row && tested && !listApproved && !admittedNow);
       setResultPending(pending);
+      const notSelected =
+        Boolean(row) &&
+        listApproved &&
+        !admittedNow &&
+        Boolean(row?.attendance) &&
+        !row?.selected &&
+        row?.waitlistRank === null &&
+        !row?.reporting;
       setReceipt({
         ...found.receipt,
-        status: pending ? "Under review" : applicationStageOf(row, found.receipt.status),
+        status: pending
+          ? "Under process"
+          : notSelected
+            ? "Not selected"
+            : applicationStageOf(row, found.receipt.status),
       });
       if (pending) return;
       if (
@@ -94,7 +110,7 @@ export function StatusLookup() {
         setTicket({ row, office });
       }
       // The provisional selection letter, once the office has issued it.
-      if (office && row?.selected && row.letterIssued) {
+      if (office && row?.selected && row.letterIssued && !admittedNow) {
         setLetterFile({ row, office });
       }
       return;
@@ -129,7 +145,13 @@ export function StatusLookup() {
     try {
       const { office, row } = letterFile;
       await downloadLetter(
-        provisionalDraft(row, office.letter, row.letterNo ?? 1, clientToday()),
+        provisionalDraft(
+          row,
+          office.letter,
+          row.letterNo ?? 1,
+          clientToday(),
+          addressLinesOf(receipt?.values),
+        ),
         {
           name: office.letter.deanName,
           title: office.letter.deanTitle,
@@ -259,6 +281,10 @@ export function StatusLookup() {
               {ticket
                 ? scholarFormCopy.trackShortlistedTicket
                 : scholarFormCopy.trackShortlisted}
+            </p>
+          ) : receipt.status === "Not selected" ? (
+            <p className="mt-3 font-semibold text-secondary">
+              {scholarFormCopy.trackNotSelected}
             </p>
           ) : receipt.status === "Waiting list" || receipt.status === "Not reported" ? (
             <p className="mt-3 font-semibold text-secondary">

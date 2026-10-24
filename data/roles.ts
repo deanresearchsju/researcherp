@@ -90,6 +90,59 @@ export const roleProfiles: Record<Role, RoleProfile> = {
     identifierPlaceholder: "Username",
     identifierError: "Enter your username.",
   },
+  accounts: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+  vc: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+  coe: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+  coeverify: {
+    label: "Administrative",
+    title: "Administrative Sign in",
+    welcome: "Research office",
+    description: "",
+    benefits: [],
+    identifierLabel: "Username",
+    identifierPlaceholder: "Username",
+    identifierError: "Enter your username.",
+  },
+};
+
+/** Plain names of every sign-in type, for the user list and the access picker. */
+export const roleNames: Record<Role, string> = {
+  scholar: "Scholar",
+  supervisor: "Supervisor",
+  admin: "Administrator",
+  staff: "Staff",
+  dean: "Dean",
+  accounts: "Accounts",
+  vc: "Vice Chancellor",
+  coe: "COE · Marks entry",
+  coeverify: "COE · Verification",
 };
 
 export const resetCopy = {

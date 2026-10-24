@@ -14,16 +14,10 @@ import { FormField } from "@/components/ui/form-field";
 import { NativeSelect } from "@/components/ui/native-select";
 import { programmeSemesters } from "@/data/doctoral";
 import { officeActionCopy } from "@/data/office-actions";
-import { researchRegister } from "@/data/research-register";
 import { currentDoctoral, promoteScholars, subscribeDoctoral } from "@/lib/doctoral";
-import {
-  batchOf,
-  currentAllotments,
-  registrationOf,
-  scholarSignInId,
-  subscribeRegister,
-} from "@/lib/register";
+import { batchOf, currentAllotments, registrationOf, scholarSignInId, subscribeRegister, registerScholarsInOrder } from "@/lib/register";
 import { formatSemester, scholarSemesterLabel } from "@/lib/scholar-identity";
+import { allBatches } from "@/lib/batches";
 
 const copy = officeActionCopy.promotion;
 
@@ -61,12 +55,12 @@ export function SemesterPromotionScreen() {
   const selectedIds = useWatch({ control: form.control, name: "scholarIds" }) ?? [];
 
   const batches = useMemo(
-    () => [...researchRegister.batches].sort((left, right) => left.order - right.order),
+    () => [...allBatches()].sort((left, right) => left.order - right.order),
     [],
   );
 
   const rows = useMemo(() => {
-    return researchRegister.scholars
+    return registerScholarsInOrder()
       .filter((scholar) => scholar.batchId === batchId)
       .map((scholar) => {
         const identifier = scholarSignInId(scholar);

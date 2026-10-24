@@ -64,6 +64,10 @@ export function nominateEvaluators(input: {
   return call({ action: "nominate", ...input });
 }
 
+export function approveNominations(scholarIdentifier: string) {
+  return call({ action: "approve", scholarIdentifier });
+}
+
 export function selectEvaluators(
   scholarIdentifier: string,
   order: Record<EvaluatorGroup, number[]>,

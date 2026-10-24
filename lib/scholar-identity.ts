@@ -1,4 +1,5 @@
 import { programmeSemesters } from "@/data/doctoral";
+import { admittedRegistration } from "@/lib/admission";
 import { university } from "@/lib/constants";
 import { currentDoctoral, standingFor } from "@/lib/doctoral";
 import { allocationFor, currentOffice } from "@/lib/office";
@@ -100,7 +101,9 @@ export function scholarIdentity(identifier: string): ScholarIdentity {
     ? `Ph.D. — ${scholar.department.trim()}`
     : "Ph.D.";
   const name = scholar?.name.trim() || "—";
-  const registerNo = scholar ? registrationOf(scholar, allotments) || "—" : "—";
+  const registerNo =
+    (scholar ? registrationOf(scholar, allotments) : admittedRegistration(identifier)) ||
+    "—";
   const email = scholar?.email.trim() || (identifier.includes("@") ? identifier : "—");
   const institution = scholar?.institution.trim() || university.name;
   const semester = scholarSemesterLabel(identifier);
