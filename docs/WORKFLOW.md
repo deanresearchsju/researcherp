@@ -227,3 +227,7 @@ Payments go to Accounts; personal details and plagiarism certificates are record
 - **Structured data (JSON-LD):** the university and website on every page; a list of supervisors (Person: name, designation, department, areas, biography, photograph, Vidwan link) and breadcrumbs on the Supervisors page; a ProfilePage on each profile.
 - **Sitemap** lists the public pages and every published supervisor profile; **robots** keeps the portals, sign-in pages and API out of search. Sign-in pages carry `noindex`.
 - Only the public fields are published; the supervisor's sign-in e-mail is never in the page.
+
+### Files in Amazon S3 (replaces Supabase Storage for private files)
+
+Supabase stays for sign-in and for all text records. Private files (receipts, synopsis and thesis, admission documents, files uploaded by scholars and supervisors) go to an Amazon S3 bucket when `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are set in `.env.local`; without them the ERP keeps using Supabase Storage. The bucket is private; a signed-in user opens a file through a link that works for two minutes, as before. File references in records do not change. To copy the files already in Supabase Storage: `node --env-file=.env.local scripts/copy-storage-to-s3.mjs --dry-run`, then without `--dry-run`. It skips files already copied and deletes nothing. A file not yet copied is still opened from Supabase.

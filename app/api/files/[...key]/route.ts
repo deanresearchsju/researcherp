@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
 import { storeFolders } from "@/lib/file-ref";
+import { existsS3, s3Enabled, signedS3Url } from "@/lib/s3";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 type RouteContext = { params: Promise<{ key: string[] }> };
@@ -33,6 +34,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
       { ok: false, message: "That file was not found." },
       { status: 404 },
     );
+  }
+  // Files in Amazon S3 first; files not yet copied are still opened from Supabase Storage.
+  if (s3Enabled()) {
+    const objectKey = parts.join("/");
+    if (await existsS3(objectKey)) {
+      const link = await signedS3Url(objectKey);
+      if (link) {
+        const response = NextResponse.redirect(link, 302);
+        response.headers.set("Cache-Control", "private, max-age=60");
+        return response;
+      }
+    }
   }
   const supabase = createAdminSupabase();
   if (!supabase) {

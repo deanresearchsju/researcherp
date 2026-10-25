@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
-import { phdWindowCopy } from "@/data/home";
 import { heroCopy } from "@/data/sections";
 import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
 
@@ -18,7 +17,7 @@ export function PhdApplyCta() {
   if (!settings.phdOpen) {
     return (
       <p className="max-w-sm text-xs leading-5 text-muted-foreground sm:text-sm sm:leading-6">
-        {phdWindowCopy.closedStatus}. {phdWindowCopy.closedDetail}
+        Admission window will be open soon.
       </p>
     );
   }

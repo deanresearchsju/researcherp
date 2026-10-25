@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-
+import { AdmissionNotice } from "@/components/home/AdmissionNotice";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { SupervisorProfiles } from "@/components/supervisors/SupervisorProfiles";
@@ -51,26 +50,9 @@ export default async function SupervisorsPage() {
     <>
       <JsonLd data={supervisorJsonLd(supervisors)} />
       <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
-      <section className="border-b border-border bg-card py-8 sm:py-10" aria-label="About our supervisors">
+      <section className="border-b border-border bg-card py-4" aria-label="Admission">
         <Container>
-          <p className="max-w-4xl text-justify text-base leading-7 text-foreground/90">
-            The Ph.D. programme of {university.name} is guided by experienced, recognised research
-            supervisors across engineering, science, humanities and management. Each profile below
-            gives the supervisor&apos;s designation, department, area of research, a short
-            biography and the Vidwan profile, so that you can choose a research area and a guide
-            that match your interest before you apply.
-          </p>
-          <p className="mt-3 max-w-4xl text-sm text-muted-foreground">
-            Ready to begin?{" "}
-            <Link href="/admission" className="font-semibold text-primary hover:underline">
-              Read the Ph.D. admission details
-            </Link>{" "}
-            or{" "}
-            <Link href="/apply" className="font-semibold text-primary hover:underline">
-              apply online
-            </Link>
-            .
-          </p>
+          <AdmissionNotice />
         </Container>
       </section>
       <SupervisorProfiles profiles={supervisors} />

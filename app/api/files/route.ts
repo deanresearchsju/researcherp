@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
 import { sniffFileType, storeFolders, type StoreFolder } from "@/lib/file-ref";
+import { putS3, s3Enabled } from "@/lib/s3";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 const maxBytes = 2 * 1024 * 1024;
@@ -33,7 +34,7 @@ function tooMany(request: NextRequest) {
 const fail = (message: string, status: number) =>
   NextResponse.json({ ok: false, message }, { status });
 
-/** Stores one file in Supabase Storage and returns the reference to keep in the record. */
+/** Stores one file (Amazon S3 when set up, otherwise Supabase Storage) and returns the reference to keep. */
 export async function POST(request: NextRequest) {
   let form: FormData;
   try {
@@ -59,9 +60,15 @@ export async function POST(request: NextRequest) {
   const kind = sniffFileType(bytes);
   if (!kind) return fail("Use a PDF, JPG or PNG file.", 400);
 
+  const isPublic = storeFolders[folder] === "public";
+  if (!isPublic && s3Enabled()) {
+    const month = new Date().toISOString().slice(0, 7);
+    const key = `${folder}/${month}/${crypto.randomUUID()}.${kind.ext}`;
+    if (!(await putS3(key, bytes, kind.mime))) return fail("File storage is not ready.", 503);
+    return NextResponse.json({ ok: true, ref: `/api/files/${key}` });
+  }
   const supabase = createAdminSupabase();
   if (!supabase) return fail("File storage is not set up.", 503);
-  const isPublic = storeFolders[folder] === "public";
   const bucket = isPublic ? publicBucket : privateBucket;
   const month = new Date().toISOString().slice(0, 7);
   const key = `${folder}/${month}/${crypto.randomUUID()}.${kind.ext}`;
