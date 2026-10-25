@@ -84,6 +84,7 @@ export async function buildApprovedCopy(
   fileName: string | null | undefined,
   stamp: ApprovalStamp,
   logo: Uint8Array | null = null,
+  options: { recordPage?: boolean } = {},
 ) {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const purple = rgb(0.35, 0.16, 0.51);
@@ -118,10 +119,12 @@ export async function buildApprovedCopy(
   const supervisorLine = stamp.supervisor
     ? `Approved by Supervisor: ${stamp.supervisor.by || "—"} · ${momentLabel(stamp.supervisor.at)}`
     : "";
+  // The guide has approved and the Dean has not yet: the document shows the guide's approval only.
+  const partial = Boolean(stamp.supervisor) && !stamp.dean;
   const approvedLine = `${stamp.supervisor ? "Approved by Dean" : "Approved"}: ${deanBy} · ${momentLabel(deanAt)} · ${university.researchOffice}, ${university.name}${
     stamp.reference ? ` · Ref ${stamp.reference}` : ""
   }`;
-  const bandHeight = supervisorLine ? 26 : 18;
+  const bandHeight = supervisorLine && !partial ? 26 : 18;
 
   // Stamp the uploaded pages.
   const uploaded = doc.getPages();
@@ -134,7 +137,7 @@ export async function buildApprovedCopy(
       height: bandHeight,
       color: rgb(0.96, 0.94, 0.98),
     });
-    if (supervisorLine) {
+    if (supervisorLine && !partial) {
       page.drawText(supervisorLine.slice(0, 160), {
         x: 14,
         y: 15,
@@ -143,7 +146,7 @@ export async function buildApprovedCopy(
         color: purple,
       });
     }
-    page.drawText(approvedLine.slice(0, 170), {
+    page.drawText((partial ? supervisorLine : approvedLine).slice(0, 170), {
       x: 14,
       y: 6,
       size: 7,
@@ -160,7 +163,7 @@ export async function buildApprovedCopy(
     if (index === 0) {
       const boxWidth = 196;
       const x = width - boxWidth - 18;
-      const boxHeight = stamp.supervisor ? 100 : 58;
+      const boxHeight = partial ? 80 : stamp.supervisor ? 100 : 58;
       const y = page.getSize().height - boxHeight - 16;
       page.drawRectangle({
         x,
@@ -174,10 +177,10 @@ export async function buildApprovedCopy(
         borderOpacity: 1,
       });
       const top = y + boxHeight;
-      page.drawText("APPROVED", {
+      page.drawText(partial ? "APPROVED BY SUPERVISOR" : "APPROVED", {
         x: x + 10,
         y: top - 20,
-        size: 15,
+        size: partial ? 10.5 : 15,
         font: bold,
         color: green,
       });
@@ -192,7 +195,17 @@ export async function buildApprovedCopy(
       };
       if (stamp.supervisor) {
         stampLine("SUPERVISOR", stamp.supervisor.by || "—", stamp.supervisor.at);
-        stampLine("DEAN", deanBy, deanAt);
+        if (partial) {
+          page.drawText("Sent to the Dean for final approval", {
+            x: x + 10,
+            y: lineY,
+            size: 6.6,
+            font,
+            color: green,
+          });
+        } else {
+          stampLine("DEAN", deanBy, deanAt);
+        }
       } else {
         page.drawText(momentLabel(deanAt), {
           x: x + 10,
@@ -218,6 +231,8 @@ export async function buildApprovedCopy(
       });
     }
   });
+
+  if (options.recordPage === false) return doc.save();
 
   // Approval record page.
   const page = doc.addPage([595.28, 841.89]);
@@ -413,4 +428,23 @@ export async function downloadApprovedCopy(
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/**
+ * The uploaded file as the approvers see it: the guide's and the Dean's name, date and time are
+ * stamped on every page as soon as they have approved. Returns a data URL for the viewer.
+ */
+export async function stampedPreview(
+  fileData: string | null | undefined,
+  fileName: string | null | undefined,
+  stamp: ApprovalStamp,
+) {
+  const bytes = await buildApprovedCopy(fileData, fileName, stamp, null, {
+    recordPage: false,
+  });
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return `data:application/pdf;base64,${btoa(binary)}`;
 }

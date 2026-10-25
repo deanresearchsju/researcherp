@@ -56,6 +56,7 @@ import { usePortalSession } from "@/lib/use-preview-session";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { committeeSummary } from "@/lib/approval-flow";
+import { chainViewStamp } from "@/lib/approved-documents";
 
 /** The first committee fixes the research title and the second finalises it. */
 function carriesTitle(kind: CommitteeKind) {
@@ -183,6 +184,7 @@ function ScholarCommittee({
             <ViewFilesButton
               fileName={mine.fileName}
               data={mine.fileData}
+              stamp={chainViewStamp(`${dcCopy[mine.kind].title} report`, mine)}
               onMissing={setNotice}
             />
             {approved ? (
@@ -368,6 +370,7 @@ export function SupervisorCommitteeScreen() {
                         <ViewFilesButton
                           fileName={report.fileName}
                           data={report.fileData}
+                          stamp={chainViewStamp(`${dcCopy[report.kind].title} report`, report)}
                           onMissing={setNotice}
                         />
                         {approved ? (
@@ -691,6 +694,7 @@ function OfficeCommittee({
                             <ViewFilesButton
                               fileName={report.fileName}
                               data={report.fileData}
+                              stamp={chainViewStamp(`${dcCopy[report.kind].title} report`, report)}
                               onMissing={setNotice}
                             />
                             {approved ? (
@@ -1020,6 +1024,7 @@ function OfficeCommittee({
           <ViewFilesButton
             fileName={reviewing.fileName}
             data={reviewing.fileData}
+            stamp={chainViewStamp(`${dcCopy[reviewing.kind].title} report`, reviewing)}
             onMissing={setNotice}
           />
           {(["agenda", "attendance", "minutes", "remarks"] as const).map((field) => (

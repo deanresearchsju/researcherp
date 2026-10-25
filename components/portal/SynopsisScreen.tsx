@@ -49,6 +49,7 @@ import { submissionFeeBlock } from "@/lib/submission-fees";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { submissionSummary } from "@/lib/approval-flow";
+import { chainViewStamp } from "@/lib/approved-documents";
 
 const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
 
@@ -220,6 +221,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                     <ViewFilesButton
                       fileName={own.fileName}
                       data={own.fileData}
+                      stamp={chainViewStamp("Synopsis", own)}
                       onMissing={setNotice}
                     />
                   </td>
@@ -239,6 +241,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
             <ViewFilesButton
               fileName={own.fileName}
               data={own.fileData}
+              stamp={chainViewStamp("Synopsis", own)}
               onMissing={setNotice}
             />
           </div>
@@ -279,6 +282,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                 <ViewFilesButton
                   fileName={own.fileName}
                   data={own.fileData}
+                  stamp={chainViewStamp("Synopsis", own)}
                   onMissing={setNotice}
                 />
               </div>
@@ -391,6 +395,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                   <ViewFilesButton
                     fileName={item.fileName}
                     data={item.fileData}
+                    stamp={chainViewStamp("Synopsis", item)}
                     onMissing={setNotice}
                   />
                   <ApprovalBadge summary={submissionSummary(item)} />

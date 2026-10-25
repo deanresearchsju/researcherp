@@ -56,20 +56,24 @@ export type EvaluationRecord = {
   domain: string;
   nominees: Record<EvaluatorGroup, Evaluator[]>;
   nominatedOn: string;
+  /** The moment of each step, with the time, for the stamps on the printed sheet. */
+  nominatedAt: string;
   /** The Dean checked the nominees (area of specialisation) and forwarded them to the Vice Chancellor. */
   approvedBy: string;
   approvedOn: string;
+  approvedAt: string;
   /** The Vice Chancellor's first, second and third choice in each group. */
   selection: Record<EvaluatorGroup, GroupPanel> | null;
   selectedBy: string;
   selectedOn: string;
+  selectedAt: string;
   updatedAt: string;
 };
 
 /** What a supervisor may see: own nominations only, never the Dean's choice or invitations. */
 export type SupervisorEvaluationView = Omit<
   EvaluationRecord,
-  "selection" | "selectedBy" | "selectedOn" | "approvedBy" | "approvedOn"
+  "selection" | "selectedBy" | "selectedOn" | "selectedAt" | "approvedBy" | "approvedOn" | "approvedAt"
 > & { locked: boolean };
 
 export function scholarKeyOf(identifier: string) {
@@ -182,11 +186,14 @@ export function parseEvaluationPayload(
     domain: text(data.domain),
     nominees,
     nominatedOn: text(data.nominatedOn),
+    nominatedAt: text(data.nominatedAt),
     approvedBy: text(data.approvedBy),
     approvedOn: text(data.approvedOn),
+    approvedAt: text(data.approvedAt),
     selection,
     selectedBy: text(data.selectedBy),
     selectedOn: text(data.selectedOn),
+    selectedAt: text(data.selectedAt),
     updatedAt: row.updated_at,
   };
 }
@@ -197,11 +204,14 @@ export function evaluationPayload(record: EvaluationRecord) {
     domain: record.domain,
     nominees: record.nominees,
     nominatedOn: record.nominatedOn,
+    nominatedAt: record.nominatedAt,
     approvedBy: record.approvedBy,
     approvedOn: record.approvedOn,
+    approvedAt: record.approvedAt,
     selection: record.selection,
     selectedBy: record.selectedBy,
     selectedOn: record.selectedOn,
+    selectedAt: record.selectedAt,
   };
 }
 
@@ -216,6 +226,7 @@ export function supervisorView(record: EvaluationRecord): SupervisorEvaluationVi
     domain: record.domain,
     nominees: record.nominees,
     nominatedOn: record.nominatedOn,
+    nominatedAt: record.nominatedAt,
     updatedAt: record.updatedAt,
     locked: record.selection !== null || Boolean(record.approvedOn),
   };

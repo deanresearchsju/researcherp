@@ -49,6 +49,7 @@ import { submissionFeeBlock } from "@/lib/submission-fees";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { submissionSummary } from "@/lib/approval-flow";
+import { chainViewStamp } from "@/lib/approved-documents";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Enter the title."),
@@ -147,6 +148,7 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
           <ViewFilesButton
             fileName={own.fileName}
             data={own.fileData}
+            stamp={chainViewStamp("Thesis", own)}
             onMissing={setNotice}
           />
         </div>
@@ -397,6 +399,7 @@ function OfficeThesis() {
                         <ViewFilesButton
                           fileName={thesis.fileName}
                           data={thesis.fileData}
+                          stamp={chainViewStamp("Thesis", thesis)}
                           onMissing={setNotice}
                         />
                         {thesis.status === "Submitted" ? (

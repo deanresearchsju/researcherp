@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { formatMoment } from "@/lib/approval-flow";
 import { university } from "@/lib/constants";
 import { formatIsoDate } from "@/lib/dates";
 import {
@@ -141,8 +142,23 @@ export async function downloadEvaluatorSheet(record: EvaluationRecord) {
   line(`Title: ${record.title}`);
   line(`Domain: ${record.domain}`);
   line(`Supervisor: ${record.supervisorName}`);
+  const moment = (at: string, on: string) =>
+    formatMoment(at) || (on ? formatIsoDate(on) : "");
+  line(
+    `Proposed by Supervisor: ${record.supervisorName} · ${moment(record.nominatedAt, record.nominatedOn)}`,
+    9,
+  );
+  if (record.approvedOn) {
+    line(
+      `Checked and forwarded by Dean: ${record.approvedBy} · ${moment(record.approvedAt, record.approvedOn)}`,
+      9,
+    );
+  }
   if (record.selectedOn) {
-    line(`Selected by ${record.selectedBy} on ${formatIsoDate(record.selectedOn)}`, 9);
+    line(
+      `Selected by Vice Chancellor: ${record.selectedBy} · ${moment(record.selectedAt, record.selectedOn)}`,
+      9,
+    );
   }
   y += 4;
 

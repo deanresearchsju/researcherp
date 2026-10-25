@@ -19,6 +19,7 @@ import {
 import { currentOffice, sameId, scholarsStillGuidedBy, subscribeOffice } from "@/lib/office";
 import { scholarSignInId } from "@/lib/register";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { chainViewStamp } from "@/lib/approved-documents";
 
 type Item =
   | { kind: "synopsis"; label: string; row: SynopsisSubmission }
@@ -116,6 +117,7 @@ export function SupervisorSubmissions() {
                     <ViewFilesButton
                       fileName={item.row.fileName}
                       data={item.row.fileData}
+                      stamp={chainViewStamp(item.label, item.row)}
                       onMissing={setNotice}
                     />
                     <ApprovalBadge summary={submissionSummary(item.row)} />

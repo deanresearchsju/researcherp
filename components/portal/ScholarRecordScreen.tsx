@@ -59,6 +59,7 @@ import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { recordSummary } from "@/lib/approval-flow";
+import { recordViewStamp } from "@/lib/approved-documents";
 
 function flowFor(kind: ScholarRecordKind) {
   if (kind === "publication") return processFlows.publication;
@@ -266,6 +267,7 @@ export function RecordForm({
                 <ViewFilesButton
                   fileName={existing.fileName}
                   load={() => loadRecordFile(existing)}
+                  stamp={recordViewStamp(existing)}
                 />
               </div>
             ) : null}
@@ -534,6 +536,7 @@ export function ScholarRecordScreen({
                       <ViewFilesButton
                         fileName={record.fileName}
                         load={() => loadRecordFile(record)}
+                        stamp={recordViewStamp(record)}
                         onMissing={setNotice}
                       />
                       <Button
@@ -577,6 +580,7 @@ export function ScholarRecordScreen({
                       <ViewFilesButton
                         fileName={record.fileName}
                         load={() => loadRecordFile(record)}
+                        stamp={recordViewStamp(record)}
                         onMissing={setNotice}
                       />
                       <Button
@@ -651,6 +655,7 @@ export function ScholarRecordScreen({
                 <ViewFilesButton
                   fileName={existing.fileName}
                   load={() => loadRecordFile(existing)}
+                  stamp={recordViewStamp(existing)}
                   onMissing={setNotice}
                 />
               </div>
@@ -789,6 +794,7 @@ export function ScholarRecordScreen({
                       <ViewFilesButton
                         fileName={record.fileName}
                         load={() => loadRecordFile(record)}
+                        stamp={recordViewStamp(record)}
                         onMissing={setNotice}
                       />
                       <Textarea
@@ -869,6 +875,7 @@ export function ScholarRecordScreen({
                     <ViewFilesButton
                       fileName={opened.fileName}
                       load={() => loadRecordFile(opened)}
+                      stamp={recordViewStamp(opened)}
                       onMissing={setNotice}
                     />
                   </dd>

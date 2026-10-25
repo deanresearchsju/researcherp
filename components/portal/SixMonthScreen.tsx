@@ -59,6 +59,7 @@ import { ApprovalBadge } from "@/components/portal/ApprovalTrail";
 import { recordSummary } from "@/lib/approval-flow";
 import { allocationFor, currentOffice, subscribeOffice } from "@/lib/office";
 import { scholarBySignIn, supervisorForGuide } from "@/lib/register";
+import { recordViewStamp } from "@/lib/approved-documents";
 
 const schema = z.object({
   progress: z.string().trim().min(10, "Describe the work done in this period."),
@@ -337,6 +338,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                       <ViewFilesButton
                         fileName={record.fileName}
                         load={() => loadRecordFile(record)}
+                        stamp={recordViewStamp(record)}
                         onMissing={setNotice}
                       />
                     </td>
@@ -872,6 +874,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                 <ViewFilesButton
                   fileName={record.fileName}
                   load={() => loadRecordFile(record)}
+                  stamp={recordViewStamp(record)}
                   onMissing={setNotice}
                 />
                 <Badge

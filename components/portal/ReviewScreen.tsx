@@ -26,6 +26,7 @@ import {
   type ScholarRecord,
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { recordViewStamp } from "@/lib/approved-documents";
 
 
 export function ReviewScreen() {
@@ -191,6 +192,7 @@ export function ReviewScreen() {
                       <ViewFilesButton
                         fileName={record.fileName}
                         load={() => loadRecordFile(record)}
+                        stamp={recordViewStamp(record)}
                         onMissing={setNotice}
                       />
                       <Badge

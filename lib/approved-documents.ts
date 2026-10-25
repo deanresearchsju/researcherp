@@ -291,3 +291,100 @@ export function approvedDocuments(
     (right.stamp.approvedOn || "").localeCompare(left.stamp.approvedOn || ""),
   );
 }
+
+type ViewStampInput = {
+  title: string;
+  scholarName: string;
+  scholarId: string;
+  reference: string;
+  supervisor?: { by: string; at: string };
+  dean?: { by: string; at: string };
+};
+
+function viewStamp(input: ViewStampInput): ApprovalStamp | null {
+  const last = input.dean ?? input.supervisor;
+  if (!last) return null;
+  return {
+    title: input.title,
+    scholarName: input.scholarName,
+    scholarId: input.scholarId,
+    reference: input.reference,
+    approvedOn: last.at,
+    approvedBy: last.by,
+    ...(input.supervisor ? { supervisor: input.supervisor } : {}),
+    ...(input.dean ? { dean: input.dean } : {}),
+  };
+}
+
+/** The approvals so far on a scholar's record, to stamp on the file when it is viewed. */
+export function recordViewStamp(record: ScholarRecord): ApprovalStamp | null {
+  if (record.kind === "payment") return null;
+  const menu = scholarRecordMenus.find((item) => item.kind === record.kind);
+  const title = menu?.label ?? record.kind.replaceAll("_", " ");
+  const supervisorAt = record.payload.supervisorAt || record.payload.supervisorOn;
+  return viewStamp({
+    title,
+    scholarName: record.scholarName,
+    scholarId: record.scholarIdentifier,
+    reference: record.id.slice(-8).toUpperCase(),
+    ...(supervisorAt
+      ? {
+          supervisor: {
+            by: record.payload.supervisorBy || record.supervisorName,
+            at: supervisorAt,
+          },
+        }
+      : {}),
+    ...(record.status === "Approved"
+      ? {
+          dean: {
+            by: record.payload.approvedBy || "Research office",
+            at:
+              record.payload.approvedAt ||
+              record.payload.approvedOn ||
+              record.createdAt,
+          },
+        }
+      : {}),
+  });
+}
+
+type ChainRow = {
+  id: string;
+  scholarName: string;
+  scholarIdentifier: string;
+  status: string;
+  supervisorStatus: string;
+  supervisorName: string;
+  supervisorAt: string;
+  supervisorOn: string;
+  decidedBy: string;
+  decidedAt: string;
+  decidedOn: string;
+};
+
+/** The same for a synopsis, a thesis or a committee report. */
+export function chainViewStamp(title: string, row: ChainRow): ApprovalStamp | null {
+  return viewStamp({
+    title,
+    scholarName: row.scholarName,
+    scholarId: row.scholarIdentifier,
+    reference: row.id.slice(-8).toUpperCase(),
+    ...(row.supervisorStatus === "Recommended"
+      ? {
+          supervisor: {
+            by: row.supervisorName,
+            at: row.supervisorAt || row.supervisorOn,
+          },
+        }
+      : {}),
+    ...(row.status === "Approved"
+      ? {
+          dean: {
+            by: row.decidedBy || "Office of the Dean",
+            at: row.decidedAt || row.decidedOn,
+          },
+        }
+      : {}),
+  });
+}

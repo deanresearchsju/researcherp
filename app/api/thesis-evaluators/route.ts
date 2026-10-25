@@ -297,11 +297,14 @@ export async function POST(request: NextRequest) {
       domain,
       nominees,
       nominatedOn: today(),
+      nominatedAt: new Date().toISOString(),
       approvedBy: "",
       approvedOn: "",
+      approvedAt: "",
       selection: null,
       selectedBy: "",
       selectedOn: "",
+      selectedAt: "",
       updatedAt: "",
     };
     if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
@@ -326,6 +329,7 @@ export async function POST(request: NextRequest) {
       ...existing,
       approvedBy: session.name || session.identifier,
       approvedOn: today(),
+      approvedAt: new Date().toISOString(),
     };
     if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
     await audit(supabase, session, "evaluators:forwarded", scholarIdentifier);
@@ -380,6 +384,7 @@ export async function POST(request: NextRequest) {
       selection,
       selectedBy: session.name || session.identifier,
       selectedOn: today(),
+      selectedAt: new Date().toISOString(),
     };
     if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
     await audit(supabase, session, "evaluators:selected", scholarIdentifier);
@@ -449,9 +454,11 @@ export async function POST(request: NextRequest) {
       ...existing,
       approvedBy: "",
       approvedOn: "",
+      approvedAt: "",
       selection: null,
       selectedBy: "",
       selectedOn: "",
+      selectedAt: "",
     };
     if (!(await saveRecord(supabase, record))) return fail(migrationHint, 503);
     await audit(supabase, session, "evaluators:reopened", scholarIdentifier);

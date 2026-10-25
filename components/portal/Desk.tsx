@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { FilePreview } from "@/components/portal/FilePreview";
 import { emptyRecordCopy, missingFileCopy, viewFilesLabel } from "@/data/portal-desk";
+import { stampedPreview, type ApprovalStamp } from "@/lib/approved-copy";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { currentOffice, subscribeOffice } from "@/lib/office";
 import { currentAllotments, subscribeRegister } from "@/lib/register";
@@ -560,15 +561,19 @@ export function ViewFilesButton({
   data,
   load,
   onMissing,
+  stamp,
 }: {
   fileName: string | null | undefined;
   data?: string | null;
   load?: () => Promise<string | null>;
   onMissing?: (message: string) => void;
+  /** The approvals so far; stamped on the file (name, date and time) when it is opened. */
+  stamp?: ApprovalStamp | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
+  const [previewName, setPreviewName] = useState("");
   const name = fileName?.trim() ?? "";
   if (!name) return null;
 
@@ -576,12 +581,24 @@ export function ViewFilesButton({
     setBusy(true);
     setMissing(false);
     const payload = data || (load ? await load().catch(() => null) : null);
-    setBusy(false);
     if (!payload) {
+      setBusy(false);
       if (onMissing) onMissing(missingFileCopy);
       else setMissing(true);
       return;
     }
+    if (stamp) {
+      try {
+        setPreview(await stampedPreview(payload, name, stamp));
+        setPreviewName(`${name.replace(/\.[^.]+$/, "")}-approved.pdf`);
+        setBusy(false);
+        return;
+      } catch {
+        // Fall back to the file as uploaded.
+      }
+    }
+    setBusy(false);
+    setPreviewName(name);
     setPreview(payload);
   }
 
@@ -605,7 +622,11 @@ export function ViewFilesButton({
         <span className="text-xs font-medium text-destructive">{missingFileCopy}</span>
       ) : null}
       {preview ? (
-        <FilePreview fileName={name} data={preview} onClose={() => setPreview(null)} />
+        <FilePreview
+          fileName={previewName || name}
+          data={preview}
+          onClose={() => setPreview(null)}
+        />
       ) : null}
     </>
   );
