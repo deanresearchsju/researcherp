@@ -224,7 +224,11 @@ export async function POST(request: Request) {
   const token = await encodeSessionCookie(session, remember);
   if (!token) {
     return NextResponse.json(
-      { ok: false, message: "Sign-in is not available yet." },
+      {
+        ok: false,
+        message:
+          "Sign-in is not set up on this server. Please tell the administrator (the SESSION_SECRET setting is missing).",
+      },
       { status: 503 },
     );
   }

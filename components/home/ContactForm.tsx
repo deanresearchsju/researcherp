@@ -12,6 +12,7 @@ import { helpdeskCopy } from "@/data/helpdesk";
 import { rememberHelpdeskMessage } from "@/lib/helpdesk";
 import { contactSchema } from "@/lib/validation";
 import type { z } from "zod";
+import { inputRules, masked } from "@/lib/input-rules";
 
 type ContactValues = z.infer<typeof contactSchema>;
 
@@ -83,7 +84,10 @@ export function ContactForm() {
           required
           error={form.formState.errors.name?.message}
         >
-          <Input id="contact-name" autoComplete="name" {...form.register("name")} />
+          <Input
+            id="contact-name"
+            {...masked(form.register("name"), inputRules.personName)}
+          />
         </FormField>
         <FormField
           label={helpdeskCopy.phone}

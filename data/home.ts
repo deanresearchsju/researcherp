@@ -31,7 +31,7 @@ export const phdWindowCopy = {
   closed: "Ph.D. applications are now closed.",
   preview: "Public site will show",
   closedDetail:
-    "The research office has closed this admission window. Ph.D. admissions open twice a year, in January and July.",
+    "The application portal will open soon. Ph.D. admissions open twice a year, in January and July.",
 } as const;
 
 export const supervisorWindowCopy = {

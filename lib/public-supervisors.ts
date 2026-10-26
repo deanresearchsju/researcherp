@@ -1,6 +1,14 @@
 import { cacheLife, cacheTag } from "next/cache";
 
-import { parseProfiles, vidwanLink } from "@/lib/register";
+import { researchRegister } from "@/data/research-register";
+import { parseSupervisorStandings, supervisorIsActive } from "@/lib/portal-access";
+import {
+  parseProfiles,
+  parseSupervisorEdits,
+  supervisorEditKey,
+  supervisorKeys,
+  vidwanLink,
+} from "@/lib/register";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { createSupabase } from "@/lib/supabase/client";
 
@@ -116,4 +124,41 @@ export async function supervisorPhoto(slug: string) {
   const match = /^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/i.exec(data?.photo ?? "");
   if (!match) return null;
   return { type: match[1], bytes: Buffer.from(match[2], "base64") };
+}
+
+/**
+ * The department and area of research of every active supervisor in the ERP's supervisor
+ * register (with the research office's corrections laid over it), for the home page.
+ */
+export async function registerSupervisorAreas(): Promise<
+  { department: string; researchArea: string }[]
+> {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag("supervisors");
+  const supabase = client();
+  const { data } = supabase
+    ? await supabase
+        .from("research_register")
+        .select("payload")
+        .eq("id", "register")
+        .maybeSingle()
+    : { data: null };
+  const payload = data?.payload as {
+    supervisorEdits?: unknown;
+    standings?: unknown;
+  } | null;
+  const edits = parseSupervisorEdits(payload?.supervisorEdits);
+  const standings = parseSupervisorStandings(payload?.standings);
+  return researchRegister.supervisors.flatMap((original) => {
+    const key = supervisorEditKey(original).toLowerCase();
+    const edit = edits.find((item) => item.key.trim().toLowerCase() === key);
+    const supervisor = { ...original, ...(edit?.fields ?? {}) };
+    if (!supervisorIsActive(supervisorKeys(supervisor), supervisor.active, standings))
+      return [];
+    const researchArea = supervisor.researchArea.trim();
+    return researchArea
+      ? [{ department: supervisor.department.trim(), researchArea }]
+      : [];
+  });
 }

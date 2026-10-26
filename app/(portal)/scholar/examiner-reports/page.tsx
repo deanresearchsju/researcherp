@@ -1,12 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { ExaminerReportScreen } from "@/components/portal/LifecycleScreens";
-
-export const metadata: Metadata = {
-  title: "Examiner reports",
-  robots: { index: false, follow: false },
-};
-
+/** Examiner reports are for the research office only; a scholar is sent to the dashboard. */
 export default function ScholarExaminerReportsPage() {
-  return <ExaminerReportScreen mode="scholar" />;
+  redirect("/scholar/dashboard");
 }

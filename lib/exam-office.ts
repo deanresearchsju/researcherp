@@ -107,6 +107,9 @@ export type ExamTicket = {
 
 export type AttendanceMark = "Present" | "Absent";
 
+/** An attendance sheet (one paper at one campus) frozen and forwarded to the COE. */
+export type AttendanceLock = { by: string; on: string };
+
 export type SheetStatus = "Entry" | "Sent" | "Frozen" | "Returned";
 
 export type SubjectSheet = {
@@ -153,6 +156,8 @@ export type ExamState = {
   settings: ExamSettings;
   tickets: ExamTicket[];
   attendance: Record<string, AttendanceMark>;
+  /** Keyed by batch, semester, paper and campus. */
+  attendanceLocks: Record<string, AttendanceLock>;
   files: ExamResultFile[];
   updatedAt: string | null;
   detail: string | null;
@@ -164,6 +169,7 @@ const emptyStored = (): Stored => ({
   settings: { ...defaultExamSettings },
   tickets: [],
   attendance: {},
+  attendanceLocks: {},
   files: [],
 });
 
@@ -277,6 +283,12 @@ export function parseExam(value: unknown): Stored {
       Object.entries(object(row.attendance)).flatMap(([key, mark]) =>
         mark === "Present" || mark === "Absent" ? [[key, mark] as const] : [],
       ),
+    ),
+    attendanceLocks: Object.fromEntries(
+      Object.entries(object(row.attendanceLocks)).flatMap(([key, value]) => {
+        const lock = object(value);
+        return text(lock.on) ? [[key, { by: text(lock.by), on: text(lock.on) }] as const] : [];
+      }),
     ),
     files: rows(row.files).flatMap((file) => {
       const id = text(file.id);
@@ -392,6 +404,7 @@ function draft(): Stored {
     settings: current.settings,
     tickets: current.tickets,
     attendance: current.attendance,
+    attendanceLocks: current.attendanceLocks,
     files: current.files,
   });
 }
@@ -767,6 +780,30 @@ function sheetLocked(
   );
 }
 
+/** The key of one attendance sheet: a paper at a campus. */
+export function attendanceLockKey(
+  batchId: string,
+  semester: number,
+  subjectId: string,
+  centreId: string,
+) {
+  return `${batchId}:${semester}:${subjectId}:${centreId}`;
+}
+
+/** The lock on the attendance sheet a scholar's paper belongs to, if it was forwarded to the COE. */
+export function attendanceLockOf(
+  state: Pick<ExamState, "tickets" | "attendanceLocks">,
+  registration: Pick<CourseRegistration, "id" | "batchId" | "semester" | "subjectId">,
+) {
+  const ticket = state.tickets.find((item) => item.registrationIds.includes(registration.id));
+  if (!ticket) return null;
+  return (
+    state.attendanceLocks[
+      attendanceLockKey(registration.batchId, registration.semester, registration.subjectId, ticket.centreId)
+    ] ?? null
+  );
+}
+
 export async function markExamAttendance(
   entries: readonly { registrationId: string; mark: AttendanceMark | "" }[],
 ): Promise<Outcome> {
@@ -778,12 +815,72 @@ export async function markExamAttendance(
   return commit((state) => {
     for (const entry of entries) {
       const registration = doctoral?.registrations.find((row) => row.id === entry.registrationId);
+      if (registration && attendanceLockOf(state, registration)) {
+        return `${registration.scholarName}: the attendance of this paper at this campus is frozen and already forwarded to the COE.`;
+      }
       if (sheetLocked(state, registration)) {
         return `${registration?.scholarName ?? "A scholar"}: the marks of this paper are already sent for verification or frozen, so attendance can not change.`;
       }
       if (entry.mark) state.attendance[entry.registrationId] = entry.mark;
       else delete state.attendance[entry.registrationId];
     }
+    return null;
+  });
+}
+
+/**
+ * Freezes the attendance of one paper at one campus and forwards it to the COE for marks entry.
+ * Every scholar on the sheet has to be marked Present or Absent first.
+ */
+export async function forwardAttendance(
+  batchId: string,
+  semester: number,
+  subjectId: string,
+  centreId: string,
+): Promise<Outcome> {
+  const blocked =
+    viewProblem() ??
+    roleProblem(["admin", "staff", "coe"], "Only the research office or the COE can forward the attendance.");
+  if (blocked) return { ok: false, message: blocked };
+  const doctoral = currentDoctoral();
+  if (!doctoral) return { ok: false, message: "The records are loading." };
+  return commit((state) => {
+    const key = attendanceLockKey(batchId, semester, subjectId, centreId);
+    if (state.attendanceLocks[key]) return "This attendance is already forwarded to the COE.";
+    const sitting = candidatesFor(doctoral, state, batchId, semester, subjectId).filter(
+      ({ ticket }) => ticket.centreId === centreId,
+    );
+    if (sitting.length === 0) return "There is no scholar on this attendance sheet.";
+    const open = sitting.filter(({ registration }) => !state.attendance[registration.id]);
+    if (open.length > 0) {
+      return `Mark ${open.length} more scholar(s) Present or Absent before forwarding.`;
+    }
+    state.attendanceLocks[key] = { by: actor().name, on: clientToday() };
+    const file = ensureFile(state, batchId, semester);
+    log(file, "Attendance frozen and forwarded to the COE", `${subjectId} · ${centreId}`);
+    return null;
+  });
+}
+
+/** The administrator opens a forwarded attendance sheet again, until marks are sent for verification. */
+export async function reopenAttendance(
+  batchId: string,
+  semester: number,
+  subjectId: string,
+  centreId: string,
+): Promise<Outcome> {
+  const blocked = viewProblem() ?? roleProblem(["admin"], "Only the administrator can reopen the attendance.");
+  if (blocked) return { ok: false, message: blocked };
+  return commit((state) => {
+    const key = attendanceLockKey(batchId, semester, subjectId, centreId);
+    if (!state.attendanceLocks[key]) return "This attendance is not forwarded.";
+    const file = fileFor(state, batchId, semester);
+    const sheet = sheetOf(file, subjectId);
+    if (file?.status === "Published" || sheet?.status === "Sent" || sheet?.status === "Frozen") {
+      return "The marks of this paper are already sent for verification or frozen.";
+    }
+    delete state.attendanceLocks[key];
+    if (file) log(file, "Attendance reopened", `${subjectId} · ${centreId}`);
     return null;
   });
 }
@@ -890,8 +987,16 @@ export async function saveExamMarks(
 ): Promise<Outcome> {
   const blocked = viewProblem() ?? roleProblem(["coe"], entryRole);
   if (blocked) return { ok: false, message: blocked };
+  const doctoral = currentDoctoral();
   return commit((state) => {
     const max = state.settings.maxMarks;
+    for (const entry of entries) {
+      if (entry.marks === null) continue;
+      const registration = doctoral?.registrations.find((row) => row.id === entry.registrationId);
+      if (registration && !attendanceLockOf(state, registration)) {
+        return `${registration.scholarName}: the attendance of this paper at this campus has not been forwarded to the COE yet.`;
+      }
+    }
     const file = ensureFile(state, batchId, semester);
     if (file.status === "Published") return "These results are published. They can not be changed.";
     if (file.status === "Submitted" || file.status === "Approved") {
@@ -949,6 +1054,12 @@ export async function sendMarksForVerification(
   const doctoral = currentDoctoral();
   if (!doctoral) return { ok: false, message: "The records are loading." };
   return commit((state) => {
+    const waiting = candidatesFor(doctoral, state, batchId, semester, subjectId).filter(
+      ({ registration }) => !attendanceLockOf(state, registration),
+    );
+    if (waiting.length > 0) {
+      return `The attendance of ${waiting.length} scholar(s) has not been forwarded to the COE yet.`;
+    }
     const open = missingMarks(doctoral, state, batchId, semester, subjectId);
     if (open.length > 0) {
       return `Enter the marks of ${open.length} more scholar(s), or mark them absent, before sending.`;

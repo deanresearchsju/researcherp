@@ -68,6 +68,7 @@ import { usePortalSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
 import { allBatches } from "@/lib/batches";
 import { storeFile } from "@/lib/file-store";
+import { inputRules, masked } from "@/lib/input-rules";
 
 const windowSchema = z.object({
   enabled: z.boolean(),
@@ -1622,14 +1623,20 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
               htmlFor="subject-credits"
               error={subjectForm.formState.errors.credits?.message}
             >
-              <Input id="subject-credits" {...subjectForm.register("credits")} />
+              <Input
+                id="subject-credits"
+                {...masked(subjectForm.register("credits"), inputRules.decimal)}
+              />
             </FormField>
             <FormField
               label="Subject in-charge"
               htmlFor="subject-incharge"
               error={subjectForm.formState.errors.inChargeName?.message}
             >
-              <Input id="subject-incharge" {...subjectForm.register("inChargeName")} />
+              <Input
+                id="subject-incharge"
+                {...masked(subjectForm.register("inChargeName"), inputRules.personName)}
+              />
             </FormField>
             <FormField
               label="Designation"
@@ -1638,7 +1645,10 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
             >
               <Input
                 id="subject-designation"
-                {...subjectForm.register("inChargeDesignation")}
+                {...masked(
+                  subjectForm.register("inChargeDesignation"),
+                  inputRules.letters,
+                )}
               />
             </FormField>
             <FormField

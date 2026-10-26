@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node tests/invigilation.test.mjs && node tests/invigilation-pdf.test.mjs",
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

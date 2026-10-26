@@ -476,11 +476,6 @@ export function ApplicationManager({
   async function verifySupervisors() {
     if (!approveJob) return;
     for (const row of approveJob) {
-      const quota = Number(approveQuotas[row.id]);
-      if (!Number.isInteger(quota) || quota < 0 || quota > 30) {
-        setNotice(`Enter the guide quota for ${row.applicantName} (0 to 30).`);
-        return;
-      }
       const ticks = eligibilityTicks[row.id] ?? {};
       if (!eligibilityCriteria.every((item) => ticks[item.id])) {
         setNotice(
@@ -496,7 +491,7 @@ export function ApplicationManager({
     for (const row of approveJob) {
       const eligibility = {
         checks: eligibilityTicks[row.id] ?? {},
-        quota: Number(approveQuotas[row.id]),
+        quota: proposedQuota(payloadValue(row.payload, "designation")),
         verifiedOn: today,
         remarks: "Eligibility verified.",
       };
@@ -1085,11 +1080,13 @@ export function ApplicationManager({
             viewing.kind === "supervisor"
               ? {
                   busy,
-                  onAction: (action: ReviewAction, remarks: string, quota: string) => {
+                  onAction: (action: ReviewAction, remarks: string) => {
                     void (async () => {
                       setBusy(true);
                       const approvedQuota =
-                        action === "Approved" ? Number(quota) : undefined;
+                        action === "Approved"
+                          ? proposedQuota(payloadValue(viewing.payload, "designation"))
+                          : undefined;
                       const saved = await reviewSupervisorApplication(
                         viewing.id,
                         viewing.payload,
@@ -1189,18 +1186,15 @@ export function ApplicationManager({
                   ))}
                 </ul>
                 <label className="mt-3 flex items-center gap-2">
-                  <span className="text-sm">Guide quota</span>
+                  <span className="text-sm">
+                    Guide quota (fixed by designation:{" "}
+                    {payloadValue(row.payload, "designation") || "not stated"})
+                  </span>
                   <input
                     aria-label={`Guide quota for ${row.applicantName}`}
-                    className="h-10 w-20 rounded-lg border border-input bg-card px-2 text-sm"
-                    inputMode="numeric"
+                    className="h-10 w-20 rounded-lg border border-input bg-muted px-2 text-sm"
                     value={approveQuotas[row.id] ?? ""}
-                    onChange={(event) =>
-                      setApproveQuotas((current) => ({
-                        ...current,
-                        [row.id]: event.target.value.replace(/\D/g, "").slice(0, 2),
-                      }))
-                    }
+                    readOnly
                   />
                 </label>
               </fieldset>
@@ -1208,7 +1202,8 @@ export function ApplicationManager({
             <p className="text-xs text-muted-foreground">
               Once every condition is met the application waits for the RAB / Vice
               Chancellor approval. The quota is the number of scholars the supervisor may
-              guide.
+              guide and is fixed by the designation: Professor 8, Associate Professor 6,
+              Assistant Professor 4.
             </p>
             <div className="flex gap-2">
               <Button type="submit" variant="gold" disabled={busy}>

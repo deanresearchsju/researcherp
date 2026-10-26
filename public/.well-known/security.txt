@@ -1,0 +1,4 @@
+Contact: mailto:deanresearch.sju@dmifoundations.org
+Expires: 2027-10-25T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://research.sju.ac.in/.well-known/security.txt

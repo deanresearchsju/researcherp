@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Container } from "@/components/ui/container";
@@ -19,7 +20,12 @@ export default function TermsPage() {
         <p className="text-sm leading-7 text-muted-foreground">
           Use of the research portal follows the terms issued by {university.name}. Fees,
           eligibility, and milestone rules remain those notified by the{" "}
-          {university.researchOffice}.
+          {university.researchOffice}. How personal information is handled is described on
+          the{" "}
+          <Link href="/privacy" className="font-semibold text-primary underline">
+            privacy page
+          </Link>
+          .
         </p>
       </Container>
     </>

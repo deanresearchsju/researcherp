@@ -8,22 +8,10 @@ export const faqs: FaqItem[] = [
       "The University holds two Ph.D. admission sessions each year: January and July. Apply online while the current window is open. The home page shows whether applications are open.",
   },
   {
-    id: "eligibility",
-    question: "Who may apply?",
-    answer:
-      "Applicants hold a postgraduate degree in a relevant discipline from a recognised university and meet the conditions in the current admission notification. The written test and interview follow submission of a complete application.",
-  },
-  {
     id: "documents",
     question: "Which documents are required?",
     answer:
-      "Prepare a passport photograph (JPG or PNG, up to 200 KB, 3.5 × 4.5 cm), a signature (JPG or PNG, up to 100 KB), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a NET / SET / SLET certificate if you are qualified. PDF files must be 1 MB or smaller.",
-  },
-  {
-    id: "duration",
-    question: "How long does the programme take?",
-    answer:
-      "Full Time: 3 to 6 years. Part-Time Internal: 4 to 7 years. Part-Time External: 4 to 7 years. Progress is recorded through doctoral committee meetings, colloquium, publications, synopsis, and the thesis.",
+      "Prepare a passport photograph (JPG or PNG, up to 200 KB, 3.5 × 4.5 cm), the application-fee receipt, the undergraduate degree, the postgraduate consolidated marksheet or provisional certificate or degree, proof of date of birth, and a NET / SET / SLET certificate if you are qualified. PDF files must be 1 MB or smaller.",
   },
   {
     id: "course-work",

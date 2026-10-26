@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
 import { PageTitle } from "@/components/portal/Desk";
+import { GuideHistory } from "@/components/portal/GuideHistory";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,15 @@ import {
   saveAllocation,
   subscribeOffice,
 } from "@/lib/office";
-import { currentPassedOut, currentQuotas, currentStandings, isPassedOut, subscribeRegister, registerScholarsInOrder } from "@/lib/register";
+import {
+  currentPassedOut,
+  currentQuotas,
+  currentStandings,
+  isPassedOut,
+  subscribeRegister,
+  registerScholarsInOrder,
+} from "@/lib/register";
+import { recordGuideChange } from "@/lib/guide-history";
 import { guideOptions } from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
@@ -67,7 +76,10 @@ export function AllocationScreen() {
   ];
   const scholars = allScholars.filter((user) => !isPassedOut(user.identifier, user.name));
   const supervisors = guideOptions(office.allocations, users.users, quotas, standings);
-  const activeSupervisors = supervisors.filter((user) => user.status === "Active");
+  // Only supervisors who have a vacancy are offered.
+  const activeSupervisors = supervisors.filter(
+    (user) => user.status === "Active" && (user.vacancy === null || user.vacancy > 0),
+  );
 
   async function allot() {
     const scholar = scholars.find((user) => user.identifier === scholarId);
@@ -251,7 +263,18 @@ export function AllocationScreen() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => void removeAllocation(item)}
+                      onClick={() => {
+                        void removeAllocation(item);
+                        void recordGuideChange({
+                          scholarIdentifier: item.scholarIdentifier,
+                          scholarName: item.scholarName,
+                          fromName: item.supervisorName,
+                          fromIdentifier: item.supervisorIdentifier,
+                          toName: "",
+                          toIdentifier: "",
+                          kind: "Removed",
+                        });
+                      }}
                     >
                       Remove
                     </Button>
@@ -261,6 +284,11 @@ export function AllocationScreen() {
           </tbody>
         </table>
       </div>
+      <GuideHistory
+        version={office.allocations
+          .map((item) => item.id + item.supervisorName)
+          .join("|")}
+      />
     </div>
   );
 }

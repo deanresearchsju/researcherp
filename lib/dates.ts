@@ -162,3 +162,47 @@ export function wordCount(value: string) {
   if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
 }
+
+const shortMonths = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+
+/**
+ * A date typed loosely in the old register ("27.5.25", "19/6/2025", "4 Mar 2026") as an ISO date
+ * ("2025-05-27"), or "" when it cannot be read as one.
+ */
+export function looseDateToIso(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  if (isValidIsoDate(text)) return text;
+  const numeric = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/.exec(text);
+  const named = /^(\d{1,2})[ -]([A-Za-z]{3,9})[ ,.-]*(\d{2}|\d{4})$/.exec(text);
+  let day = 0;
+  let month = 0;
+  let year = 0;
+  if (numeric) {
+    day = Number(numeric[1]);
+    month = Number(numeric[2]);
+    year = Number(numeric[3]);
+    if (numeric[3].length === 2) year += 2000;
+  } else if (named) {
+    day = Number(named[1]);
+    month = shortMonths.indexOf(named[2].slice(0, 3).toLowerCase()) + 1;
+    year = Number(named[3]);
+    if (named[3].length === 2) year += 2000;
+  }
+  if (!day || !month || !year) return "";
+  const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return isValidIsoDate(iso) ? iso : "";
+}

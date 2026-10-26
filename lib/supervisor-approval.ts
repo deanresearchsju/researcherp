@@ -99,7 +99,7 @@ export function proposedQuota(designation: string) {
   const value = designation.toLowerCase();
   if (/assoc/.test(value)) return 6;
   if (/asst|assistant/.test(value)) return 4;
-  if (/professor/.test(value)) return 8;
+  if (/prof/.test(value)) return 8;
   return 4;
 }
 

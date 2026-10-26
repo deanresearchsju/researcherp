@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
@@ -28,16 +26,13 @@ import { SupervisorRegisterEditor } from "@/components/portal/RegisterEditors";
 import {
   currentQuotas,
   currentStandings,
-  guideFigures,
   sameGuide,
   saveApprovedQuota,
   saveSupervisorStanding,
   subscribeRegister,
   supervisorDownloadRow,
-  supervisorKeys,
   supervisorListingActive,
 } from "@/lib/register";
-import { standingKind } from "@/lib/portal-access";
 import {
   isStoredApplication,
   reviewSupervisorApplication,
@@ -45,6 +40,9 @@ import {
   type StoredApplication,
 } from "@/lib/records";
 import type { Json } from "@/types/database";
+import { proposedQuota } from "@/lib/supervisor-approval";
+import { SupervisorList } from "@/components/portal/SupervisorList";
+import { RegisterImport } from "@/components/portal/RegisterImport";
 
 function payloadText(payload: Json, key: string) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
@@ -137,8 +135,6 @@ export function SupervisorRegister({
   const canExport = useCanMenuAction("export");
   const session = usePreviewSession();
   const canEdit = session?.role === "admin" || session?.role === "staff";
-  const onRegister = (supervisor: ResearchSupervisor) =>
-    researchRegister.supervisors.includes(supervisor);
   const [saving, setSaving] = useState(false);
   const quotas = useSyncExternalStore(subscribeRegister, currentQuotas, currentQuotas);
   const standings = useSyncExternalStore(
@@ -191,9 +187,11 @@ export function SupervisorRegister({
     application: StoredApplication,
     action: ReviewAction,
     remarks: string,
-    quotaText: string,
   ) {
-    const approvedQuota = action === "Approved" ? Number(quotaText) : undefined;
+    const approvedQuota =
+      action === "Approved"
+        ? proposedQuota(payloadText(application.payload, "designation"))
+        : undefined;
     setBusy(true);
     setNotice(null);
     const saved = await reviewSupervisorApplication(
@@ -305,6 +303,8 @@ export function SupervisorRegister({
           {notice}
         </p>
       ) : null}
+
+      <RegisterImport kind="supervisors" onDone={setNotice} />
 
       <div className="mt-6">
         <DeskTabs
@@ -479,190 +479,38 @@ export function SupervisorRegister({
         ])}
       />
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-        <table className="w-full min-w-[88rem] border-collapse text-left text-sm">
-          <thead className="bg-muted text-primary">
-            <tr>
-              {[
-                "S. No.",
-                "Guide name",
-                "Supervisor ID",
-                "Department",
-                "Designation",
-                "Area of research",
-                listTab === "inactive" ? "Status" : "Active",
-                "Actions",
-                "Quota",
-                "Vacancy",
-                "July 2026 allotment",
-                "Balance",
-                "Campus",
-                "Phone",
-                "Mail ID",
-              ].map((heading) => (
-                <th key={heading} className="px-3 py-3 font-semibold whitespace-nowrap">
-                  {heading}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {shownList.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-muted-foreground" colSpan={15}>
-                  {listTab === "inactive"
-                    ? supervisorOfficeCopy.emptyInactive
-                    : supervisorOfficeCopy.emptyActive}
-                </td>
-              </tr>
-            ) : null}
-            {shownList.map((supervisor) => {
-              const figures = guideFigures(supervisor, quotas, allocations);
-              const keys = supervisorKeys(supervisor);
-              return (
-                <tr
-                  key={`${supervisor.serialNo}-${supervisor.name}`}
-                  className="border-t border-border"
-                >
-                  <td className="px-3 py-3">{supervisor.serialNo || "—"}</td>
-                  <td className="px-3 py-3">{supervisor.name}</td>
-                  <td className="px-3 py-3">{supervisor.supervisorId.trim() || "—"}</td>
-                  <td className="px-3 py-3">{supervisor.department.trim() || "—"}</td>
-                  <td className="px-3 py-3">{supervisor.designation.trim() || "—"}</td>
-                  <td className="px-3 py-3">{supervisor.researchArea.trim() || "—"}</td>
-                  <td className="px-3 py-3">
-                    {listTab === "inactive"
-                      ? standingKind(keys, standings)
-                      : supervisorListingActive(supervisor, standings)
-                        ? "Yes"
-                        : "No"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {listTab === "inactive" ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setViewing({
-                              application: supervisorApplicationFile(supervisor, rows),
-                              personId: supervisorSignInId(supervisor),
-                              review: false,
-                            })
-                          }
-                        >
-                          {applicationReviewCopy.view}
-                        </Button>
-                        {canEdit && onRegister(supervisor) ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setNotice(null);
-                              setEditing(supervisor);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            void saveSupervisorStanding(supervisor, true, null).then(
-                              (saved) =>
-                                setNotice(
-                                  saved.ok
-                                    ? `${supervisor.name} is on the active list.`
-                                    : saved.message,
-                                ),
-                            )
-                          }
-                        >
-                          {supervisorOfficeCopy.restore}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setViewing({
-                              application: supervisorApplicationFile(supervisor, rows),
-                              personId: supervisorSignInId(supervisor),
-                              review: false,
-                            })
-                          }
-                        >
-                          {applicationReviewCopy.view}
-                        </Button>
-                        {canEdit && onRegister(supervisor) ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setNotice(null);
-                              setEditing(supervisor);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            void saveSupervisorStanding(
-                              supervisor,
-                              false,
-                              "Inactive",
-                            ).then((saved) =>
-                              setNotice(
-                                saved.ok
-                                  ? `${supervisor.name} is inactive.`
-                                  : saved.message,
-                              ),
-                            )
-                          }
-                        >
-                          {supervisorOfficeCopy.markInactive}
-                        </Button>
-                        <Button asChild size="sm" variant="maroon">
-                          <Link href="/admin/supervisor-exit">
-                            {supervisorOfficeCopy.markResigned}
-                          </Link>
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 tabular-nums">{figures.quota}</td>
-                  <td className="px-3 py-3 tabular-nums">{figures.vacancy}</td>
-                  <td className="px-3 py-3 tabular-nums">
-                    {supervisor.june2026Allotment}
-                  </td>
-                  <td className="px-3 py-3 tabular-nums">{figures.balance}</td>
-                  <td className="px-3 py-3">{supervisor.campus.trim() || "—"}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    {supervisor.phone.trim() || "—"}
-                  </td>
-                  <td className="px-3 py-3 break-all">
-                    {supervisor.email.trim() || "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <SupervisorList
+        supervisors={shownList}
+        inactiveTab={listTab === "inactive"}
+        quotas={quotas}
+        allocations={allocations}
+        standings={standings}
+        busy={busy}
+        canEditRow={() => canEdit}
+        onView={(supervisor) =>
+          setViewing({
+            application: supervisorApplicationFile(supervisor, rows),
+            personId: supervisorSignInId(supervisor),
+            review: false,
+          })
+        }
+        onEdit={(supervisor) => {
+          setNotice(null);
+          setEditing(supervisor);
+        }}
+        onMarkInactive={(supervisor) =>
+          void saveSupervisorStanding(supervisor, false, "Inactive").then((saved) =>
+            setNotice(saved.ok ? `${supervisor.name} is inactive.` : saved.message),
+          )
+        }
+        onRestore={(supervisor) =>
+          void saveSupervisorStanding(supervisor, true, null).then((saved) =>
+            setNotice(
+              saved.ok ? `${supervisor.name} is on the active list.` : saved.message,
+            ),
+          )
+        }
+      />
       {editing ? (
         <SupervisorRegisterEditor
           key={editing.serialNo}
@@ -690,8 +538,8 @@ export function SupervisorRegister({
             viewing.review
               ? {
                   busy,
-                  onAction: (action, remarks, quota) =>
-                    void reviewAction(viewing.application, action, remarks, quota),
+                  onAction: (action, remarks) =>
+                    void reviewAction(viewing.application, action, remarks),
                 }
               : undefined
           }

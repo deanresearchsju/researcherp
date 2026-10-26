@@ -37,7 +37,11 @@ import type { GuideOption } from "@/lib/supervision";
 import { useScholarReports } from "@/lib/use-report-sources";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { cn } from "@/lib/utils";
-import { MarkButtons, markSummary, type Mark } from "@/components/portal/AttendanceControls";
+import {
+  MarkButtons,
+  markSummary,
+  type Mark,
+} from "@/components/portal/AttendanceControls";
 
 type Tab = "events" | "scholars" | "supervisors" | "batches";
 
@@ -1091,7 +1095,7 @@ function EventDialog({
             inputMode="numeric"
             maxLength={4}
             value={draft.year}
-            onChange={(e) => set("year", e.target.value)}
+            onChange={(e) => set("year", e.target.value.replace(/\D/g, "").slice(0, 4))}
           />
         </label>
         <label className="grid gap-1">
@@ -1229,7 +1233,9 @@ function AttendanceDialog({
                 <MarkButtons
                   name={person.name}
                   value={marks[key] ?? ""}
-                  onChange={(next) => setMarks((current) => ({ ...current, [key]: next }))}
+                  onChange={(next) =>
+                    setMarks((current) => ({ ...current, [key]: next }))
+                  }
                 />
               </li>
             );
@@ -1280,7 +1286,12 @@ function AttendanceDialog({
             onChange={(e) => setQuery(e.target.value)}
             className="max-w-xs"
           />
-          <Button type="button" size="sm" variant="outline" onClick={() => setAll("Present")}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setAll("Present")}
+          >
             All present
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => setAll("")}>

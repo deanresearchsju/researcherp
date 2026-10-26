@@ -130,6 +130,14 @@ export function SupervisorTransferScreen() {
       setNotice("Those scholars are already with that supervisor.");
       return;
     }
+    if (supervisor.vacancy !== null && moving.length > supervisor.vacancy) {
+      setNotice(
+        supervisor.vacancy === 0
+          ? `${supervisor.name} has no vacancy.`
+          : `${supervisor.name} has a vacancy for ${supervisor.vacancy} scholar(s) only; you chose ${moving.length}.`,
+      );
+      return;
+    }
     setBusy(true);
     setNotice(null);
     const moved: string[] = [];
@@ -236,7 +244,10 @@ export function SupervisorTransferScreen() {
             >
               <option value="">Select the new supervisor</option>
               {supervisors
-                .filter((item) => item.status === "Active")
+                .filter(
+                  (item) =>
+                    item.status === "Active" && (item.vacancy === null || item.vacancy > 0),
+                )
                 .map((item) => (
                   <option key={item.id} value={item.identifier}>
                     {item.name}

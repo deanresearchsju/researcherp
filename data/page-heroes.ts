@@ -66,4 +66,9 @@ export const pageHeroes = {
     title: "Terms",
     summary: "Terms that apply to the use of this website and the research portal.",
   },
+  privacy: {
+    eyebrow: "Legal",
+    title: "Privacy",
+    summary: "What personal information the research portal collects, why, and who can see it.",
+  },
 } as const;

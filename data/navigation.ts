@@ -14,7 +14,6 @@ export const primaryNav: NavLink[] = [
 export const footerExplore: NavLink[] = [
   { label: "Announcements", href: "/announcements" },
   { label: "Admission", href: "/admission" },
-  { label: "Scholar journey", href: "/scholar-journey" },
   { label: "Supervisors", href: "/supervisors" },
   { label: "Our team", href: "/our-team" },
   { label: "Downloads", href: "/downloads" },

@@ -22,7 +22,8 @@ import {
   parsePhdSession,
   subscribeSiteSettings,
 } from "@/lib/office";
-import { hasAnyOpenVacancy, loadVacancies, type Vacancy } from "@/lib/vacancies";
+import { loadLiveVacancies } from "@/lib/live-vacancies";
+import { hasAnyOpenVacancy, type Vacancy } from "@/lib/vacancies";
 
 const startSchema = z.object({
   mobile: z
@@ -62,12 +63,12 @@ export function ApplicationStart({
     setBusy(true);
     setVacancyError(null);
     try {
-      const loaded = await loadVacancies();
-      if (!hasAnyOpenVacancy(loaded.rows)) {
+      const rows = await loadLiveVacancies();
+      if (!hasAnyOpenVacancy(rows)) {
         setVacancyError(scholarFormCopy.noVacancy);
         return;
       }
-      await onApply({ ...values, vacancies: loaded.rows });
+      await onApply({ ...values, vacancies: rows });
     } finally {
       setBusy(false);
     }
@@ -76,11 +77,7 @@ export function ApplicationStart({
     return (
       <ApplicationsClosed
         title="Admissions are currently closed"
-        detail={
-          loaded.deadline.trim()
-            ? `${phdWindowCopy.closedDetail} ${loaded.deadlineLabel} ${loaded.deadline}.`
-            : phdWindowCopy.closedDetail
-        }
+        detail={phdWindowCopy.closedDetail}
       />
     );
   }

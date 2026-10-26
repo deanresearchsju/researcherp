@@ -25,6 +25,7 @@ import {
   fileFor,
   freezeMarks,
   gradeFor,
+  attendanceLockOf,
   markExamAttendance,
   outcomeFor,
   readyToSubmit,
@@ -147,7 +148,9 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
     let absent = 0;
     let passed = 0;
     let reappear = 0;
+    let forwarded = 0;
     for (const { registration } of paper.candidates) {
+      if (attendanceLockOf(exam!, registration)) forwarded += 1;
       const marks = marksOf(paper.subjectId, registration.id);
       const result = resultOf(settings, exam!, registration.id, marks);
       if (result.absent) {
@@ -159,7 +162,7 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
         else reappear += 1;
       }
     }
-    return { total, entered, absent, missing: total - entered, passed, reappear };
+    return { total, entered, absent, missing: total - entered, passed, reappear, forwarded };
   }
 
   async function saveDrafts() {
@@ -432,6 +435,7 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                 <tr>
                   <th className="px-3 py-2 font-semibold">Paper</th>
                   <th className="px-3 py-2 font-semibold">Scholars</th>
+                  <th className="px-3 py-2 font-semibold">Attendance</th>
                   <th className="px-3 py-2 font-semibold">Marks entered</th>
                   <th className="px-3 py-2 font-semibold">Absent</th>
                   <th className="px-3 py-2 font-semibold">Pass · RA</th>
@@ -451,6 +455,15 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                       <td className="px-3 py-2 font-medium text-primary">{paper.label}</td>
                       <td className="px-3 py-2">{counts.total}</td>
                       <td className="px-3 py-2">
+                        {counts.forwarded === counts.total ? (
+                          <Badge variant="gold">Forwarded</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {counts.forwarded} of {counts.total} forwarded
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
                         {counts.entered} of {counts.total}
                         <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                           <div
@@ -464,6 +477,11 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                       <td className="px-3 py-2">{counts.absent}</td>
                       <td className="px-3 py-2">
                         {counts.passed} · {counts.reappear}
+                        {counts.total - counts.absent > 0 && counts.entered === counts.total ? (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({Math.round((counts.passed / (counts.total - counts.absent)) * 100)}% pass)
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant={statusTone[status]}>
@@ -658,6 +676,7 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                   gridRows
                     .filter((row) => mode === "entry" || row.paper.subjectId === viewing)
                     .map(({ paper, registration, ticket }) => {
+                      const forwarded = Boolean(attendanceLockOf(exam, registration));
                       const locked = lockedFor(paper.subjectId) || mode === "verify";
                       const saved = marksOf(paper.subjectId, registration.id);
                       const draft = drafts[registration.id];
@@ -686,7 +705,7 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                             <MarkButtons
                               name={registration.scholarName}
                               value={(exam.attendance[registration.id] ?? "") as Mark}
-                              disabled={locked || busy}
+                              disabled={locked || busy || forwarded}
                               onChange={(next) =>
                                 void act(
                                   markExamAttendance([
@@ -702,8 +721,8 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                               value={result.absent ? "" : shown}
                               inputMode="decimal"
                               className={cn("w-24", locked && "bg-muted")}
-                              disabled={locked || result.absent}
-                              placeholder={result.absent ? "AAA" : ""}
+                              disabled={locked || result.absent || !forwarded}
+                              placeholder={result.absent ? "AAA" : !forwarded ? "Attendance awaited" : ""}
                               aria-label={`Marks for ${registration.scholarName}`}
                               data-marks=""
                               onKeyDown={(event) => {

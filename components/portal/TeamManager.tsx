@@ -26,6 +26,7 @@ import {
   type TeamLoad,
   type TeamMember,
 } from "@/lib/team";
+import { inputRules, masked } from "@/lib/input-rules";
 
 const teamColumns = ["sort_order", "role", "name", "email", "phone"] as const;
 
@@ -431,14 +432,20 @@ export function TeamManager({ initial }: { initial: TeamLoad }) {
               required
               error={form.formState.errors.sortOrder?.message}
             >
-              <Input id="sortOrder" inputMode="numeric" {...form.register("sortOrder")} />
+              <Input
+                id="sortOrder"
+                {...masked(form.register("sortOrder"), inputRules.integer)}
+              />
             </FormField>
             <FormField
               label="Name"
               htmlFor="memberName"
               error={form.formState.errors.name?.message}
             >
-              <Input id="memberName" {...form.register("name")} />
+              <Input
+                id="memberName"
+                {...masked(form.register("name"), inputRules.personName)}
+              />
             </FormField>
             <FormField
               label="Role"

@@ -48,10 +48,13 @@ import {
   subscribeOffice,
 } from "@/lib/office";
 import {
+  currentQuotas,
+  currentStandings,
   personalDetailsFromRegister,
   scholarBySignIn,
   supervisorForGuide,
 } from "@/lib/register";
+import { guideOptions } from "@/lib/supervision";
 import { currentPortalUsers } from "@/lib/users";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
@@ -60,6 +63,45 @@ import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { recordSummary } from "@/lib/approval-flow";
 import { recordViewStamp } from "@/lib/approved-documents";
+import { inputRules, masked, type InputRule } from "@/lib/input-rules";
+
+/** What each field of a record may hold: names take letters, numbers take digits, and so on. */
+const recordRules: Record<string, InputRule> = {
+  fullName: inputRules.personName,
+  nameOnCard: inputRules.personName,
+  fatherName: inputRules.personName,
+  motherName: inputRules.personName,
+  correspondingAuthor: inputRules.personName,
+  authors: inputRules.names,
+  nationality: inputRules.letters,
+  district: inputRules.letters,
+  state: inputRules.letters,
+  community: inputRules.letters,
+  pincode: inputRules.pin,
+  mobile: inputRules.mobile,
+  parentContact: inputRules.mobile,
+  abcId: inputRules.reference,
+  transactionNumber: inputRules.reference,
+  amount: inputRules.decimal,
+  year: inputRules.year,
+  pageFrom: inputRules.pages,
+  pageTo: inputRules.pages,
+  volume: inputRules.reference,
+  issue: inputRules.reference,
+  issn: inputRules.issn,
+  eissn: inputRules.issn,
+  impactFactor: inputRules.decimal,
+  webUrl: inputRules.url,
+  doi: inputRules.doi,
+};
+
+function recordRule(field: { name: string; kind: string }): InputRule | null {
+  if (recordRules[field.name]) return recordRules[field.name];
+  if (field.kind === "tel") return inputRules.mobile;
+  if (field.kind === "amount") return inputRules.decimal;
+  if (field.kind === "email") return inputRules.email;
+  return null;
+}
 
 function flowFor(kind: ScholarRecordKind) {
   if (kind === "publication") return processFlows.publication;
@@ -149,7 +191,9 @@ export function RecordForm({
     if (problem) return;
     setBusy(true);
     setNotice(null);
-    const fileData = file?.file ? await storeFile(file.file, "records").catch(() => "") : "";
+    const fileData = file?.file
+      ? await storeFile(file.file, "records").catch(() => "")
+      : "";
     const saved = await saveScholarRecord(
       {
         kind: menu.kind,
@@ -223,19 +267,10 @@ export function RecordForm({
               <>
                 <Input
                   id={field.name}
-                  type={
-                    field.kind === "date"
-                      ? "date"
-                      : field.kind === "email"
-                        ? "email"
-                        : "text"
-                  }
-                  inputMode={
-                    field.kind === "tel" || field.kind === "amount"
-                      ? "decimal"
-                      : undefined
-                  }
-                  {...form.register(field.name)}
+                  {...(field.kind === "date" ? { type: "date" } : {})}
+                  {...(recordRule(field)
+                    ? masked(form.register(field.name), recordRule(field) as InputRule)
+                    : form.register(field.name))}
                 />
                 {field.kind === "doi" && /^10\.\d{4,9}\/\S+$/.test(doi ?? "") ? (
                   <p className="text-xs text-primary">DOI format verified.</p>
@@ -378,6 +413,25 @@ export function ScholarRecordScreen({
     if (status === "Returned" && note.length < 2) {
       setNotice("Enter the remarks before returning this record.");
       return;
+    }
+    if (status === "Approved" && record.kind === "supervisor_change") {
+      // A scholar is not moved to a supervisor who has no vacancy.
+      const wanted = (record.payload.requestedSupervisor ?? "").trim().toLowerCase();
+      const option = guideOptions(
+        currentOffice()?.allocations ?? [],
+        currentPortalUsers()?.users ?? [],
+        currentQuotas(),
+        currentStandings(),
+      ).find(
+        (item) =>
+          item.name.toLowerCase() === wanted || item.identifier.toLowerCase() === wanted,
+      );
+      if (option && option.vacancy !== null && option.vacancy < 1) {
+        setNotice(
+          `${option.name} has no vacancy, so this change of supervisor cannot be approved.`,
+        );
+        return;
+      }
     }
     setBusyId(record.id);
     const saved = await setScholarRecordStatus(record, status, note);

@@ -61,11 +61,12 @@ import {
   writeLocalReceipt,
   type PhdReceipt,
 } from "@/lib/scholar-progress";
+import { loadLiveVacancies } from "@/lib/live-vacancies";
 import {
+  allSchools,
+  allSubjects,
+  hasAnyOpenVacancy,
   hasOpenVacancy,
-  loadVacancies,
-  openSchools,
-  openSubjects,
   type Vacancy,
 } from "@/lib/vacancies";
 import {
@@ -208,6 +209,7 @@ export function ScholarApplication() {
   } = form;
 
   const values = useWatch({ control }) as ScholarFormValues;
+  const departmentOpen = hasOpenVacancy(vacancies, values.school, values.specialization);
   const age = formatAge(ageParts(values.dateOfBirth));
 
   function persist(nextStep = step) {
@@ -290,14 +292,13 @@ export function ScholarApplication() {
     } else if (current.label === "Programme") {
       let rows = vacancies;
       if (rows.length === 0) {
-        const loaded = await loadVacancies();
-        rows = loaded.rows;
+        rows = await loadLiveVacancies();
         setVacancies(rows);
       }
       const school = getValues("school");
       const subject = getValues("specialization");
       if (!hasOpenVacancy(rows, school, subject)) {
-        setSubmitError(scholarFormCopy.noVacancy);
+        setSubmitError(scholarFormCopy.noVacancyDepartment);
         return;
       }
       setSubmitError(null);
@@ -338,10 +339,10 @@ export function ScholarApplication() {
       setSubmitError("Admissions are currently closed.");
       return;
     }
-    const openRows = vacancies.length > 0 ? vacancies : (await loadVacancies()).rows;
-    if (vacancies.length === 0) setVacancies(openRows);
+    const openRows = await loadLiveVacancies();
+    setVacancies(openRows);
     if (!hasOpenVacancy(openRows, submitted.school, submitted.specialization)) {
-      setSubmitError(scholarFormCopy.noVacancy);
+      setSubmitError(scholarFormCopy.noVacancyDepartment);
       setStep(steps.findIndex((item) => item.label === "Programme"));
       return;
     }
@@ -543,7 +544,10 @@ export function ScholarApplication() {
                 required
                 error={errors.communityName?.message}
               >
-                <Input id="communityName" {...register("communityName")} />
+                <Input
+                  id="communityName"
+                  {...masked(register("communityName"), inputRules.letters)}
+                />
               </FormField>
             ) : null}
             <SelectField
@@ -573,14 +577,6 @@ export function ScholarApplication() {
             <FormField label="Programme" htmlFor="programme">
               <Input id="programme" readOnly value={programmeName} />
             </FormField>
-            <SelectField
-              id="studyMode"
-              label="Mode of study"
-              register={register}
-              name="studyMode"
-              error={errors.studyMode?.message}
-              options={studyModes}
-            />
             <FormField
               label="School"
               htmlFor="school"
@@ -592,15 +588,16 @@ export function ScholarApplication() {
                 {...register("school", {
                   onChange: (event) => {
                     const school = event.target.value;
-                    const allowed = openSubjects(vacancies, school);
+                    const allowed = allSubjects(vacancies, school);
                     if (!allowed.includes(getValues("specialization"))) {
                       setValue("specialization", "");
                     }
+                    setSubmitError(null);
                   },
                 })}
               >
                 <option value="">Select</option>
-                {openSchools(vacancies).map((school) => (
+                {allSchools(vacancies).map((school) => (
                   <option key={school} value={school}>
                     {school}
                   </option>
@@ -608,7 +605,7 @@ export function ScholarApplication() {
               </NativeSelect>
             </FormField>
             <FormField
-              label="Subject"
+              label="Department"
               htmlFor="specialization"
               required
               error={errors.specialization?.message}
@@ -616,12 +613,12 @@ export function ScholarApplication() {
               <NativeSelect
                 id="specialization"
                 disabled={
-                  !values.school || openSubjects(vacancies, values.school).length === 0
+                  !values.school || allSubjects(vacancies, values.school).length === 0
                 }
-                {...register("specialization")}
+                {...register("specialization", { onChange: () => setSubmitError(null) })}
               >
                 <option value="">Select</option>
-                {(values.school ? openSubjects(vacancies, values.school) : []).map(
+                {(values.school ? allSubjects(vacancies, values.school) : []).map(
                   (subject) => (
                     <option key={subject} value={subject}>
                       {subject}
@@ -630,39 +627,66 @@ export function ScholarApplication() {
                 )}
               </NativeSelect>
             </FormField>
-            <SelectField
-              id="interdisciplinary"
-              label="Is your proposed research interdisciplinary?"
-              register={register}
-              name="interdisciplinary"
-              error={errors.interdisciplinary?.message}
-              options={yesNo}
-            />
-            {values.interdisciplinary === "Yes" ? (
-              <FormField
-                label="Other discipline(s) involved"
-                htmlFor="interdisciplinaryNote"
-                required
-                error={errors.interdisciplinaryNote?.message}
-              >
-                <Input
-                  id="interdisciplinaryNote"
-                  maxLength={200}
-                  {...register("interdisciplinaryNote")}
-                />
-              </FormField>
-            ) : null}
-            <p className="text-xs leading-5 text-muted-foreground sm:col-span-2 lg:col-span-3">
-              Interdisciplinary applicants may apply, but a vacancy must be available in
-              the subject chosen above. The guide is allotted from that subject.
-            </p>
-            {openSchools(vacancies).length === 0 ? (
+            {vacancies.length > 0 && !hasAnyOpenVacancy(vacancies) ? (
               <p
                 role="alert"
                 className="text-sm font-semibold text-secondary sm:col-span-2 lg:col-span-3"
               >
                 {scholarFormCopy.noVacancy}
               </p>
+            ) : null}
+            {values.school && values.specialization && !departmentOpen ? (
+              <p
+                role="alert"
+                className="rounded-lg border border-secondary/40 bg-secondary/10 px-3 py-2 text-sm font-semibold text-secondary sm:col-span-2 lg:col-span-3"
+              >
+                {scholarFormCopy.noVacancyDepartment}
+              </p>
+            ) : null}
+            {!values.school || !values.specialization ? (
+              <p className="text-xs leading-5 text-muted-foreground sm:col-span-2 lg:col-span-3">
+                Select the school and the department. The next questions appear when the
+                department has a vacancy in this session.
+              </p>
+            ) : null}
+            {departmentOpen ? (
+              <>
+                <SelectField
+                  id="studyMode"
+                  label="Mode of study"
+                  register={register}
+                  name="studyMode"
+                  error={errors.studyMode?.message}
+                  options={studyModes}
+                />
+                <SelectField
+                  id="interdisciplinary"
+                  label="Is your proposed research interdisciplinary?"
+                  register={register}
+                  name="interdisciplinary"
+                  error={errors.interdisciplinary?.message}
+                  options={yesNo}
+                />
+                {values.interdisciplinary === "Yes" ? (
+                  <FormField
+                    label="Other discipline(s) involved"
+                    htmlFor="interdisciplinaryNote"
+                    required
+                    error={errors.interdisciplinaryNote?.message}
+                  >
+                    <Input
+                      id="interdisciplinaryNote"
+                      maxLength={200}
+                      {...register("interdisciplinaryNote")}
+                    />
+                  </FormField>
+                ) : null}
+                <p className="text-xs leading-5 text-muted-foreground sm:col-span-2 lg:col-span-3">
+                  Interdisciplinary applicants may apply, but a vacancy must be available
+                  in the department chosen above. The guide is allotted from that
+                  department.
+                </p>
+              </>
             ) : null}
           </section>
         ) : null}
@@ -1186,9 +1210,7 @@ export function ScholarApplication() {
             <Button
               type="button"
               variant="gold"
-              disabled={
-                current?.label === "Programme" && openSchools(vacancies).length === 0
-              }
+              disabled={current?.label === "Programme" && !departmentOpen}
               onClick={() => void continueStep()}
             >
               Save & Next

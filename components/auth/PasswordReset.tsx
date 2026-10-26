@@ -11,13 +11,19 @@ import { useClientReady } from "@/components/forms/ClientGate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { passwordProblem } from "@/lib/password-rules";
 import { portalHome, replacePreviewSession, type PreviewSession } from "@/lib/auth";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
 const schema = z
   .object({
-    password: z.string().min(6, "Password must be at least 6 characters.").max(128),
-    confirm: z.string().min(6, "Repeat the new password.").max(128),
+    password: z
+      .string()
+      .superRefine((value, context) => {
+        const problem = passwordProblem(value);
+        if (problem) context.addIssue({ code: "custom", message: problem });
+      }),
+    confirm: z.string().min(1, "Repeat the new password.").max(128),
   })
   .refine((value) => value.password === value.confirm, {
     path: ["confirm"],
@@ -58,7 +64,14 @@ export function PasswordReset() {
       return;
     }
     replacePreviewSession(payload.session);
-    router.push(portalHome(payload.session.role));
+    // A scholar or a supervisor is taken to their own details first, to check and complete them.
+    router.push(
+      payload.session.role === "scholar"
+        ? "/scholar/records/personal-details"
+        : payload.session.role === "supervisor"
+          ? "/supervisor/details"
+          : portalHome(payload.session.role),
+    );
   }
 
   const {
@@ -88,8 +101,14 @@ export function PasswordReset() {
         </p>
         {session.role === "scholar" ? (
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            After you save it, open the dashboard to review the personal details from your
-            application.
+            After you save it you will be asked to check your basic details and complete
+            what is missing. The research office confirms any change.
+          </p>
+        ) : null}
+        {session.role === "supervisor" ? (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            After you save it you can check your contact details, area of research, Vidwan
+            ID and biography.
           </p>
         ) : null}
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>

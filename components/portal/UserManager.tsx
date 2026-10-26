@@ -39,6 +39,7 @@ import {
   type PortalUser,
   type UserLoad,
 } from "@/lib/users";
+import { inputRules, masked } from "@/lib/input-rules";
 
 const userFormSchema = z.object({
   name: z.string().trim().min(2, "Enter the name."),
@@ -394,7 +395,10 @@ export function UserManager({ initial }: { initial: UserLoad }) {
               required
               error={createForm.formState.errors.name?.message}
             >
-              <Input id="createName" {...createForm.register("name")} />
+              <Input
+                id="createName"
+                {...masked(createForm.register("name"), inputRules.personName)}
+              />
             </FormField>
             <FormField
               label="Sign-in id"
@@ -458,7 +462,10 @@ export function UserManager({ initial }: { initial: UserLoad }) {
               required
               error={form.formState.errors.name?.message}
             >
-              <Input id="userName" {...form.register("name")} />
+              <Input
+                id="userName"
+                {...masked(form.register("name"), inputRules.personName)}
+              />
             </FormField>
             <FormField
               label="Password"

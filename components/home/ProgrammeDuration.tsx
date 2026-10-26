@@ -38,6 +38,9 @@ export function ProgrammeDuration() {
             </li>
           ))}
         </ul>
+        <p className="mt-6 text-justify text-sm leading-6 text-muted-foreground">
+          {researchPage.modesNote}
+        </p>
       </Container>
     </section>
   );

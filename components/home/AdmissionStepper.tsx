@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 import { Reveal } from "@/components/home/Reveal";
 import { Container } from "@/components/ui/container";
@@ -41,14 +40,6 @@ export function AdmissionStepper() {
             </Reveal>
           ))}
         </ol>
-        <div className="mt-8">
-          <Link
-            href={copy.journeyHref}
-            className="text-sm font-semibold text-primary hover:underline"
-          >
-            {copy.journeyLabel}
-          </Link>
-        </div>
       </Container>
     </section>
   );

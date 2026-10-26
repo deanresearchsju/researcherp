@@ -68,9 +68,7 @@ export const researchPage = {
       duration: "3 to 6 years",
       points: [
         "The doctorate is the primary academic commitment.",
-        "Course work is completed within four semesters.",
         "Regular contact with the allotted supervisor.",
-        "Progress through doctoral committee meetings, colloquium, publications, synopsis, and the thesis.",
       ],
     },
     {
@@ -80,8 +78,6 @@ export const researchPage = {
       points: [
         "For candidates associated with the University.",
         "Work experience and a no-objection certificate from the present employer.",
-        "Course work is completed within four semesters.",
-        "The same milestone sequence as full-time scholars.",
       ],
     },
     {
@@ -91,11 +87,11 @@ export const researchPage = {
       points: [
         "For candidates based outside the University.",
         "Work experience and a no-objection certificate from the present employer.",
-        "Course work is completed within four semesters.",
-        "The same milestone sequence as full-time scholars.",
       ],
     },
   ],
+  modesNote:
+    "Every mode follows the same milestones: course work within four semesters, doctoral committee meetings, colloquium, publications, synopsis and thesis.",
   creditsLabel: "Course Work Credits",
   credits: "12",
   marksLabel: "Course Work Marks / CGPA",

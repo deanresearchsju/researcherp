@@ -43,8 +43,6 @@ export const sectionCopy = {
     title: "Admission process",
     description:
       "Two Ph.D. admission sessions each year: January and July. From the online application to the first doctoral committee and supervisor allotment.",
-    journeyLabel: "Scholar journey",
-    journeyHref: "/scholar-journey",
   },
   documents: {
     eyebrow: "Application",

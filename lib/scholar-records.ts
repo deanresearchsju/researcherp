@@ -18,6 +18,7 @@ import { z } from "zod";
 import { isOfficeRole } from "@/lib/access";
 import { readPreviewSession } from "@/lib/auth";
 import { currentDoctoral, latestCommittee, synopsisSubmitted } from "@/lib/doctoral";
+import { reloadPersonalDetails } from "@/lib/register";
 import { isFileRef } from "@/lib/file-ref";
 
 export type ScholarRecord = {
@@ -122,6 +123,8 @@ export function currentScholarRecords(kind: ScholarRecordKind) {
 function publish(kind: ScholarRecordKind, next: ScholarRecordLoad) {
   caches.set(kind, next);
   notify(kind);
+  // Scholar information changes the register everywhere, so the register reads it again.
+  if (kind === "personal_details") void reloadPersonalDetails();
 }
 
 function isKind(value: string): value is ScholarRecordKind {

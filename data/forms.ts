@@ -28,7 +28,9 @@ export const scholarFormCopy = {
     "A draft of your answers is saved in this browser. Uploads stay only for this visit.",
   pageTitle: "PhD Application",
   noVacancy:
-    "Ph.D. applications can be submitted only when a school and subject currently have a vacancy.",
+    "There is no vacancy in the current session. Kindly apply in the upcoming sessions.",
+  noVacancyDepartment:
+    "There is no vacancy in this department in the current session. Kindly apply in the upcoming sessions.",
   track: "Track application",
   trackResultPending:
     "Your application is under process. The result will be published here once the selection list is approved.",

@@ -24,6 +24,7 @@ import {
   type Vacancy,
   type VacancyLoad,
 } from "@/lib/vacancies";
+import { inputRules, masked } from "@/lib/input-rules";
 
 const vacancyColumns = [
   "serial_no",
@@ -99,7 +100,7 @@ function VacancyFields({
         required
         error={form.formState.errors.serialNo?.message}
       >
-        <Input id="serialNo" inputMode="numeric" {...form.register("serialNo")} />
+        <Input id="serialNo" {...masked(form.register("serialNo"), inputRules.integer)} />
       </FormField>
       <FormField
         label="No. of vacancy"
@@ -107,7 +108,10 @@ function VacancyFields({
         required
         error={form.formState.errors.vacancyCount?.message}
       >
-        <Input id="vacancyCount" inputMode="numeric" {...form.register("vacancyCount")} />
+        <Input
+          id="vacancyCount"
+          {...masked(form.register("vacancyCount"), inputRules.integer)}
+        />
       </FormField>
       <FormField
         label="Name of the supervisor"
@@ -115,7 +119,10 @@ function VacancyFields({
         required
         error={form.formState.errors.supervisorName?.message}
       >
-        <Input id="supervisorName" {...form.register("supervisorName")} />
+        <Input
+          id="supervisorName"
+          {...masked(form.register("supervisorName"), inputRules.personName)}
+        />
       </FormField>
       <FormField
         label="Designation"
@@ -123,7 +130,10 @@ function VacancyFields({
         required
         error={form.formState.errors.designation?.message}
       >
-        <Input id="designation" {...form.register("designation")} />
+        <Input
+          id="designation"
+          {...masked(form.register("designation"), inputRules.letters)}
+        />
       </FormField>
       <FormField
         label="School"

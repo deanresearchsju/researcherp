@@ -19,7 +19,7 @@ import {
 } from "@/data/research-register";
 import { menuByKind } from "@/data/scholar-records";
 import { fileLimits, studyModes } from "@/lib/constants";
-import { formatIsoDate } from "@/lib/dates";
+import { formatIsoDate, looseDateToIso } from "@/lib/dates";
 import { compressImage, fileToDataUrl } from "@/lib/files";
 import {
   currentDoctoral,
@@ -38,7 +38,7 @@ import {
   originalScholar,
   registrationOf,
   saveScholarEdit,
-  saveSupervisorEdit,
+  saveSupervisorDetails,
   scholarEditOf,
   scholarSignInId,
   originalSupervisorKey,
@@ -54,13 +54,17 @@ import {
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { formatInr } from "@/lib/utils";
 import { allBatches } from "@/lib/batches";
+import { inputRules, typed, type InputRule } from "@/lib/input-rules";
+import { proposedQuota } from "@/lib/supervisor-approval";
 
 const paymentMenu = menuByKind("payment");
 
 type FieldSpec<K extends string> = {
   name: K;
   label: string;
-  kind?: "text" | "email" | "tel" | "textarea" | "select";
+  kind?: "text" | "email" | "tel" | "textarea" | "select" | "date";
+  /** What the box may hold: names take letters, numbers take digits. */
+  rule?: InputRule;
   options?: readonly string[];
   /** Shown instead of the stored value, such as a batch name for its id. */
   labels?: Record<string, string>;
@@ -133,12 +137,31 @@ function EditFields<K extends string>({
                 value={value}
                 onChange={(event) => onChange(spec.name, event.target.value)}
               />
+            ) : spec.kind === "date" ? (
+              <>
+                <Input
+                  id={id}
+                  type="date"
+                  value={looseDateToIso(value)}
+                  onChange={(event) => onChange(spec.name, event.target.value)}
+                />
+                {value.trim() && !looseDateToIso(value) ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Recorded as: {value}. Choose a date to replace it.
+                  </p>
+                ) : null}
+              </>
             ) : (
               <Input
                 id={id}
-                type={spec.kind ?? "text"}
-                value={value}
-                onChange={(event) => onChange(spec.name, event.target.value)}
+                {...(spec.rule
+                  ? typed(spec.rule, value, (next) => onChange(spec.name, next))
+                  : {
+                      type: spec.kind ?? "text",
+                      value,
+                      onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                        onChange(spec.name, event.target.value),
+                    })}
               />
             )}
           </FormField>
@@ -314,9 +337,13 @@ export function ScholarRegisterEditor({
     {
       title: "Identity",
       specs: [
-        { name: "name", label: "Name", wide: true },
-        { name: "fileNumber", label: "File number" },
-        { name: "applicationNumber", label: "Application number" },
+        { name: "name", label: "Name", wide: true, rule: inputRules.personName },
+        { name: "fileNumber", label: "File number", rule: inputRules.reference },
+        {
+          name: "applicationNumber",
+          label: "Application number",
+          rule: inputRules.reference,
+        },
         {
           name: "batchId",
           label: "Batch",
@@ -330,8 +357,8 @@ export function ScholarRegisterEditor({
     {
       title: "Contact",
       specs: [
-        { name: "phone", label: "Phone", kind: "tel" },
-        { name: "email", label: "Email", kind: "email" },
+        { name: "phone", label: "Phone", kind: "tel", rule: inputRules.phone },
+        { name: "email", label: "Email", kind: "email", rule: inputRules.email },
       ],
     },
     {
@@ -352,14 +379,14 @@ export function ScholarRegisterEditor({
     {
       title: "Milestones before the ERP",
       specs: [
-        { name: "firstDc", label: "1st DC" },
-        { name: "secondDc", label: "2nd DC" },
-        { name: "confirmation", label: "Confirmation" },
-        { name: "colloquium1", label: "Colloquium 1" },
-        { name: "colloquium2", label: "Colloquium 2" },
-        { name: "synopsis", label: "Synopsis" },
-        { name: "thesis", label: "Thesis" },
-        { name: "viva", label: "Viva" },
+        { name: "firstDc", label: "1st DC", kind: "date" },
+        { name: "secondDc", label: "2nd DC", kind: "date" },
+        { name: "confirmation", label: "Confirmation", kind: "date" },
+        { name: "colloquium1", label: "Colloquium 1", kind: "date" },
+        { name: "colloquium2", label: "Colloquium 2", kind: "date" },
+        { name: "synopsis", label: "Synopsis", kind: "date" },
+        { name: "thesis", label: "Thesis", kind: "date" },
+        { name: "viva", label: "Viva", kind: "date" },
       ],
     },
   ];
@@ -614,8 +641,8 @@ export function SupervisorRegisterEditor({
   const [error, setError] = useState<string | null>(null);
 
   const specs: FieldSpec<SupervisorEditField>[] = [
-    { name: "name", label: "Name", wide: true },
-    { name: "supervisorId", label: "Supervisor ID" },
+    { name: "name", label: "Name", wide: true, rule: inputRules.personName },
+    { name: "supervisorId", label: "Supervisor ID", rule: inputRules.reference },
     {
       name: "designation",
       label: "Designation",
@@ -634,8 +661,8 @@ export function SupervisorRegisterEditor({
       kind: "select",
       options: researchRegister.supervisors.map((item) => item.campus),
     },
-    { name: "phone", label: "Phone", kind: "tel" },
-    { name: "email", label: "Email", kind: "email" },
+    { name: "phone", label: "Phone", kind: "tel", rule: inputRules.phone },
+    { name: "email", label: "Email", kind: "email", rule: inputRules.email },
     { name: "researchArea", label: "Area of research", kind: "textarea", wide: true },
   ];
 
@@ -643,7 +670,12 @@ export function SupervisorRegisterEditor({
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const saved = await saveSupervisorEdit(key, values, onVacancyList);
+    const saved = await saveSupervisorDetails(
+      supervisor,
+      values,
+      onVacancyList,
+      proposedQuota(values.designation),
+    );
     setBusy(false);
     if (!saved.ok) {
       setError("message" in saved ? saved.message : "The details could not be saved.");

@@ -79,6 +79,7 @@ export const storageKeys = {
   siteSettings: "sju-site-settings",
   doctoral: "sju-doctoral",
   exam: "sju-exam-office",
+  invigilation: "sju-invigilation",
   thesisPanels: "sju-thesis-panels",
   admission: "sju-admission",
   register: "sju-research-register",

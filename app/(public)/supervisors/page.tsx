@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { AdmissionNotice } from "@/components/home/AdmissionNotice";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { SupervisorProfiles } from "@/components/supervisors/SupervisorProfiles";
-import { Container } from "@/components/ui/container";
 import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
 import { publicSupervisors } from "@/lib/public-supervisors";
@@ -50,11 +48,6 @@ export default async function SupervisorsPage() {
     <>
       <JsonLd data={supervisorJsonLd(supervisors)} />
       <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
-      <section className="border-b border-border bg-card py-4" aria-label="Admission">
-        <Container>
-          <AdmissionNotice />
-        </Container>
-      </section>
       <SupervisorProfiles profiles={supervisors} />
     </>
   );

@@ -3,6 +3,7 @@ import { batchById } from "@/lib/batches";
 import type { DoctoralState } from "@/lib/doctoral";
 import { guideCampus } from "@/lib/registration-format";
 import {
+  personalDetailsOf,
   registrationOf,
   supervisorForGuide,
   type RegistrationAllotment,
@@ -20,10 +21,13 @@ export type RegisterContext = {
   batch: string;
   campus: string;
   area: string;
+  /** What the office entered under Scholar information for this scholar. */
+  personal: Record<string, string>;
   milestones: ReturnType<typeof liveMilestones>;
 };
 
-export type RegisterGroup = "Identity" | "Programme" | "Contact" | "Research" | "Progress";
+export type RegisterGroup =
+  "Identity" | "Programme" | "Contact" | "Personal" | "Research" | "Progress";
 
 export type RegisterColumn = {
   id: string;
@@ -129,6 +133,37 @@ export const registerColumns: readonly RegisterColumn[] = [
     value: (c) => text(c.scholar.institution),
     filterValue: (c) => text(c.scholar.institution),
   },
+  ...(
+    [
+      ["dateOfBirth", "Date of birth", "dob"],
+      ["gender", "Gender", "gender"],
+      ["nationality", "Nationality", "nationality"],
+      ["bloodGroup", "Blood group", "blood"],
+      ["fatherName", "Father name", "father"],
+      ["motherName", "Mother name", "mother"],
+      ["parentContact", "Parent contact no.", "parentContact"],
+      ["parentEmail", "Parent email", "parentEmail"],
+      ["address", "Address", "address"],
+      ["pincode", "Pincode", "pincode"],
+      ["district", "District", "district"],
+      ["state", "State", "state"],
+      ["community", "Community", "community"],
+      ["admissionDate", "Date of admission", "admissionDate"],
+      ["ugDegree", "U.G. degree", "ugDegree"],
+      ["ugUniversity", "U.G. university, year and %", "ugUniversity"],
+      ["pgDegree", "P.G. degree", "pgDegree"],
+      ["pgUniversity", "P.G. university, year and %", "pgUniversity"],
+      ["netQualification", "NET / SET / GATE", "net"],
+    ] as const
+  ).map(([field, label, id]): RegisterColumn => ({
+    id: `personal-${id}`,
+    label,
+    group: "Personal",
+    value: (c) => text(c.personal[field]),
+    ...(field === "gender" || field === "community" || field === "state"
+      ? { filterValue: (c: RegisterContext) => text(c.personal[field]) }
+      : {}),
+  })),
   {
     id: "title",
     label: "Title of research",
@@ -202,6 +237,7 @@ export const registerGroups: readonly RegisterGroup[] = [
   "Identity",
   "Programme",
   "Contact",
+  "Personal",
   "Research",
   "Progress",
 ];
@@ -263,7 +299,10 @@ export function registerContext(
     registration: text(registrationOf(scholar, allotments)),
     batch: batchById(scholar.batchId)?.name ?? "",
     campus: guideCampus(scholar.guideName),
-    area: text(supervisorForGuide(scholar.guideName)?.researchArea),
+    area:
+      text(personalDetailsOf(scholar).researchArea) ||
+      text(supervisorForGuide(scholar.guideName)?.researchArea),
+    personal: personalDetailsOf(scholar),
     milestones: doctoral ? liveMilestones(scholar, doctoral) : null,
   };
 }

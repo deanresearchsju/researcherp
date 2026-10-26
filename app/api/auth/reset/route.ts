@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { hashSecret, verifySecret } from "@/lib/passwords";
+import { passwordProblem } from "@/lib/password-rules";
 import { issuedPassword } from "@/lib/register-access";
 import { decodeSessionCookie, encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { portalAuthClient } from "@/lib/supabase/admin";
@@ -25,12 +26,8 @@ export async function POST(request: NextRequest) {
     body && typeof body === "object" && "password" in body && typeof body.password === "string"
       ? body.password
       : "";
-  if (password.length < 6 || password.length > 128) {
-    return NextResponse.json(
-      { ok: false, message: "Password must be at least 6 characters." },
-      { status: 400 },
-    );
-  }
+  const weak = passwordProblem(password, [session.identifier, session.name]);
+  if (weak) return NextResponse.json({ ok: false, message: weak }, { status: 400 });
 
   const supabase = portalAuthClient();
   if (!supabase) {

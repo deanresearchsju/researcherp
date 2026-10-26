@@ -46,14 +46,14 @@ export function breadcrumbNode(trail: { name: string; path: string }[]) {
 }
 
 export function personNode(profile: PublicSupervisor) {
-  const url = `${siteUrl}/supervisors/${profile.slug}`;
+  const url = `${siteUrl}/supervisors#${profile.slug}`;
   const areas = profile.researchArea
     .split(/[,;]/)
     .map((part) => part.trim())
     .filter(Boolean);
   return {
     "@type": "Person",
-    "@id": `${url}#person`,
+    "@id": url,
     name: profile.name.replace(/^dr\.?\s+/i, ""),
     ...(/^dr\.?\s/i.test(profile.name) ? { honorificPrefix: "Dr." } : {}),
     url,
@@ -87,7 +87,6 @@ export function supervisorJsonLd(supervisors: PublicSupervisor[]) {
           itemListElement: supervisors.map((profile, index) => ({
             "@type": "ListItem",
             position: index + 1,
-            url: `${siteUrl}/supervisors/${profile.slug}`,
             item: personNode(profile),
           })),
         },

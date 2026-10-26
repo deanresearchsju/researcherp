@@ -123,6 +123,15 @@ export function Footer() {
       </div>
       <div className="border-t border-white/10">
         <p className="mx-auto flex w-full max-w-6xl flex-col gap-1 px-4 py-4 text-center text-xs text-white/70 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:text-left lg:px-8">
+          <span>
+            <Link href="/privacy" className="hover:text-white">
+              Privacy
+            </Link>
+            {" · "}
+            <Link href="/terms" className="hover:text-white">
+              Terms
+            </Link>
+          </span>
           <span>Designed by {footerCredit.designedBy}.</span>
           <span>Developed by {university.researchOffice}.</span>
           <span>

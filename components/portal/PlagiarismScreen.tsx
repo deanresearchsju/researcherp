@@ -33,6 +33,7 @@ import { fileError, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { storeFile } from "@/lib/file-store";
+import { inputRules } from "@/lib/input-rules";
 
 const stageLabel: Record<PlagiarismStage, string> = {
   synopsis: "Before synopsis",
@@ -160,7 +161,7 @@ function IssueDialog({
             inputMode="decimal"
             value={similarity}
             disabled={!complete}
-            onChange={(event) => setSimilarity(event.target.value)}
+            onChange={(event) => setSimilarity(inputRules.score.mask(event.target.value))}
           />
         </FormField>
         <FormField label="Plagiarism report" htmlFor="plag-file" required>

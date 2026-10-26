@@ -30,6 +30,7 @@ import {
 } from "@/lib/register";
 import { syncAllottedVacancies } from "@/lib/vacancies";
 import type { Database, Json } from "@/types/database";
+import { recordGuideChange } from "@/lib/guide-history";
 
 export const officeMigrationHint =
   "Open the Supabase SQL editor for this project and run supabase/migrations/20261013180000_office_controls.sql. Until then, these records stay in this browser.";
@@ -717,6 +718,27 @@ async function noticeRacNeeded(
   });
 }
 
+/** Keeps the history of guides (for the administrator and the Dean) up to date. */
+async function logGuideChange(
+  previous: Allocation | undefined,
+  allocation: Pick<
+    Allocation,
+    "scholarIdentifier" | "scholarName" | "supervisorIdentifier" | "supervisorName"
+  >,
+  staying: boolean,
+) {
+  if (staying) return;
+  await recordGuideChange({
+    scholarIdentifier: allocation.scholarIdentifier,
+    scholarName: allocation.scholarName,
+    fromName: previous?.supervisorName ?? "",
+    fromIdentifier: previous?.supervisorIdentifier ?? "",
+    toName: allocation.supervisorName,
+    toIdentifier: allocation.supervisorIdentifier,
+    kind: previous ? "Changed" : "Allotted",
+  });
+}
+
 export async function saveAllocation(
   allocation: Omit<Allocation, "id"> & { id?: string },
 ) {
@@ -809,6 +831,7 @@ export async function saveAllocation(
         previous?.supervisorName ?? "",
       ]);
       await noticeRacNeeded(allocation, previous);
+      await logGuideChange(previous, allocation, staying);
       return { ok: true as const };
     }
   }
@@ -826,6 +849,7 @@ export async function saveAllocation(
   await refreshOffice();
   await refreshVacancyCounts([allocation.supervisorName, previous?.supervisorName ?? ""]);
   await noticeRacNeeded(allocation, previous);
+  await logGuideChange(previous, allocation, staying);
   return { ok: true as const };
 }
 

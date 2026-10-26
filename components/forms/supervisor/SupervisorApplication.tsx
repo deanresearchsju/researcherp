@@ -391,7 +391,10 @@ export function SupervisorApplication() {
               required
               error={errors.designation?.message}
             >
-              <Input id="designation" {...register("designation")} />
+              <Input
+                id="designation"
+                {...masked(register("designation"), inputRules.letters)}
+              />
             </FormField>
             <FormField
               label="Department"
@@ -428,7 +431,7 @@ export function SupervisorApplication() {
               required
               error={errors.state?.message}
             >
-              <Input id="sup-state" {...register("state")} />
+              <Input id="sup-state" {...masked(register("state"), inputRules.letters)} />
             </FormField>
             <FormField
               label="Nationality"
@@ -436,7 +439,10 @@ export function SupervisorApplication() {
               required
               error={errors.nationality?.message}
             >
-              <Input id="sup-nationality" {...register("nationality")} />
+              <Input
+                id="sup-nationality"
+                {...masked(register("nationality"), inputRules.letters)}
+              />
             </FormField>
           </section>
         ) : null}
@@ -831,7 +837,7 @@ export function SupervisorApplication() {
                 required
                 error={errors.place?.message}
               >
-                <Input id="place" {...register("place")} />
+                <Input id="place" {...masked(register("place"), inputRules.letters)} />
               </FormField>
               <FormField label="Date" htmlFor="sup-date">
                 <Input id="sup-date" readOnly value={formatIsoDate(referenceDate)} />

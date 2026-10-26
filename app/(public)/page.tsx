@@ -3,12 +3,15 @@ import type { Metadata } from "next";
 import { AnnouncementTicker } from "@/components/home/AnnouncementTicker";
 import { Hero } from "@/components/home/Hero";
 import { ResearchAreas } from "@/components/home/ResearchAreas";
-import { ResearchHighlights } from "@/components/home/ResearchHighlights";
+import { ResearchSupport } from "@/components/home/ResearchSupport";
+import { UgcOverview } from "@/components/home/UgcOverview";
 import { university } from "@/lib/constants";
+import { keyAreasOf } from "@/lib/department-areas";
+import { registerSupervisorAreas } from "@/lib/public-supervisors";
 
 export const metadata: Metadata = {
   title: "Ph.D. programmes",
-  description: `Apply for a Ph.D. at ${university.name}. Two admission sessions each year: January and July.`,
+  description: `Ph.D. at ${university.name} as per the UGC Regulations, 2022: eligibility including the four-year bachelor's degree, admission, course work, duration, supervision and thesis evaluation. Sessions in January and July.`,
   alternates: { canonical: "/" },
 };
 
@@ -22,7 +25,12 @@ const structuredData = {
   url: university.siteUrl,
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const supervisors = await registerSupervisorAreas();
+  const supervisorAreas = supervisors.map((item) => ({
+    department: item.department,
+    areas: keyAreasOf(item.researchArea),
+  }));
   return (
     <>
       <script
@@ -31,8 +39,9 @@ export default function HomePage() {
       />
       <Hero />
       <AnnouncementTicker />
-      <ResearchHighlights />
-      <ResearchAreas />
+      <UgcOverview />
+      <ResearchSupport />
+      <ResearchAreas supervisorAreas={supervisorAreas} />
     </>
   );
 }

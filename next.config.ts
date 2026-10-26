@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
+        source: "/scholar-journey",
+        destination: "/",
+        permanent: true,
+      },
+      {
         source: "/research-areas",
         destination: "/#research-areas",
         permanent: true,

@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { downloadScholarPhotos } from "@/lib/photo-zip";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { alertsOf, batchNames, type ScholarReport } from "@/lib/scholar-report";
-import { sameGuide } from "@/lib/register";
+import { personalDetailsOf, sameGuide, scholarBySignIn } from "@/lib/register";
 import type { GuideOption } from "@/lib/supervision";
 import { useScholarReports } from "@/lib/use-report-sources";
 import { cn } from "@/lib/utils";
@@ -110,6 +110,55 @@ const reports: ReportDefinition[] = [
         row.title ? row.titleStage : "Not fixed",
         row.researchArea,
       ]),
+    }),
+  },
+  {
+    id: "personal",
+    group: "Scholars",
+    title: "Scholar personal details",
+    icon: Users,
+    build: (rows) => ({
+      headers: [
+        "Scholar",
+        "Registration No.",
+        "Batch",
+        "Date of birth",
+        "Gender",
+        "Community",
+        "Nationality",
+        "Mobile",
+        "Email",
+        "Address",
+        "District",
+        "State",
+        "Pincode",
+        "Father name",
+        "Mother name",
+        "Parent contact",
+      ],
+      rows: rows.map((row) => {
+        const scholar = scholarBySignIn(row.identifier);
+        const details = scholar ? personalDetailsOf(scholar) : {};
+        const value = (key: string) => (details[key] ?? "").trim();
+        return [
+          row.name,
+          row.registration,
+          row.batchName,
+          value("dateOfBirth"),
+          value("gender"),
+          value("community"),
+          value("nationality"),
+          row.phone,
+          row.email,
+          value("address"),
+          value("district"),
+          value("state"),
+          value("pincode"),
+          value("fatherName"),
+          value("motherName"),
+          value("parentContact"),
+        ];
+      }),
     }),
   },
   {
@@ -576,11 +625,15 @@ export function ReportsScreen() {
       );
       setPhotoNotice(
         `${result.included} photo${result.included === 1 ? "" : "s"} downloaded.${
-          result.missing ? ` ${result.missing} scholar${result.missing === 1 ? " has" : "s have"} no photo yet (see photo-list.csv).` : ""
+          result.missing
+            ? ` ${result.missing} scholar${result.missing === 1 ? " has" : "s have"} no photo yet (see photo-list.csv).`
+            : ""
         }`,
       );
     } catch {
-      setPhotoNotice("The photos could not be prepared. Check the connection and try again.");
+      setPhotoNotice(
+        "The photos could not be prepared. Check the connection and try again.",
+      );
     } finally {
       setPhotoBusy(null);
     }

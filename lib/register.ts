@@ -194,6 +194,9 @@ export function vidwanLink(value: string) {
 }
 
 export type RegisterLoad = {
+  /** Scholars and supervisors added to the register after it was first loaded (an Excel upload). */
+  addedScholars: ResearchScholar[];
+  addedSupervisors: ResearchSupervisor[];
   attendance: AttendanceSheet[];
   profiles: SupervisorProfile[];
   allotments: RegistrationAllotment[];
@@ -407,7 +410,7 @@ export function parseProfiles(value: unknown): SupervisorProfile[] {
   });
 }
 
-function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
+export function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
@@ -427,11 +430,110 @@ function parseSupervisorEdits(value: unknown): SupervisorEdit[] {
   });
 }
 
+function count(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+}
+
+function parseAddedSupervisors(value: unknown): ResearchSupervisor[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.name).trim() || !Number.isInteger(Number(row.serialNo))) return [];
+    return [
+      {
+        serialNo: Number(row.serialNo),
+        name: text(row.name),
+        supervisorId: text(row.supervisorId),
+        department: text(row.department),
+        designation: text(row.designation),
+        researchArea: text(row.researchArea),
+        active: row.active !== false,
+        currentScholars: count(row.currentScholars),
+        quota: count(row.quota),
+        vacancy: count(row.vacancy),
+        june2026Allotment: count(row.june2026Allotment),
+        balance: count(row.balance),
+        campus: text(row.campus),
+        phone: text(row.phone),
+        email: text(row.email),
+        onVacancyList: row.onVacancyList !== false,
+      },
+    ];
+  });
+}
+
+function parseAddedScholars(value: unknown): ResearchScholar[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    if (!text(row.id).trim() || !text(row.name).trim()) return [];
+    return [
+      {
+        id: text(row.id),
+        serialNo: count(row.serialNo),
+        registrationNumber: text(row.registrationNumber),
+        fileNumber: text(row.fileNumber),
+        applicationNumber: text(row.applicationNumber),
+        name: text(row.name),
+        department: text(row.department),
+        batchId: text(row.batchId),
+        phone: text(row.phone),
+        email: text(row.email),
+        title: text(row.title),
+        category: text(row.category),
+        institution: text(row.institution),
+        guideName: text(row.guideName),
+        firstDc: text(row.firstDc),
+        secondDc: text(row.secondDc),
+        confirmation: text(row.confirmation),
+        colloquium1: text(row.colloquium1),
+        colloquium2: text(row.colloquium2),
+        synopsis: text(row.synopsis),
+        thesis: text(row.thesis),
+        viva: text(row.viva),
+      },
+    ];
+  });
+}
+
 // The register exactly as shipped, so corrections are always laid over the original values.
 const originalScholars = researchRegister.scholars.map((scholar) => ({ ...scholar }));
 const originalSupervisors = researchRegister.supervisors.map((supervisor) => ({
   ...supervisor,
 }));
+
+/**
+ * Puts the scholars and supervisors added by an upload into the register in place, beside the
+ * ones that came with it. An added record that is already there is brought up to date.
+ */
+export function applyAddedRecords(
+  scholars: readonly ResearchScholar[],
+  supervisors: readonly ResearchSupervisor[],
+) {
+  for (const scholar of scholars) {
+    const at = originalScholars.findIndex((item) => item.id === scholar.id);
+    if (at >= 0) {
+      originalScholars[at] = { ...scholar };
+    } else {
+      originalScholars.push({ ...scholar });
+      researchRegister.scholars.push({ ...scholar });
+    }
+  }
+  for (const supervisor of supervisors) {
+    const at = originalSupervisors.findIndex(
+      (item) => item.serialNo === supervisor.serialNo && item.name === supervisor.name,
+    );
+    if (at >= 0) {
+      originalSupervisors[at] = { ...supervisor };
+    } else {
+      originalSupervisors.push({ ...supervisor });
+      researchRegister.supervisors.push({ ...supervisor });
+    }
+  }
+}
 
 export function supervisorEditKey(
   supervisor: Pick<ResearchSupervisor, "supervisorId" | "name">,
@@ -473,6 +575,10 @@ export function applyRegisterEdits(
 /** Server side: applies the corrections saved in the research_register row. */
 export function applyRegisterPayload(payload: unknown) {
   const row = payloadOf(payload);
+  applyAddedRecords(
+    parseAddedScholars(row?.addedScholars),
+    parseAddedSupervisors(row?.addedSupervisors),
+  );
   applyRegisterEdits(
     parseScholarEdits(row?.scholarEdits),
     parseSupervisorEdits(row?.supervisorEdits),
@@ -480,6 +586,8 @@ export function applyRegisterPayload(payload: unknown) {
 }
 
 type StoredRegister = {
+  addedScholars: ResearchScholar[];
+  addedSupervisors: ResearchSupervisor[];
   attendance: AttendanceSheet[];
   profiles: SupervisorProfile[];
   allotments: RegistrationAllotment[];
@@ -493,6 +601,8 @@ type StoredRegister = {
 };
 
 const emptyStored = (): StoredRegister => ({
+  addedScholars: [],
+  addedSupervisors: [],
   attendance: [],
   profiles: [],
   allotments: [],
@@ -521,6 +631,8 @@ function readStored(): StoredRegister {
     }
     const record = parsed as Record<string, unknown>;
     return {
+      addedScholars: parseAddedScholars(record.addedScholars),
+      addedSupervisors: parseAddedSupervisors(record.addedSupervisors),
       attendance: parseAttendance(record.attendance),
       profiles: parseProfiles(record.profiles),
       allotments: parseAllotments(record.allotments),
@@ -566,6 +678,8 @@ export async function loadRegister(): Promise<RegisterLoad> {
   }
   const payload = payloadOf(data?.payload);
   return {
+    addedScholars: parseAddedScholars(payload?.addedScholars),
+    addedSupervisors: parseAddedSupervisors(payload?.addedSupervisors),
     attendance: parseAttendance(payload?.attendance),
     profiles: parseProfiles(payload?.profiles),
     allotments: parseAllotments(payload?.allotments),
@@ -594,8 +708,77 @@ let loading = false;
 const listeners = new Set<() => void>();
 
 function publish(next: RegisterLoad) {
+  applyAddedRecords(next.addedScholars, next.addedSupervisors);
   applyRegisterEdits(next.scholarEdits, next.supervisorEdits);
+  applyPersonalOverlay();
   memory = next;
+  listeners.forEach((listener) => listener());
+}
+
+/**
+ * Scholar information entered by the office (Registers, Scholar information). The details kept
+ * there are the scholars' own, so they are laid over the register: the name, mobile, email,
+ * mode of study, department and working institution change on every screen, report and download, and the rest is offered to the
+ * exports. A correction made there is therefore seen everywhere without being typed twice.
+ */
+export type PersonalEntry = {
+  identifier: string;
+  createdAt: string;
+  payload: Record<string, string>;
+};
+
+let personalEntries: PersonalEntry[] = [];
+
+function latestPersonal(scholar: ResearchScholar) {
+  let best: PersonalEntry | null = null;
+  for (const entry of personalEntries) {
+    if (scholarBySignIn(entry.identifier) !== scholar) continue;
+    if (!best || entry.createdAt > best.createdAt) best = entry;
+  }
+  return best;
+}
+
+/** What the office entered under Scholar information for this scholar (empty when nothing). */
+export function personalDetailsOf(scholar: ResearchScholar): Record<string, string> {
+  return latestPersonal(scholar)?.payload ?? {};
+}
+
+function applyPersonalOverlay() {
+  if (personalEntries.length === 0) return;
+  for (const scholar of researchRegister.scholars) {
+    const details = latestPersonal(scholar)?.payload;
+    if (!details) continue;
+    if (details.fullName?.trim()) scholar.name = details.fullName.trim();
+    if (details.mobile?.trim()) scholar.phone = details.mobile.trim();
+    if (details.email?.trim()) scholar.email = details.email.trim();
+    if (details.studyMode?.trim()) scholar.category = details.studyMode.trim();
+    // "Programme" on Scholar information is the department; "employer" the working institution.
+    if (details.programme?.trim()) scholar.department = details.programme.trim();
+    if (details.employer?.trim()) scholar.institution = details.employer.trim();
+  }
+}
+
+/** Reads the Scholar information records again (after one is saved or corrected). */
+export async function reloadPersonalDetails() {
+  const supabase = createSupabase();
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from("scholar_records")
+    .select("scholar_identifier, payload, created_at")
+    .eq("kind", "personal_details")
+    .eq("status", "Approved");
+  if (error || !data) return;
+  personalEntries = data.map((row) => {
+    const payload: Record<string, string> = {};
+    if (row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)) {
+      for (const [key, value] of Object.entries(row.payload)) {
+        if (typeof value === "string") payload[key] = value;
+      }
+    }
+    return { identifier: row.scholar_identifier, createdAt: row.created_at, payload };
+  });
+  applyRegisterEdits(memory?.scholarEdits ?? [], memory?.supervisorEdits ?? []);
+  applyPersonalOverlay();
   listeners.forEach((listener) => listener());
 }
 
@@ -606,6 +789,7 @@ export function subscribeRegister(onChange: () => void) {
     void loadRegister().then((value) => {
       loading = false;
       publish(value);
+      void reloadPersonalDetails();
     });
   }
   return () => listeners.delete(onChange);
@@ -825,7 +1009,7 @@ export function originalScholar(scholarId: string) {
   return originalScholars.find((scholar) => scholar.id === scholarId) ?? null;
 }
 
-function editedFields<K extends string>(
+export function editedFields<K extends string>(
   original: Record<K, unknown>,
   next: Partial<Record<K, string>>,
   keys: readonly K[],
@@ -953,7 +1137,10 @@ export async function saveAttendanceSheet(
     updatedOn: today,
     updatedBy: editor(),
   };
-  const attendance = [saved, ...current.attendance.filter((item) => item.id !== sheet.id)];
+  const attendance = [
+    saved,
+    ...current.attendance.filter((item) => item.id !== sheet.id),
+  ];
   return persistRegister({ ...current, attendance });
 }
 
@@ -1282,8 +1469,306 @@ export function scholarsGuidedBy(name: string, identifier: string) {
   );
 }
 
+/** What an upload changes in the register, saved together in one step. */
+export type RegisterBatch = {
+  addedSupervisors?: ResearchSupervisor[];
+  addedScholars?: ResearchScholar[];
+  supervisorEdits?: {
+    key: string;
+    fields: Partial<Record<SupervisorEditField, string>>;
+  }[];
+  scholarEdits?: {
+    scholarId: string;
+    fields: Partial<Record<ScholarEditField, string>>;
+  }[];
+  /** Vidwan ID and biography; a profile is made when there is none, not yet shown to the public. */
+  profiles?: {
+    key: string;
+    name: string;
+    designation: string;
+    department: string;
+    researchArea: string;
+    vidwan?: string;
+    bio?: string;
+  }[];
+  quotas?: ApprovedQuota[];
+};
+
+export function nextSupervisorSerial() {
+  return (
+    researchRegister.supervisors.reduce((max, item) => Math.max(max, item.serialNo), 0) +
+    1
+  );
+}
+
+export function nextScholarSerial() {
+  return (
+    researchRegister.scholars.reduce((max, item) => Math.max(max, item.serialNo), 0) + 1
+  );
+}
+
+export async function importRegisterBatch(batch: RegisterBatch) {
+  const blocked = officeWriteBlock();
+  if (blocked) return blocked;
+  const current = memory ?? (await loadRegister());
+  const when = new Date().toISOString();
+  const by = editor();
+
+  const addedSupervisors = [
+    ...current.addedSupervisors.filter(
+      (item) =>
+        !(batch.addedSupervisors ?? []).some((added) => added.serialNo === item.serialNo),
+    ),
+    ...(batch.addedSupervisors ?? []),
+  ];
+  const addedScholars = [
+    ...current.addedScholars.filter(
+      (item) => !(batch.addedScholars ?? []).some((added) => added.id === item.id),
+    ),
+    ...(batch.addedScholars ?? []),
+  ];
+
+  let supervisorEdits = [...current.supervisorEdits];
+  for (const change of batch.supervisorEdits ?? []) {
+    const existing = supervisorEdits.find((item) => sameKey(item.key, change.key));
+    supervisorEdits = [
+      ...supervisorEdits.filter((item) => !sameKey(item.key, change.key)),
+      {
+        key: change.key,
+        fields: { ...(existing?.fields ?? {}), ...change.fields },
+        ...(existing?.onVacancyList !== undefined
+          ? { onVacancyList: existing.onVacancyList }
+          : {}),
+        editedOn: when,
+        editedBy: by,
+      },
+    ];
+  }
+  let scholarEdits = [...current.scholarEdits];
+  for (const change of batch.scholarEdits ?? []) {
+    const existing = scholarEdits.find((item) => item.scholarId === change.scholarId);
+    scholarEdits = [
+      ...scholarEdits.filter((item) => item.scholarId !== change.scholarId),
+      {
+        scholarId: change.scholarId,
+        fields: { ...(existing?.fields ?? {}), ...change.fields },
+        editedOn: when,
+        editedBy: by,
+      },
+    ];
+  }
+  let profiles = [...current.profiles];
+  for (const change of batch.profiles ?? []) {
+    const key = change.key.trim().toLowerCase();
+    if (!key) continue;
+    const existing = profiles.find((item) => item.key === key);
+    profiles = [
+      {
+        key,
+        name: existing?.name || change.name,
+        designation: existing?.designation || change.designation,
+        department: existing?.department || change.department,
+        researchArea: change.researchArea || existing?.researchArea || "",
+        bio: change.bio?.trim() || existing?.bio || "",
+        vidwan: change.vidwan?.trim() || existing?.vidwan || "",
+        published: existing?.published ?? false,
+        updatedOn: when.slice(0, 10),
+        updatedBy: by,
+      },
+      ...profiles.filter((item) => item.key !== key),
+    ];
+  }
+  let quotas = [...current.quotas];
+  for (const entry of batch.quotas ?? []) {
+    quotas = [entry, ...quotas.filter((item) => !sameGuide(item.name, entry.name))];
+  }
+  return persistRegister({
+    ...current,
+    addedSupervisors,
+    addedScholars,
+    supervisorEdits,
+    scholarEdits,
+    profiles,
+    quotas,
+  });
+}
+
+/**
+ * Saves a supervisor's details from the register. A supervisor who came with the register is
+ * corrected by an edit; one who was only recognised (approved later, so not yet on the
+ * register) is entered on the register with these details.
+ */
+export async function saveSupervisorDetails(
+  supervisor: ResearchSupervisor,
+  next: Partial<Record<SupervisorEditField, string>>,
+  onVacancyList: boolean,
+  quota: number,
+) {
+  const key = supervisorEditKey(supervisor);
+  const known = originalSupervisors.some((item) => sameKey(supervisorEditKey(item), key));
+  if (known) return saveSupervisorEdit(key, next, onVacancyList);
+  const merged = { ...supervisor, ...next };
+  if (merged.name.trim().length < 3) {
+    return { ok: false as const, message: "Enter the supervisor's name." };
+  }
+  const entry: ResearchSupervisor = {
+    ...merged,
+    serialNo: nextSupervisorSerial(),
+    active: true,
+    currentScholars: 0,
+    quota,
+    vacancy: quota,
+    june2026Allotment: 0,
+    balance: quota,
+    onVacancyList,
+  };
+  return importRegisterBatch({
+    addedSupervisors: [entry],
+    quotas: [
+      {
+        name: entry.name,
+        quota,
+        department: entry.department,
+        designation: entry.designation,
+      },
+    ],
+  });
+}
+
+/**
+ * A supervisor keeps their own contact, campus, area of research, Vidwan ID and biography. What
+ * the public sees still waits for the Research Office to show the profile.
+ */
+export async function saveOwnSupervisorDetails(values: {
+  phone: string;
+  campus: string;
+  researchArea: string;
+  vidwan: string;
+  bio: string;
+}) {
+  const session = readPreviewSession();
+  if (!session || session.role !== "supervisor") {
+    return {
+      ok: false as const,
+      message: "Sign in as the supervisor to change these details.",
+    };
+  }
+  let supervisor = supervisorBySignIn(session.identifier);
+  let current = memory ?? (await loadRegister());
+  if (!supervisor) {
+    // Recognised after the register was built: entered on the register with the approved details.
+    const approved = current.quotas.find((item) => sameGuide(item.name, session.name));
+    if (!approved) {
+      return {
+        ok: false as const,
+        message:
+          "Your details are not on the register yet. Write to the research office.",
+      };
+    }
+    const entry: ResearchSupervisor = {
+      serialNo: nextSupervisorSerial(),
+      name: approved.name,
+      supervisorId: "",
+      department: approved.department,
+      designation: approved.designation,
+      researchArea: values.researchArea,
+      active: true,
+      currentScholars: 0,
+      quota: approved.quota,
+      vacancy: approved.quota,
+      june2026Allotment: 0,
+      balance: approved.quota,
+      campus: values.campus,
+      phone: values.phone,
+      email: session.identifier.includes("@") ? session.identifier : "",
+      onVacancyList: true,
+    };
+    current = { ...current, addedSupervisors: [...current.addedSupervisors, entry] };
+    supervisor = entry;
+  }
+  if (wordCount(values.bio) > bioWordLimit) {
+    return {
+      ok: false as const,
+      message: `Keep the biography within ${bioWordLimit} words.`,
+    };
+  }
+  if (
+    values.vidwan.trim() &&
+    !/^(https?:\/\/\S+|[A-Za-z0-9_-]{3,40})$/.test(values.vidwan.trim())
+  ) {
+    return {
+      ok: false as const,
+      message: "Enter the Vidwan ID, or the full address of the Vidwan profile.",
+    };
+  }
+  const key = supervisorEditKey(supervisor);
+  const original = originalSupervisors.find((item) =>
+    sameKey(supervisorEditKey(item), key),
+  );
+  const when = new Date().toISOString();
+  const by = session.name.trim() || session.identifier;
+  let supervisorEdits = current.supervisorEdits;
+  let addedSupervisors = current.addedSupervisors;
+  if (original) {
+    const fields = editedFields(original, values, [
+      "phone",
+      "campus",
+      "researchArea",
+    ] as const);
+    const existing = current.supervisorEdits.find((item) => sameKey(item.key, key));
+    const merged = { ...(existing?.fields ?? {}), ...fields };
+    supervisorEdits = [
+      ...current.supervisorEdits.filter((item) => !sameKey(item.key, key)),
+      ...(Object.keys(merged).length
+        ? [
+            {
+              key: supervisorEditKey(original),
+              fields: merged,
+              ...(existing?.onVacancyList !== undefined
+                ? { onVacancyList: existing.onVacancyList }
+                : {}),
+              editedOn: when,
+              editedBy: by,
+            },
+          ]
+        : []),
+    ];
+  } else {
+    addedSupervisors = current.addedSupervisors.map((item) =>
+      item.serialNo === supervisor.serialNo && item.name === supervisor.name
+        ? {
+            ...item,
+            phone: values.phone,
+            campus: values.campus,
+            researchArea: values.researchArea,
+          }
+        : item,
+    );
+  }
+  const profileKey = key.trim().toLowerCase();
+  const existingProfile = current.profiles.find((item) => item.key === profileKey);
+  const profiles = [
+    {
+      key: profileKey,
+      name: existingProfile?.name || supervisor.name,
+      designation: existingProfile?.designation || supervisor.designation,
+      department: existingProfile?.department || supervisor.department,
+      researchArea: values.researchArea.trim(),
+      bio: values.bio.trim(),
+      vidwan: values.vidwan.trim(),
+      published: existingProfile?.published ?? false,
+      updatedOn: when.slice(0, 10),
+      updatedBy: by,
+    },
+    ...current.profiles.filter((item) => item.key !== profileKey),
+  ];
+  return persistRegister({ ...current, supervisorEdits, addedSupervisors, profiles });
+}
+
 async function persistRegister(next: RegisterLoad) {
   const stored: StoredRegister = {
+    addedScholars: next.addedScholars ?? [],
+    addedSupervisors: next.addedSupervisors ?? [],
     attendance: next.attendance ?? [],
     profiles: next.profiles ?? [],
     allotments: next.allotments,

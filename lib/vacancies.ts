@@ -106,6 +106,28 @@ export function openSubjects(rows: readonly Vacancy[], school = "") {
   return [...names].sort((left, right) => left.localeCompare(right));
 }
 
+/** Every school, whether or not a seat is open (the applicant is told when there is none). */
+export function allSchools(rows: readonly Vacancy[]) {
+  const names = new Set<string>();
+  for (const row of rows) {
+    const school = vacancySchoolName(row);
+    if (school) names.add(school);
+  }
+  return [...names];
+}
+
+/** Every department of a school, in the order of the list. */
+export function allSubjects(rows: readonly Vacancy[], school = "") {
+  const names: string[] = [];
+  const wanted = school.trim();
+  for (const row of rows) {
+    if (wanted && !sameLabel(vacancySchoolName(row), wanted)) continue;
+    const subject = row.department.trim();
+    if (subject && !names.includes(subject)) names.push(subject);
+  }
+  return names;
+}
+
 export function hasOpenVacancy(
   rows: readonly Vacancy[],
   school: string,

@@ -35,9 +35,9 @@ export const admissionSteps: AdmissionStep[] = [
 
 export const admissionOverview = {
   eyebrow: "Admissions",
-  title: "Eligibility and admission process",
+  title: "Admission process",
   description:
-    "The University holds two Ph.D. admission sessions each year: January and July. Review the eligibility conditions, then follow the four-step process from the online application to supervisor allotment.",
+    "From the online application to the allotment of a supervisor. Eligibility, the selection criteria and the programme rules are on the home page.",
   eligibilityTitle: "Who may apply",
   processTitle: "Admission in 4 steps",
 };

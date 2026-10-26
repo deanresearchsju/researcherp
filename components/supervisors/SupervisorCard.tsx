@@ -1,5 +1,4 @@
 import { ExternalLink } from "lucide-react";
-import Link from "next/link";
 
 import type { PublicSupervisor } from "@/lib/public-supervisors";
 
@@ -17,11 +16,9 @@ function initialsOf(name: string) {
 export function SupervisorCard({
   profile,
   first = false,
-  linked = true,
 }: {
   profile: PublicSupervisor;
   first?: boolean;
-  linked?: boolean;
 }) {
   const role = [profile.designation, profile.department].filter(Boolean).join(" · ");
   return (
@@ -57,13 +54,7 @@ export function SupervisorCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h2 className="font-heading text-2xl leading-tight font-semibold text-primary">
-              {linked ? (
-                <Link href={`/supervisors/${profile.slug}`} className="hover:underline">
-                  {profile.name}
-                </Link>
-              ) : (
-                profile.name
-              )}
+              {profile.name}
             </h2>
             {profile.vidwanUrl ? (
               <a

@@ -19,6 +19,7 @@ import {
 } from "@/lib/scholar-records";
 import { useScholarReports } from "@/lib/use-report-sources";
 import { usePreviewSession } from "@/lib/use-preview-session";
+import { RegisterImport } from "@/components/portal/RegisterImport";
 
 const menu = menuByKind("personal_details");
 
@@ -98,6 +99,7 @@ export function ScholarInfoScreen() {
           </div>
         ))}
       </div>
+      <RegisterImport kind="scholars" onDone={setNotice} />
       <ListToolbar
         query={query}
         onQuery={setQuery}

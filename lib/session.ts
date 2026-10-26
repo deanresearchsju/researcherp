@@ -71,10 +71,16 @@ function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value);
 }
 
+/**
+ * The key that signs the sign-in cookie. On a live server it must be SESSION_SECRET (a long
+ * random text kept private). The public Supabase key is never used there: anybody can read it,
+ * so anybody could then make a cookie that signs them in as the administrator. It is allowed
+ * only on a developer's own computer, to make first set-up easy.
+ */
 function secret() {
-  return (
-    process.env.SESSION_SECRET || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ""
-  );
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === "production") return "";
+  return process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
 }
 
 function toBase64Url(value: string) {

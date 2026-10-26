@@ -23,6 +23,7 @@ import {
 } from "@/lib/office";
 import { sameGuide, supervisorForGuide } from "@/lib/register";
 import { removePortalUser, type PortalUser, type UserSource } from "@/lib/users";
+import { forgetGuideHistory } from "@/lib/guide-history";
 
 /**
  * Takes admitted scholars out of the ERP again: their guide allotment, course enrolment,
@@ -43,6 +44,7 @@ export async function purgeAdmittedRecords(
   for (const allocation of currentOffice()?.allocations ?? []) {
     if (wanted(allocation.scholarIdentifier)) await removeAllocation(allocation);
   }
+  await forgetGuideHistory(keys);
   const removed = await removeScholarCourseRecords(keys);
   const problems: string[] = removed.ok ? [] : [removed.message];
   for (const user of users) {

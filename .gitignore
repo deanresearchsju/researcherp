@@ -45,3 +45,15 @@ next-env.d.ts
 
 # local database backups (contain personal data)
 /backups/
+
+# working files with personal data or drafts, kept on the computer only (not in Git)
+/*.docx
+/*.xlsx
+/*.pdf
+/*.jpeg
+/*.jpg
+/WhatsApp*
+
+# local tool folders
+/.agents/
+/.claude/

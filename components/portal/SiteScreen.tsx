@@ -23,6 +23,7 @@ import {
   subscribeOffice,
   type SiteSettings,
 } from "@/lib/office";
+import { inputRules, masked } from "@/lib/input-rules";
 
 const siteFormSchema = z.object({
   admissionLabel: z.string().trim().min(1, "Enter the status label.").max(80),
@@ -133,7 +134,10 @@ export function PhdWindowDialog({
           required
           error={form.formState.errors.sessionYear?.message}
         >
-          <Input id="sessionYear" inputMode="numeric" {...form.register("sessionYear")} />
+          <Input
+            id="sessionYear"
+            {...masked(form.register("sessionYear"), inputRules.year)}
+          />
         </FormField>
         <FormField
           label={phdWindowCopy.label}
@@ -156,7 +160,7 @@ export function PhdWindowDialog({
           error={form.formState.errors.deadline?.message}
           className="sm:col-span-2"
         >
-          <Input id="deadline" {...form.register("deadline")} />
+          <Input id="deadline" type="date" {...form.register("deadline")} />
         </FormField>
       </div>
       <p className="rounded-xl bg-muted px-4 py-3 text-sm text-primary">

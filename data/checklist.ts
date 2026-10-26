@@ -9,12 +9,6 @@ export const checklist: ChecklistItem[] = [
     required: true,
   },
   {
-    id: "signature",
-    title: "Signature",
-    detail: `Scanned signature on a plain background. ${uploadStandards.signature.label}.`,
-    required: true,
-  },
-  {
     id: "receipt",
     title: "Fee receipt",
     detail: "Proof of the ₹500 application fee paid to the college account.",

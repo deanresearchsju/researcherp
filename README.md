@@ -1,84 +1,45 @@
-# St. Joseph University Research ERP
+# St. Joseph University: Research website and ERP
 
-Public site and application forms for the Ph.D. research portal. Drafts stay in the browser. Submitted applications and the supervisor vacancy list are stored in Supabase. Sign-in is still a preview session.
+This project is two things in one:
 
-## Setup
+- **The public website** (`research.sju.ac.in`) for candidates, scholars and supervisors: the Ph.D. programme under the UGC Regulations, 2022, supervisors and research areas, the online Ph.D. and supervisor-recognition applications, announcements, downloads and contact.
+- **The Research ERP**: the sign-in area where the Research Office, the Dean, Accounts, the Controller of Examinations, the Vice Chancellor, supervisors and scholars run the whole Ph.D. journey, from the application and selection to the thesis and viva.
+
+If you are not a programmer, start with the guide for your job in [docs/guides](docs/guides/README.md), or with [docs/README.md](docs/README.md), which lists every document and who it is for.
+
+## What is in place
+
+| Need                                  | Where                                                              |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| How the whole ERP works, step by step | [docs/WORKFLOW.md](docs/WORKFLOW.md) (kept up to date)             |
+| Modules, menus and where data lives   | [docs/ERP.md](docs/ERP.md)                                         |
+| Public website pages and content      | [docs/WEBSITE.md](docs/WEBSITE.md)                                 |
+| Who can do what                       | [docs/ROLES-AND-RIGHTS.md](docs/ROLES-AND-RIGHTS.md)               |
+| Setting up a new environment          | [docs/SETUP.md](docs/SETUP.md)                                     |
+| Putting the site online               | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                           |
+| Before real use                       | [docs/GO-LIVE-CHECKLIST.md](docs/GO-LIVE-CHECKLIST.md)             |
+| Backups and restoring                 | [docs/BACKUP-AND-RESTORE.md](docs/BACKUP-AND-RESTORE.md)           |
+| Files (receipts, thesis, documents)   | [docs/STORAGE.md](docs/STORAGE.md)                                 |
+| Testing the ERP and clearing the test | [docs/TESTING.md](docs/TESTING.md)                                 |
+| Security and known weak points        | [docs/SECURITY.md](docs/SECURITY.md), [SECURITY.md](SECURITY.md)   |
+| Personal data and privacy             | [docs/DATA-PROTECTION.md](docs/DATA-PROTECTION.md)                 |
+| Day-to-day care and problems          | [docs/MAINTENANCE.md](docs/MAINTENANCE.md)                         |
+| For programmers                       | [docs/DEVELOPER.md](docs/DEVELOPER.md)                             |
+| What changed and when                 | [docs/CHANGELOG.md](docs/CHANGELOG.md)                             |
+| Words and abbreviations               | [docs/GLOSSARY.md](docs/GLOSSARY.md)                               |
+
+## Quick start for a programmer
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env.local   # then fill in the values; see docs/SETUP.md
+npm run dev                  # http://localhost:3000
 ```
 
-Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. In the Supabase SQL editor, run `supabase/migrations/20261013133000_research_office_records.sql`.
+Other commands: `npm run build` (production build), `npm run start` (run the build), `npm run lint`, `npm run format`. The first administrator is created with `node --env-file=.env.local scripts/create-admin.mjs "Name" "password"`.
 
-Open [http://localhost:3000](http://localhost:3000).
+The technology: Next.js (App Router) with React and TypeScript, Tailwind CSS, Supabase (database), Amazon S3 or Supabase Storage (files), and SMTP for e-mail. This version of Next.js differs from older ones; read `AGENTS.md` and `docs/DEVELOPER.md` before changing code.
 
-Other scripts:
+## Keep private
 
-- `npm run build` — production build
-- `npm run lint` — ESLint
-- `npm run format` — Prettier
-
-How the ERP works (sign-ins, admission steps, registration numbers, fee verification, thesis evaluation, emails) is in [docs/WORKFLOW.md](docs/WORKFLOW.md); keep it updated when a rule changes. The product brief is [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md). The official forms are in `docs/forms/`.
-
-## Structure
-
-- `app/(public)` — home, research areas, programmes and fees, admission, scholar journey, supervisors, supervisor vacancy, downloads, contact, announcements, both applications, and application status
-- `app/(auth)/login/[role]` — scholar, supervisor, and admin sign-in
-- `app/(portal)` — dashboard shells, vacancy editing, and stored applications
-- `components/ui` — buttons, cards, form field, stepper, and other shared controls
-- `components/forms` — Ph.D. application, supervisor recognition, and file upload
-- `components/home`, `components/layout`, `components/auth` — page sections and chrome
-- `data` — editable copy and mock records
-- `lib/constants.ts` — university details, form options, and file-size limits
-- `lib/validation.ts` — zod schemas
-- `lib/auth.ts` — mock sign-in
-- `styles/theme.css` — colour and type tokens
-
-## Edit content
-
-Change text and lists in `/data` rather than in components. File-size limits and the helpdesk email live in `lib/constants.ts`.
-
-| File                    | What it controls                                             |
-| ----------------------- | ------------------------------------------------------------ |
-| `data/schools.ts`       | Schools and sample research areas                            |
-| `data/fees.ts`          | Fee cards and the home glance                                |
-| `data/admission.ts`     | Full admission steps and the four-step home outline          |
-| `data/announcements.ts` | Notices                                                      |
-| `data/faqs.ts`          | Admission questions                                          |
-| `data/milestones.ts`    | Scholar journey and course work                              |
-| `data/downloads.ts`     | Download titles and file links                               |
-| `data/sections.ts`      | Headings and hero copy                                       |
-| `data/declarations.ts`  | Declaration text from the official forms                     |
-| `lib/constants.ts`      | Name, email, phone, address, bank, sessions, and file limits |
-
-## Applications
-
-- `/apply` — Ph.D. application. A draft is saved in this browser. Uploaded files are kept only for the visit. A successful submit stores the answers in Supabase. File names are stored; the files themselves stay on the applicant’s computer.
-- `/apply/status` — application number plus date of birth. A sample record is `SJU/PHD/2026/0001` with date of birth `1995-06-15`.
-- `/supervisor-recognition/apply` — recognition application. Numbers look like `SJU/SUP/PHD/2026/001`.
-- `/supervisor-vacancy` — research supervisor vacancy list. The research office edits it at `/admin/vacancies`.
-- `/admin/applications` — Ph.D. and supervisor recognition records stored in Supabase.
-
-## Preview sign-in
-
-Any password of at least 6 characters opens the matching dashboard. The password `invalid` shows the error state. The captcha is an arithmetic check in the browser.
-
-- `/login/scholar` → `/scholar/dashboard`
-- `/login/supervisor` → `/supervisor/dashboard`
-- `/login/admin` → `/admin/dashboard`
-
-## Replace these placeholders
-
-- Helpdesk phone, hours, and campus address in `lib/constants.ts` (the email is `deanresearch.sju@dmifoundations.org`)
-- Site URL `https://research.sju.ac.in`
-- Bank account name, number, IFSC, bank, and branch
-- Ph.D. admission sessions are January and July (`lib/constants.ts`)
-- Announcement dates
-- Approved school names and research areas
-- Eligibility marks, if the University publishes a minimum
-- Guideline, regulation, and syllabus files in `data/downloads.ts`
-- Social profile URLs (currently `https://example.com`)
-- Privacy and terms text
-- Open Graph image `public/assets/og.jpeg`
-- Fee wording, if the University revises the amounts
+`.env.local` (passwords and keys), the `backups/` folder (personal data) and the working files at the project root (Word and Excel files, photographs) are kept out of Git on purpose. Never put them in the repository or send them by e-mail or chat.

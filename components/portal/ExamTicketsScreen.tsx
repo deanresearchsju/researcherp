@@ -19,7 +19,10 @@ import {
   currentExam,
   examRegistrations,
   generateExamTickets,
+  attendanceLockKey,
+  forwardAttendance,
   markExamAttendance,
+  reopenAttendance,
   roomOf,
   setTicketCentre,
   subscribeExam,
@@ -252,6 +255,10 @@ export function ExamTicketsScreen() {
         (left.ticket.roomId || "~").localeCompare(right.ticket.roomId || "~") ||
         Number(left.ticket.seat || 9999) - Number(right.ticket.seat || 9999),
     );
+
+  const lock = exam.attendanceLocks[attendanceLockKey(activeBatch, semester, activeSubject, activeCentre)];
+  const unmarked = attendanceRows.filter(({ registration }) => !exam.attendance[registration.id]).length;
+  const isAdmin = session?.role === "admin";
 
   return (
     <DeskPage kicker="Course work" title="Hall tickets & seating">
@@ -554,8 +561,31 @@ export function ExamTicketsScreen() {
           }
         >
           <div className="space-y-3 p-4">
+            {lock ? (
+              <p className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-sm">
+                <span className="font-semibold text-primary">Frozen and forwarded to the COE</span>{" "}
+                for marks entry · {lock.by} · {formatIsoDate(lock.on)}
+                {isAdmin ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="ml-3"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        reopenAttendance(activeBatch, semester, activeSubject, activeCentre),
+                        () => "The attendance is open again.",
+                      )
+                    }
+                  >
+                    Reopen
+                  </Button>
+                ) : null}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
-              {canWrite ? (
+              {canWrite && !lock ? (
                 <>
                   <Button
                     type="button"
@@ -594,6 +624,20 @@ export function ExamTicketsScreen() {
                     }
                   >
                     Clear all
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="gold"
+                    disabled={busy || attendanceRows.length === 0 || unmarked > 0}
+                    onClick={() =>
+                      void run(
+                        forwardAttendance(activeBatch, semester, activeSubject, activeCentre),
+                        () => "The attendance is frozen and forwarded to the COE for marks entry.",
+                      )
+                    }
+                  >
+                    Freeze and forward to COE
                   </Button>
                 </>
               ) : null}
@@ -636,7 +680,7 @@ export function ExamTicketsScreen() {
                           <MarkButtons
                             name={registration.scholarName}
                             value={(exam.attendance[registration.id] ?? "") as Mark}
-                            disabled={!canWrite || busy}
+                            disabled={!canWrite || busy || Boolean(lock)}
                             onChange={(next) =>
                               void run(
                                 markExamAttendance([

@@ -299,7 +299,7 @@ export function ApplicationViewer({
   onClose: () => void;
   review?: {
     busy: boolean;
-    onAction: (action: ReviewAction, remarks: string, quota: string) => void;
+    onAction: (action: ReviewAction, remarks: string) => void;
   };
   personId?: string;
   editable?: boolean;
@@ -609,32 +609,10 @@ export function ApplicationViewer({
             <form
               className="mt-4 grid gap-3"
               onSubmit={form.handleSubmit((values) => {
-                if (action === "Approved") {
-                  const quota = Number(values.quota);
-                  if (!Number.isInteger(quota) || quota < 0 || quota > 30) {
-                    form.setError("quota", { message: "Enter the approved quota." });
-                    return;
-                  }
-                }
-                review.onAction(action, values.remarks, values.quota);
+                review.onAction(action, values.remarks);
               })}
               noValidate
             >
-              {action === "Approved" ? (
-                <FormField
-                  label="Approved quota"
-                  htmlFor="review-quota"
-                  required
-                  error={form.formState.errors.quota?.message}
-                >
-                  <input
-                    id="review-quota"
-                    className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
-                    inputMode="numeric"
-                    {...form.register("quota")}
-                  />
-                </FormField>
-              ) : null}
               <FormField
                 label={applicationReviewCopy.comments}
                 htmlFor="review-comments"

@@ -1392,6 +1392,10 @@ export function AdmissionDesk({
           const used = cases.filter(
             (other) => other.selected && other.guideName === item.supervisorName,
           ).length;
+          // A supervisor with no vacancy left is not offered (unless already chosen here).
+          if (item.vacancyCount - used < 1 && item.supervisorName !== row.guideName) {
+            return null;
+          }
           return (
             <option key={item.id} value={item.id}>
               {item.supervisorName} · {item.department} ·{" "}
