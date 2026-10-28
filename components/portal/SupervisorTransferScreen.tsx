@@ -246,7 +246,8 @@ export function SupervisorTransferScreen() {
               {supervisors
                 .filter(
                   (item) =>
-                    item.status === "Active" && (item.vacancy === null || item.vacancy > 0),
+                    item.status === "Active" &&
+                    (item.vacancy === null || item.vacancy > 0),
                 )
                 .map((item) => (
                   <option key={item.id} value={item.identifier}>

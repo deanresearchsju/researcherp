@@ -3,7 +3,19 @@ import { admittedRegistration } from "@/lib/admission";
 import { toCsv } from "@/lib/csv";
 import { downloadCsvAsSheet } from "@/lib/sheet";
 import { currentOffice } from "@/lib/office";
-import { currentAllotments, currentQuotas, registrationOf, scholarBySignIn, scholarDownloadHeaders, scholarDownloadRow, scholarSignInId, supervisorBySignIn, supervisorDownloadHeaders, supervisorDownloadRow, registerScholarsInOrder } from "@/lib/register";
+import {
+  currentAllotments,
+  currentQuotas,
+  registrationOf,
+  scholarBySignIn,
+  scholarDownloadHeaders,
+  scholarDownloadRow,
+  scholarSignInId,
+  supervisorBySignIn,
+  supervisorDownloadHeaders,
+  supervisorDownloadRow,
+  registerScholarsInOrder,
+} from "@/lib/register";
 import { formatNetQualification } from "@/lib/net-exam";
 import { currentApplications, type StoredApplication } from "@/lib/records";
 import { scholarSemesterLabel } from "@/lib/scholar-identity";

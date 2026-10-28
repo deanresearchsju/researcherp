@@ -136,7 +136,9 @@ function parseExportIds(text: string | null) {
     const saved: unknown = JSON.parse(text ?? "null");
     if (Array.isArray(saved)) {
       const known = new Set(registerColumns.map((column) => column.id));
-      const ids = saved.filter((id): id is string => typeof id === "string" && known.has(id));
+      const ids = saved.filter(
+        (id): id is string => typeof id === "string" && known.has(id),
+      );
       if (ids.length > 0) return ids;
     }
   } catch {
@@ -169,7 +171,11 @@ export function ResearchRegister() {
   );
   // Milestone columns are filled from each scholar's ERP records.
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
-  const admission = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
+  const admission = useSyncExternalStore(
+    subscribeAdmission,
+    currentAdmission,
+    () => null,
+  );
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [allotId, setAllotId] = useState<string | null>(null);
@@ -292,8 +298,8 @@ export function ResearchRegister() {
     researchRegister.scholars.find((scholar) => scholar.id === editId) ?? null;
   const opened = entries.find((entry) => entry.scholar.id === openId) ?? null;
   const canAllotRole = session?.role === "admin" || session?.role === "staff";
-  const tableColumns = tableColumnIds.map(
-    (id) => registerColumns.find((column) => column.id === id)!,
+  const tableColumns = tableColumnIds.map((id) =>
+    registerColumns.find((column) => column.id === id)!,
   );
 
   async function saveViewedApplication(next: {
@@ -348,7 +354,9 @@ export function ResearchRegister() {
 
       <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {allBatches().map((batch) => {
-          const count = entries.filter((entry) => entry.scholar.batchId === batch.id).length;
+          const count = entries.filter(
+            (entry) => entry.scholar.batchId === batch.id,
+          ).length;
           const on = chosen.batch === batch.name;
           return (
             <li key={batch.id}>
@@ -383,9 +391,16 @@ export function ResearchRegister() {
         filename="scholar-register.csv"
         title="Scholar register"
         headers={exportColumns.map((column) => column.label)}
-        rows={rows.map((entry) => exportColumns.map((column) => column.value(entry.context)))}
+        rows={rows.map((entry) =>
+          exportColumns.map((column) => column.value(entry.context)),
+        )}
         extra={
-          <Button type="button" variant="outline" size="sm" onClick={() => setColumnsOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setColumnsOpen(true)}
+          >
             <Columns3 className="size-4" aria-hidden="true" />
             Information to export ({exportColumns.length})
           </Button>
@@ -422,7 +437,10 @@ export function ResearchRegister() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-muted-foreground" colSpan={tableColumns.length + 1}>
+                <td
+                  className="px-3 py-6 text-muted-foreground"
+                  colSpan={tableColumns.length + 1}
+                >
                   No scholar matches.
                 </td>
               </tr>
@@ -441,9 +459,13 @@ export function ResearchRegister() {
                         )}
                       >
                         {column.id === "registration" && !value ? (
-                          <span className="font-sans text-muted-foreground">To be allotted</span>
+                          <span className="font-sans text-muted-foreground">
+                            To be allotted
+                          </span>
                         ) : column.id === "stage" ? (
-                          <Badge variant={value === "Admitted" ? "outline" : "gold"}>{value}</Badge>
+                          <Badge variant={value === "Admitted" ? "outline" : "gold"}>
+                            {value}
+                          </Badge>
                         ) : (
                           blank(value)
                         )}
@@ -494,7 +516,10 @@ export function ResearchRegister() {
             size="sm"
             variant="outline"
             onClick={() =>
-              downloadCsv("supervisor-wise-scholars.csv", toCsv(scholarWideHeaders(), allScholarRows))
+              downloadCsv(
+                "supervisor-wise-scholars.csv",
+                toCsv(scholarWideHeaders(), allScholarRows),
+              )
             }
           >
             Supervisor-wise scholars
@@ -656,9 +681,9 @@ function ExportColumnsDialog({
     <DeskModal title="Information to export" size="lg" onClose={onClose}>
       <div className="space-y-4 text-sm">
         <p className="text-muted-foreground">
-          Tick what each downloaded Excel and PDF list should carry. The scholars in it are the
-          ones shown after the filters, and every item marked &quot;also a filter&quot; can be
-          used as a filter. Your choice is remembered.
+          Tick what each downloaded Excel and PDF list should carry. The scholars in it
+          are the ones shown after the filters, and every item marked &quot;also a
+          filter&quot; can be used as a filter. Your choice is remembered.
         </p>
         <div className="flex flex-wrap gap-2">
           {exportPresets.map((preset) => (

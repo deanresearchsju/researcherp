@@ -1848,7 +1848,8 @@ export async function allotIntakeRegistrations(
     const no = entry.applicationNo.trim().toLowerCase();
     const row = current.cases.find(
       (item) =>
-        item.applicationNo.trim().toLowerCase() === no && item.verification === "Approved",
+        item.applicationNo.trim().toLowerCase() === no &&
+        item.verification === "Approved",
     );
     if (!number) continue;
     if (!row) {
@@ -1870,7 +1871,9 @@ export async function allotIntakeRegistrations(
     }
     if (taken.has(number.toLowerCase())) {
       skipped += 1;
-      messages.push(`${row.applicationNo}: that registration number is already allotted.`);
+      messages.push(
+        `${row.applicationNo}: that registration number is already allotted.`,
+      );
       continue;
     }
     taken.add(number.toLowerCase());
@@ -1888,7 +1891,11 @@ export async function allotIntakeRegistrations(
   const saved = await saveAdmission({
     cases: current.cases.map((row) =>
       byNo.has(row.applicationNo)
-        ? { ...row, registrationNo: byNo.get(row.applicationNo) ?? "", registrationOn: on }
+        ? {
+            ...row,
+            registrationNo: byNo.get(row.applicationNo) ?? "",
+            registrationOn: on,
+          }
         : row,
     ),
     letter: current.letter,

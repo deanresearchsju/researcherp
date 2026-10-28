@@ -57,10 +57,7 @@ const firstDcHold: Hold = (report) =>
 /** A scholar on the passed-out list, or whose supervisor is leaving and not yet transferred. */
 const exitHold: Hold = (report) => {
   if (isPassedOut(report.identifier, report.name)) return "On the passed-out list";
-  const leaving = exitFor(
-    [report.guideIdentifier, report.guideName],
-    report.guideName,
-  );
+  const leaving = exitFor([report.guideIdentifier, report.guideName], report.guideName);
   return leaving && !leaving.completedOn
     ? "Supervisor exit pending; transfer the scholar first"
     : null;

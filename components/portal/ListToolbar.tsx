@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, Columns3, FileDown, FileSpreadsheet, Filter, Search, X } from "lucide-react";
+import {
+  Check,
+  Columns3,
+  FileDown,
+  FileSpreadsheet,
+  Filter,
+  Search,
+  X,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   useEffect,
@@ -268,16 +276,15 @@ const normal = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "")
 /** Hides or shows a column of an on-screen table, by the heading it carries. */
 function applyColumnChoice(toolbar: HTMLElement, hidden: readonly string[]) {
   const off = new Set(hidden.map(normal));
-  const tables = Array.from(
-    toolbar.closest("main")?.querySelectorAll("table") ?? [],
-  );
+  const tables = Array.from(toolbar.closest("main")?.querySelectorAll("table") ?? []);
   const table = tables.find(
     (item) => toolbar.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING,
   );
   const head = table?.tHead?.rows[0];
   if (!table || !head) return;
   Array.from(head.cells).forEach((cell, index) => {
-    const hide = off.has(normal(cell.textContent ?? "")) && normal(cell.textContent ?? "") !== "";
+    const hide =
+      off.has(normal(cell.textContent ?? "")) && normal(cell.textContent ?? "") !== "";
     for (const row of Array.from(table.rows)) {
       const target = row.cells[index];
       if (target && target.colSpan === 1) target.style.display = hide ? "none" : "";
@@ -460,9 +467,9 @@ export function ListToolbar({
                     className="absolute right-0 bottom-full z-50 mb-2 w-72 max-w-[90vw] rounded-xl border border-border bg-card p-3 shadow-lift"
                   >
                     <p className="text-xs leading-5 text-muted-foreground">
-                      Choose the columns carried into the Excel and PDF downloads. A column
-                      that is also in the table on this page is shown or hidden there too.
-                      Your choice is remembered.
+                      Choose the columns carried into the Excel and PDF downloads. A
+                      column that is also in the table on this page is shown or hidden
+                      there too. Your choice is remembered.
                     </p>
                     <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto">
                       {headers.map((header) => {
@@ -496,7 +503,11 @@ export function ListToolbar({
                       >
                         Show all
                       </button>
-                      <Button type="button" size="sm" onClick={() => setColumnsOpen(false)}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setColumnsOpen(false)}
+                      >
                         Done
                       </Button>
                     </div>

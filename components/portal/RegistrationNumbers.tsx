@@ -13,7 +13,17 @@ import { registrationCsvHeaders } from "@/data/exams";
 import { registrationCopy } from "@/data/registration";
 import { officeWriteBlock } from "@/lib/access";
 import { field } from "@/lib/csv";
-import { allotRegistrations, currentAllotments, currentRegister, registerMigrationHint, registrationOf, scholarSignInId, subscribeRegister, registerScholarsInOrder, registrationCompare } from "@/lib/register";
+import {
+  allotRegistrations,
+  currentAllotments,
+  currentRegister,
+  registerMigrationHint,
+  registrationOf,
+  scholarSignInId,
+  subscribeRegister,
+  registerScholarsInOrder,
+  registrationCompare,
+} from "@/lib/register";
 import {
   allotIntakeRegistrations,
   currentAdmission,
@@ -93,21 +103,24 @@ export function RegistrationNumbers() {
     }
     return [...intakeCasesOf(admission, id)]
       .sort((a, b) =>
-        registrationCompare(a.registrationNo || a.applicationNo, b.registrationNo || b.applicationNo),
+        registrationCompare(
+          a.registrationNo || a.applicationNo,
+          b.registrationNo || b.applicationNo,
+        ),
       )
       .map((row) => ({
-      key: row.applicationNo,
-      name: row.name,
-      applicationNo: row.applicationNo,
-      email: row.email,
-      department: row.department,
-      studyMode: row.studyMode,
-      guideName: row.guideName,
-      guideCampus: guideCampus(row.guideName),
-      number: row.registrationNo.trim(),
-      on: row.registrationOn,
-      by: "",
-    }));
+        key: row.applicationNo,
+        name: row.name,
+        applicationNo: row.applicationNo,
+        email: row.email,
+        department: row.department,
+        studyMode: row.studyMode,
+        guideName: row.guideName,
+        guideCampus: guideCampus(row.guideName),
+        number: row.registrationNo.trim(),
+        on: row.registrationOn,
+        by: "",
+      }));
   }
 
   const [chosen, setChosen] = useState("");
@@ -119,10 +132,7 @@ export function RegistrationNumbers() {
 
   const pendingIn = (id: string) => linesFor(id).filter((line) => !line.number).length;
   const batchId =
-    chosen ||
-    batches.find((item) => pendingIn(item.id) > 0)?.id ||
-    batches[0]?.id ||
-    "";
+    chosen || batches.find((item) => pendingIn(item.id) > 0)?.id || batches[0]?.id || "";
   const batch = batches.find((item) => item.id === batchId) ?? null;
   const newIntake = !isRegisterBatch(batchId);
   const canWrite = Boolean(session) && !officeWriteBlock();
@@ -289,7 +299,10 @@ export function RegistrationNumbers() {
                   void record(
                     records.map((item) => ({
                       key: field(item, ["scholar_id", "id"]),
-                      applicationNo: field(item, ["application_number", "application no."]),
+                      applicationNo: field(item, [
+                        "application_number",
+                        "application no.",
+                      ]),
                       email: field(item, ["email", "mail"]),
                       number: field(item, [
                         "registration_number",

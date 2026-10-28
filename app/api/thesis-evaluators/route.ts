@@ -10,6 +10,7 @@ import {
   evaluatorGroups,
   evaluatorsPerGroup,
   nominationProblem,
+  publicationList,
   parseEvaluationPayload,
   scholarKeyOf,
   supervisorView,
@@ -231,6 +232,9 @@ function parseNominees(value: unknown): Record<EvaluatorGroup, Evaluator[]> | nu
         email: pick("email"),
         phone: pick("phone"),
         specialization: pick("specialization"),
+        publications: publicationList(row.publications).map((item) =>
+          item.trim().slice(0, 400),
+        ),
       };
     });
   }

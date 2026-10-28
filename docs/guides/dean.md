@@ -11,7 +11,7 @@ Everything a scholar submits comes to you **after the supervisor has approved it
 
 ## The RAC
 
-Under **Supervision, RAC**: the supervisor names two internal and two external members; you approve one internal and one external. It then shows to the supervisor and the scholar.
+Under **Supervision, RAC**: the supervisor names 1 to 3 internal and 2 to 3 external members; you select one internal and one external member, write the minutes and send the RAC to the Vice Chancellor, who gives the final approval. It then shows to the supervisor and the scholar.
 
 ## The thesis evaluators (confidential)
 

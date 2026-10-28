@@ -41,6 +41,10 @@ Before the synopsis and before the thesis the Research Office checks your work w
 
 Your guide's details appear after your first payment is approved. **RAC members** shows the committee once the Dean has approved it. You do not see the examiners of your thesis; that is confidential.
 
+## Your password and your files
+
+Press **Change password** at the top to change your password: give the current one, then a strong new one (10 or more characters, with a capital letter, a small letter, a digit and a symbol). Attach **PDF files only**, up to 1 MB.
+
 ## Your details
 
 At your **first sign-in** you set a new password and are then taken to **My details**: check what is there (from your application or the University's list) and complete what is missing. Use the same boxes later to correct your mobile, address or parents' details. What you send goes to the Research Office to confirm. A box takes only what it should: dates are chosen from a calendar, numbers take digits only, and names take letters only.

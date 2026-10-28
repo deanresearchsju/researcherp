@@ -1,22 +1,6 @@
 "use client";
 
-import {
-  BookOpen,
-  CheckCircle2,
-  Circle,
-  ClipboardCheck,
-  FileBadge2,
-  FileText,
-  IndianRupee,
-  type LucideIcon,
-  MessagesSquare,
-  NotebookPen,
-  Presentation,
-  ScrollText,
-  ShieldCheck,
-  UserCheck,
-  Users,
-} from "lucide-react";
+import { CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
@@ -24,6 +8,7 @@ import { FeeReminderBanner } from "@/components/portal/FeeReminderBanner";
 import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
 import { ProfileCard } from "@/components/portal/ProfileCard";
 import { ScholarAdmission } from "@/components/portal/ScholarAdmission";
+import { WelcomeBanner } from "@/components/portal/WelcomeBanner";
 import { Badge } from "@/components/ui/badge";
 import { scholarRecordMenus } from "@/data/scholar-records";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
@@ -68,64 +53,6 @@ function milestonesOf(report: ScholarReport): Milestone[] {
     { label: "Thesis", detail: report.thesis, done: report.thesis === "Approved" },
     { label: "Viva", detail: report.viva, done: report.viva.startsWith("Passed") },
   ];
-}
-
-function Tile({
-  label,
-  value,
-  note,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  note: string;
-  tone?: "default" | "good" | "warn";
-}) {
-  return (
-    <li className="rounded-xl border border-border bg-card p-4 shadow-card">
-      <p className="text-[0.65rem] font-bold tracking-[0.14em] text-muted-foreground uppercase">
-        {label}
-      </p>
-      <p
-        className={cn(
-          "mt-1.5 text-3xl font-semibold tabular-nums",
-          tone === "good"
-            ? "text-primary"
-            : tone === "warn"
-              ? "text-secondary"
-              : "text-primary",
-        )}
-      >
-        {value}
-      </p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{note}</p>
-    </li>
-  );
-}
-
-function Actions({ items }: { items: readonly [string, string, LucideIcon][] }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-bold tracking-[0.12em] text-muted-foreground uppercase">
-        Quick actions
-      </h2>
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {items.map(([href, label, Icon]) => (
-          <li key={href}>
-            <Link
-              href={href}
-              className="group flex h-full items-center gap-3 rounded-xl border border-border bg-card p-3.5 text-sm font-semibold text-primary shadow-card transition hover:border-primary/40 hover:shadow-lift"
-            >
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                <Icon className="size-4" aria-hidden="true" />
-              </span>
-              {label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 function Journey({ report }: { report: ScholarReport }) {
@@ -214,6 +141,15 @@ export function ScholarDashboard({
 
   return (
     <div className="space-y-6">
+      <WelcomeBanner
+        name={name}
+        roleLabel="Scholar"
+        summary={
+          report
+            ? `${report.batchName || "Ph.D."} · Semester ${report.semester || "—"}`
+            : "Ph.D. programme"
+        }
+      />
       <FeeReminderBanner identifier={identifier} name={name} />
       <ProfileCard role="scholar" />
       <ScholarAdmission embedded />
@@ -228,35 +164,6 @@ export function ScholarDashboard({
       ) : null}
       {report ? (
         <>
-          <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Tile
-              label="Semester"
-              value={report.semester ? String(report.semester) : "—"}
-              note={report.mode}
-            />
-            <Tile
-              label="Six-month reports"
-              value={`${report.sixMonthApproved}/${report.sixMonthDue}`}
-              note="Approved of those due"
-              tone={report.sixMonthApproved < report.sixMonthDue ? "warn" : "good"}
-            />
-            <Tile
-              label="Colloquium"
-              value={`${report.colloquium.attended}/${report.colloquium.required}`}
-              note={`Minimum ${report.colloquium.required} of ${report.colloquium.total}`}
-              tone={report.colloquium.status === "At risk" ? "warn" : "good"}
-            />
-            <Tile
-              label="Course work"
-              value={`${Math.min(report.coursePassed, 4)}/4`}
-              note={
-                report.courseArrears > 0
-                  ? `${report.courseArrears} arrear paper(s) to clear`
-                  : "Papers passed"
-              }
-              tone={report.courseArrears > 0 ? "warn" : "good"}
-            />
-          </ul>
           {alerts.length > 0 ? (
             <section
               role="alert"
@@ -280,20 +187,6 @@ export function ScholarDashboard({
           ) : null}
           <Journey report={report} />
         </>
-      ) : null}
-      {admitted ? (
-        <Actions
-          items={[
-            ["/scholar/course-work", "Course work", BookOpen],
-            ["/scholar/reports", "Six-month report", NotebookPen],
-            ["/scholar/colloquium", "Colloquium", Presentation],
-            ["/scholar/records/publications", "Publications", FileText],
-            ["/scholar/fee", "Fee", IndianRupee],
-            ["/scholar/rac", "RAC members", ShieldCheck],
-            ["/scholar/records/title-change", "Title change", ScrollText],
-            ["/scholar/approved", "Approved documents", FileBadge2],
-          ]}
-        />
       ) : null}
       <PersonalDetailsPanel role="scholar" identifier={identifier} name={name} />
     </div>
@@ -349,28 +242,47 @@ export function SupervisorDashboard({
 
   return (
     <div className="space-y-6">
+      <WelcomeBanner
+        name={name}
+        roleLabel="Supervisor"
+        summary={`${mine.length} scholar(s) under your guidance`}
+      />
       <ProfileCard role="supervisor" />
-      <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="My scholars" value={String(mine.length)} note="Currently guided" />
-        <Tile
-          label="Requests to recommend"
-          value={String(requests)}
-          note="Waiting for you"
-          tone={requests > 0 ? "warn" : "good"}
-        />
-        <Tile
-          label="Committee reports"
-          value={String(committees)}
-          note="Waiting for your recommendation"
-          tone={committees > 0 ? "warn" : "good"}
-        />
-        <Tile
-          label="Scholars with alerts"
-          value={String(withAlerts)}
-          note="Reports, colloquium, fee or RAC"
-          tone={withAlerts > 0 ? "warn" : "good"}
-        />
-      </ul>
+      {requests + committees + withAlerts > 0 ? (
+        <section
+          role="status"
+          className="rounded-2xl border border-secondary/30 bg-secondary/5 p-4 text-sm"
+        >
+          <p className="font-semibold text-secondary">Waiting for you</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+            {requests > 0 ? (
+              <li>
+                <Link
+                  href="/supervisor/reviews"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {requests} scholar request(s)
+                </Link>{" "}
+                to recommend
+              </li>
+            ) : null}
+            {committees > 0 ? (
+              <li>
+                <Link
+                  href="/supervisor/committees"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {committees} committee report(s)
+                </Link>{" "}
+                to recommend
+              </li>
+            ) : null}
+            {withAlerts > 0 ? (
+              <li>{withAlerts} scholar(s) need attention (see the table below)</li>
+            ) : null}
+          </ul>
+        </section>
+      ) : null}
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
           <h2 className="font-semibold text-primary">My scholars</h2>
@@ -463,17 +375,6 @@ export function SupervisorDashboard({
           </table>
         </div>
       </section>
-      <Actions
-        items={[
-          ["/supervisor/scholars", "My scholars", Users],
-          ["/supervisor/reviews", "Scholar requests", MessagesSquare],
-          ["/supervisor/committees", "Doctoral committees", ClipboardCheck],
-          ["/supervisor/rac", "RAC proposal", ShieldCheck],
-          ["/supervisor/evaluators", "Thesis evaluators", UserCheck],
-          ["/supervisor/colloquium", "Colloquium", Presentation],
-          ["/supervisor/approved", "Approved documents", FileBadge2],
-        ]}
-      />
       <PersonalDetailsPanel role="supervisor" identifier={identifier} name={name} />
     </div>
   );

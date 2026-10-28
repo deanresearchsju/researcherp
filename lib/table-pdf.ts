@@ -184,7 +184,10 @@ export async function downloadTablePdf(input: TablePdfInput) {
   };
 
   /** The filters and totals as a row of small boxes, label above value. */
-  const drawDetailBoxes = (items: readonly { label: string; value: string }[], top: number) => {
+  const drawDetailBoxes = (
+    items: readonly { label: string; value: string }[],
+    top: number,
+  ) => {
     const perRow = Math.min(items.length, 4);
     const boxWidth = usable / perRow;
     let bottomY = top;
@@ -204,7 +207,9 @@ export async function downloadTablePdf(input: TablePdfInput) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.5);
         doc.setTextColor(90, 90, 90);
-        doc.text(item.label.toUpperCase(), x + boxWidth / 2, bottomY + 3.2, { align: "center" });
+        doc.text(item.label.toUpperCase(), x + boxWidth / 2, bottomY + 3.2, {
+          align: "center",
+        });
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
         doc.setTextColor(0, 0, 0);

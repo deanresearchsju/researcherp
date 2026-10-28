@@ -4,13 +4,13 @@ For a new computer, a test copy, or a fresh live system. About an hour if the ac
 
 ## 1. What you need
 
-| Service                   | Used for                                                    | Cost note                         |
-| ------------------------- | ----------------------------------------------------------- | --------------------------------- |
-| **Supabase** (a project)  | The database and sign-in records                            | Check that the plan has backups   |
-| **Amazon S3** (a bucket)  | Uploaded files: receipts, thesis, documents (see STORAGE)   | A few dollars a month             |
-| **A mail account (SMTP)** | Acknowledgements, hall-ticket and letter notices, passwords | Any provider that offers SMTP     |
-| **Vercel** (or any host)  | Running the site online (see DEPLOYMENT)                    |                                   |
-| **Node.js 20 or newer**   | On a computer that runs or builds the code                  | Free                              |
+| Service                   | Used for                                                    | Cost note                       |
+| ------------------------- | ----------------------------------------------------------- | ------------------------------- |
+| **Supabase** (a project)  | The database and sign-in records                            | Check that the plan has backups |
+| **Amazon S3** (a bucket)  | Uploaded files: receipts, thesis, documents (see STORAGE)   | A few dollars a month           |
+| **A mail account (SMTP)** | Acknowledgements, hall-ticket and letter notices, passwords | Any provider that offers SMTP   |
+| **Vercel** (or any host)  | Running the site online (see DEPLOYMENT)                    |                                 |
+| **Node.js 20 or newer**   | On a computer that runs or builds the code                  | Free                            |
 
 ## 2. Get the code and install
 
@@ -24,16 +24,16 @@ npm install
 
 Copy `.env.example` to `.env.local` and fill in each line. **`.env.local` is private: never put it in Git, e-mail or chat.**
 
-| Setting                                | What it is, and where to get it                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Supabase: Project settings, API, Project URL                                                                             |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase: the public (anon / publishable) key. It is visible in the browser by design                                    |
-| `SUPABASE_SERVICE_ROLE_KEY`            | Supabase: the secret (service role) key. **Server only.** Whoever has it has full control of the data                    |
-| `SESSION_SECRET`                       | A long random text that signs the sign-in cookie. **Required on a live server.** Make one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `S3_REGION`, `S3_BUCKET`               | The Amazon S3 bucket and its region (see STORAGE). Leave empty to keep files in Supabase Storage                        |
-| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | The keys of the limited AWS user for the bucket                                                                      |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | The outgoing mail account. Without them the ERP works and says that no mail was sent        |
-| `ALLOW_TEST_DATA_RESET`                | `true` only while testing: switches on Administration, Clear test data. **Remove for real use**                         |
+| Setting                                                         | What it is, and where to get it                                                                                                                                       |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`                                      | Supabase: Project settings, API, Project URL                                                                                                                          |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`                          | Supabase: the public (anon / publishable) key. It is visible in the browser by design                                                                                 |
+| `SUPABASE_SERVICE_ROLE_KEY`                                     | Supabase: the secret (service role) key. **Server only.** Whoever has it has full control of the data                                                                 |
+| `SESSION_SECRET`                                                | A long random text that signs the sign-in cookie. **Required on a live server.** Make one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `S3_REGION`, `S3_BUCKET`                                        | The Amazon S3 bucket and its region (see STORAGE). Leave empty to keep files in Supabase Storage                                                                      |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`                      | The keys of the limited AWS user for the bucket                                                                                                                       |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | The outgoing mail account. Without them the ERP works and says that no mail was sent                                                                                  |
+| `ALLOW_TEST_DATA_RESET`                                         | `true` only while testing: switches on Administration, Clear test data. **Remove for real use**                                                                       |
 
 ## 4. The database
 
@@ -73,6 +73,8 @@ The files, in order:
 30. `20261023100000_office_roles`
 31. `20261024100000_file_storage`
 32. `20261024200000_course_work_exams`
+33. `20261027100000_single_sign_in` (one sign-in at a time)
+34. `20261027200000_rac_vc_approval` (RAC approval by the Vice Chancellor, RAC entered by the office)
 
 When a new migration is added later, run only the new file.
 

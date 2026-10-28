@@ -23,13 +23,17 @@ function decode(value: string) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
+      String.fromCodePoint(parseInt(hex, 16)),
+    )
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
     .replace(/&amp;/g, "&");
 }
 
 function textOf(xml: string) {
-  const parts = [...xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((match) => decode(match[1]));
+  const parts = [...xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((match) =>
+    decode(match[1]),
+  );
   return parts.join("");
 }
 
@@ -52,13 +56,22 @@ const builtInDateFormats = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 
 
 function isDateFormat(id: number, formats: Map<number, string>) {
   if (builtInDateFormats.has(id)) return true;
-  const code = (formats.get(id) ?? "").toLowerCase().replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "");
-  return /[dmyh]/.test(code) && !/[#0?]/.test(code.replace(/[dmyhs:/.\- ]/g, "")) && /d|y/.test(code);
+  const code = (formats.get(id) ?? "")
+    .toLowerCase()
+    .replace(/"[^"]*"/g, "")
+    .replace(/\[[^\]]*\]/g, "");
+  return (
+    /[dmyh]/.test(code) &&
+    !/[#0?]/.test(code.replace(/[dmyhs:/.\- ]/g, "")) &&
+    /d|y/.test(code)
+  );
 }
 
 function dateStyleIndexes(styles: string) {
   const formats = new Map<number, string>();
-  for (const match of styles.matchAll(/<numFmt\s[^>]*?numFmtId="(\d+)"[^>]*?formatCode="([^"]*)"/g)) {
+  for (const match of styles.matchAll(
+    /<numFmt\s[^>]*?numFmtId="(\d+)"[^>]*?formatCode="([^"]*)"/g,
+  )) {
     formats.set(Number(match[1]), decode(match[2]));
   }
   const dates = new Set<number>();
@@ -121,7 +134,9 @@ async function readXlsx(file: File): Promise<Workbook> {
       const grid: string[][] = [];
       for (const rowMatch of xml.matchAll(/<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g)) {
         const line: string[] = [];
-        for (const cell of (rowMatch[1] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        for (const cell of (rowMatch[1] ?? "").matchAll(
+          /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g,
+        )) {
           const attrs = cell[1];
           const body = cell[2] ?? "";
           const ref = /\br="([A-Z]+\d+)"/.exec(attrs)?.[1] ?? "";
@@ -134,7 +149,9 @@ async function readXlsx(file: File): Promise<Workbook> {
           else if (type === "str") value = decode(raw);
           else if (type === "b") value = raw === "1" ? "Yes" : "No";
           else if (raw !== "") {
-            value = dateStyles.has(style) ? excelSerialToIso(Number(raw)) || numberText(raw) : numberText(raw);
+            value = dateStyles.has(style)
+              ? excelSerialToIso(Number(raw)) || numberText(raw)
+              : numberText(raw);
           }
           line[ref ? columnIndex(ref) : line.length] = value;
         }
@@ -148,7 +165,11 @@ async function readXlsx(file: File): Promise<Workbook> {
 
 function parseDelimited(text: string): string[][] {
   const first = text.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = first.includes("\t") ? "\t" : first.split(";").length > first.split(",").length ? ";" : ",";
+  const delimiter = first.includes("\t")
+    ? "\t"
+    : first.split(";").length > first.split(",").length
+      ? ";"
+      : ",";
   const grid: string[][] = [];
   let line: string[] = [];
   let cell = "";
@@ -182,9 +203,12 @@ function parseDelimited(text: string): string[][] {
 
 /** Opens a spreadsheet file; an Excel workbook may have several sheets. */
 export async function openSpreadsheet(file: File): Promise<Workbook> {
-  if (/\.xlsx$/i.test(file.name) || file.type.includes("spreadsheetml")) return readXlsx(file);
+  if (/\.xlsx$/i.test(file.name) || file.type.includes("spreadsheetml"))
+    return readXlsx(file);
   if (/\.xls$/i.test(file.name)) {
-    throw new Error("Save the file as .xlsx (Excel Workbook) or .csv and choose it again.");
+    throw new Error(
+      "Save the file as .xlsx (Excel Workbook) or .csv and choose it again.",
+    );
   }
   const text = (await file.text()).replace(/^﻿/, "");
   const table = tableFrom(parseDelimited(text));

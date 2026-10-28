@@ -25,6 +25,12 @@ Must **not** be present on the live site once real work begins: `ALLOW_TEST_DATA
 
 The site address used in the search-engine files is set in `lib/constants.ts` (`siteUrl`, now `https://research.sju.ac.in`). To use the address: in Vercel, **Settings, Domains**, add it and follow the two DNS records Vercel shows (the University's IT team adds them where the domain is managed). HTTPS is set up by Vercel itself.
 
+## HTTPS and browsers
+
+- The live site must be served over **HTTPS only**. Vercel issues the certificate for the domain and redirects http to https. On the live host (the `VERCEL` setting is present) the app also sends `Strict-Transport-Security` (browsers remember to use https) and `upgrade-insecure-requests`; the sign-in cookie is marked `Secure`. All pages also send `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`.
+- After going live, open the address with `http://` and check it jumps to `https://`, then test the site on the SSL Labs and securityheaders.com checkers (free) and keep the result.
+- The pages are responsive (phone, tablet, laptop). They work in the current and previous versions of Chrome, Edge, Firefox and Safari (iOS and macOS) and Android Chrome; very old browsers (Internet Explorer, Safari before 16.4) are not supported. Before the real start, open the main pages on one Windows, one Mac, one Android and one iPhone device and note the result in GO-LIVE-CHECKLIST.
+
 ## Build notes
 
 - `npm run build` must finish without errors before anything is published. It also runs a type check.
@@ -38,11 +44,13 @@ Create a **private** bucket (block all public access, versioning on) in the chos
 ```json
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
-    "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/*"
-  }]
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/*"
+    }
+  ]
 }
 ```
 

@@ -1,4 +1,7 @@
 import {
+  parseSectionKey,
+  sectionCatalog,
+  sectionsMarker,
   menuActionKey,
   menuActionKinds,
   menuHrefs,
@@ -15,6 +18,8 @@ export type CookieSession = {
   name: string;
   mustReset: boolean;
   menus: string[] | null;
+  /** Identifies this sign-in; a newer sign-in of the same user replaces it (server side only). */
+  sid?: string;
 };
 
 /**
@@ -26,6 +31,8 @@ type CookiePayload = Omit<CookieSession, "menus"> & {
   menus?: string[] | null;
   m?: string;
   mc?: string;
+  /** The sections (tabs) this sign-in may open, packed like the menus. */
+  s?: string;
 };
 
 function catalogStamp(role: Role) {
@@ -52,6 +59,32 @@ function packMenus(role: Role, menus: string[]) {
       .map((href) => (flags.get(href) ?? 0).toString(32))
       .join("")
   );
+}
+
+function packSections(role: Role, menus: string[]) {
+  if (!menus.includes(sectionsMarker)) return "";
+  const on = new Set(menus.filter((item) => parseSectionKey(item) !== null));
+  const catalog = sectionCatalog(role);
+  let out = "1";
+  for (let at = 0; at < catalog.length; at += 5) {
+    let value = 0;
+    for (let bit = 0; bit < 5; bit += 1) {
+      if (on.has(catalog[at + bit] ?? "")) value |= 1 << bit;
+    }
+    out += value.toString(32);
+  }
+  return out;
+}
+
+function unpackSections(role: Role, packed: string) {
+  if (!packed.startsWith("1")) return [];
+  const catalog = sectionCatalog(role);
+  const keys: string[] = [sectionsMarker];
+  catalog.forEach((key, index) => {
+    const digit = Number.parseInt(packed.charAt(1 + Math.floor(index / 5)) || "0", 32);
+    if (digit & (1 << (index % 5))) keys.push(key);
+  });
+  return keys;
 }
 
 function unpackMenus(role: Role, packed: string) {
@@ -124,7 +157,13 @@ export async function encodeSessionCookie(session: CookieSession, remember: bool
     exp: Date.now() + (remember ? 7 : 1) * 24 * 60 * 60 * 1000,
     ...(menus === null
       ? { menus: null }
-      : { m: packMenus(session.role, menus), mc: catalogStamp(session.role) }),
+      : {
+          m: packMenus(session.role, menus),
+          mc: catalogStamp(session.role),
+          ...(menus.includes(sectionsMarker)
+            ? { s: packSections(session.role, menus) }
+            : {}),
+        }),
   };
   const body = toBase64Url(JSON.stringify(payload));
   const signature = await sign(body);
@@ -154,7 +193,12 @@ export async function decodeSessionCookie(token: string | undefined) {
     }
     const menus =
       typeof parsed.m === "string"
-        ? unpackMenus(parsed.role, parsed.m)
+        ? [
+            ...unpackMenus(parsed.role, parsed.m),
+            ...(typeof parsed.s === "string"
+              ? unpackSections(parsed.role, parsed.s)
+              : []),
+          ]
         : Array.isArray(parsed.menus)
           ? parsed.menus.filter(
               (item): item is string => typeof item === "string" && item.startsWith("/"),
@@ -168,6 +212,7 @@ export async function decodeSessionCookie(token: string | undefined) {
       name: parsed.name ?? "",
       mustReset: parsed.mustReset === true,
       menus,
+      ...(typeof parsed.sid === "string" && parsed.sid ? { sid: parsed.sid } : {}),
     } satisfies CookieSession;
   } catch {
     return null;

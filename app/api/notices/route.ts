@@ -131,18 +131,14 @@ async function pushNotices(input: unknown) {
   if (!supabase) return fail("The database is not configured.", 503);
   const { error } = await supabase.from("portal_notices").insert(rows.slice(0, 200));
   if (error) {
-    const legacy = await supabase
-      .from("portal_notices")
-      .insert(
-        rows
-          .slice(0, 200)
-          .map((row) => ({
-            role: row.role,
-            identifier: row.identifier,
-            title: row.title,
-            detail: row.detail,
-          })),
-      );
+    const legacy = await supabase.from("portal_notices").insert(
+      rows.slice(0, 200).map((row) => ({
+        role: row.role,
+        identifier: row.identifier,
+        title: row.title,
+        detail: row.detail,
+      })),
+    );
     if (legacy.error) return fail("The notice could not be saved.", 500);
   }
   return NextResponse.json({ ok: true, sent: rows.length });

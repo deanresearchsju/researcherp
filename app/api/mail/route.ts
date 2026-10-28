@@ -74,7 +74,8 @@ export async function POST(request: NextRequest) {
       .ilike("application_no", text(body.applicationNo))
       .eq("date_of_birth", text(body.dateOfBirth))
       .maybeSingle();
-    if (!data) return NextResponse.json({ ok: true, sent: 0, failed: 0, configured: true });
+    if (!data)
+      return NextResponse.json({ ok: true, sent: 0, failed: 0, configured: true });
     const payload = asRow(data.payload);
     if (asRow(payload.mail).ack) {
       return NextResponse.json({ ok: true, sent: 0, failed: 0, configured: true });
@@ -83,7 +84,10 @@ export async function POST(request: NextRequest) {
     await supabase
       .from(table)
       .update({
-        payload: { ...payload, mail: { ...asRow(payload.mail), ack: new Date().toISOString() } } as Json,
+        payload: {
+          ...payload,
+          mail: { ...asRow(payload.mail), ack: new Date().toISOString() },
+        } as Json,
       })
       .eq("id", data.id);
     const submittedOn = formatIsoDate(data.created_at.slice(0, 10));
@@ -122,7 +126,9 @@ export async function POST(request: NextRequest) {
     const office = asRow(data?.payload);
     const cases = Array.isArray(office.cases) ? office.cases.map(asRow) : [];
     const reportBy = text(asRow(office.letter).reportBy);
-    const wanted = new Set(numbers(body.applicationNos).map((item) => item.toLowerCase()));
+    const wanted = new Set(
+      numbers(body.applicationNos).map((item) => item.toLowerCase()),
+    );
     const items = cases.flatMap((row) => {
       if (!wanted.has(text(row.applicationNo).toLowerCase())) return [];
       const name = [text(row.title), text(row.name)].filter(Boolean).join(" ");
@@ -143,7 +149,11 @@ export async function POST(request: NextRequest) {
       return [
         {
           to: text(row.email),
-          mail: selectionLetterReady({ name, applicationNo: text(row.applicationNo), reportBy }),
+          mail: selectionLetterReady({
+            name,
+            applicationNo: text(row.applicationNo),
+            reportBy,
+          }),
         },
       ];
     });
@@ -159,7 +169,10 @@ export async function POST(request: NextRequest) {
     return deliver(
       (data ?? []).map((row) => ({
         to: row.email,
-        mail: recognitionReady({ name: row.applicant_name, applicationNo: row.application_no }),
+        mail: recognitionReady({
+          name: row.applicant_name,
+          applicationNo: row.application_no,
+        }),
       })),
     );
   }
@@ -175,13 +188,22 @@ export async function POST(request: NextRequest) {
       .ilike("identifier", identifier)
       .maybeSingle();
     // Only a password that really belongs to the account may be mailed.
-    if (!data || typeof data.password !== "string" || !verifySecret(password, data.password)) {
+    if (
+      !data ||
+      typeof data.password !== "string" ||
+      !verifySecret(password, data.password)
+    ) {
       return NextResponse.json({ ok: false, message: "Not matched." }, { status: 400 });
     }
     return deliver([
       {
         to: data.identifier,
-        mail: loginDetails({ name: data.name, role, username: data.identifier, password }),
+        mail: loginDetails({
+          name: data.name,
+          role,
+          username: data.identifier,
+          password,
+        }),
       },
     ]);
   }

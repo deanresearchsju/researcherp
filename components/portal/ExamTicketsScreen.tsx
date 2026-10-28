@@ -3,7 +3,11 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { useClientReady } from "@/components/forms/ClientGate";
-import { MarkButtons, markSummary, type Mark } from "@/components/portal/AttendanceControls";
+import {
+  MarkButtons,
+  markSummary,
+  type Mark,
+} from "@/components/portal/AttendanceControls";
 import { DeskPage, DeskSection, DeskTabs } from "@/components/portal/Desk";
 import { ListSheet, PrintFrame } from "@/components/portal/ExamPrint";
 import { Badge } from "@/components/ui/badge";
@@ -106,14 +110,18 @@ export function ExamTicketsScreen() {
       .filter(Boolean)
       .join(", ");
 
-  async function run<T extends { ok: boolean }>(task: Promise<T>, done: (value: T) => string) {
+  async function run<T extends { ok: boolean }>(
+    task: Promise<T>,
+    done: (value: T) => string,
+  ) {
     setBusy(true);
     const result = await task;
     setBusy(false);
     setNotice(
       result.ok
         ? done(result)
-        : ((result as unknown as { message?: string }).message ?? "That could not be done."),
+        : ((result as unknown as { message?: string }).message ??
+            "That could not be done."),
     );
   }
 
@@ -171,7 +179,13 @@ export function ExamTicketsScreen() {
                   `Room: ${room.name}`,
                   `Scholars: ${list.length}`,
                 ]}
-                headers={["Seat", "Hall ticket No.", "Registration No.", "Name", "Papers"]}
+                headers={[
+                  "Seat",
+                  "Hall ticket No.",
+                  "Registration No.",
+                  "Name",
+                  "Papers",
+                ]}
                 widths={["w-16", "w-32", "w-36", "", "w-32"]}
                 bold={[0, 3]}
                 rows={list.map((ticket) => [
@@ -196,7 +210,13 @@ export function ExamTicketsScreen() {
         entry.semester === semester &&
         entry.subjectId === printing.subjectId,
     );
-    const candidates = candidatesFor(doctoral, exam, activeBatch, semester, printing.subjectId)
+    const candidates = candidatesFor(
+      doctoral,
+      exam,
+      activeBatch,
+      semester,
+      printing.subjectId,
+    )
       .filter(({ ticket }) => ticket.centreId === printing.centreId)
       .sort(
         (left, right) =>
@@ -221,7 +241,13 @@ export function ExamTicketsScreen() {
                 `Date: ${slot?.date ? formatIsoDate(slot.date) : "—"}`,
                 `Time: ${slot?.time || "—"}`,
               ]}
-              headers={["Seat", "Hall ticket No.", "Registration No.", "Name", "Signature"]}
+              headers={[
+                "Seat",
+                "Hall ticket No.",
+                "Registration No.",
+                "Name",
+                "Signature",
+              ]}
               widths={["w-14", "w-28", "w-32", "", "w-44"]}
               bold={[3]}
               tall
@@ -248,7 +274,13 @@ export function ExamTicketsScreen() {
         (left.roomId || "~").localeCompare(right.roomId || "~") ||
         Number(left.seat || 9999) - Number(right.seat || 9999),
     );
-  const attendanceRows = candidatesFor(doctoral, exam, activeBatch, semester, activeSubject)
+  const attendanceRows = candidatesFor(
+    doctoral,
+    exam,
+    activeBatch,
+    semester,
+    activeSubject,
+  )
     .filter(({ ticket }) => ticket.centreId === activeCentre)
     .sort(
       (left, right) =>
@@ -256,12 +288,17 @@ export function ExamTicketsScreen() {
         Number(left.ticket.seat || 9999) - Number(right.ticket.seat || 9999),
     );
 
-  const lock = exam.attendanceLocks[attendanceLockKey(activeBatch, semester, activeSubject, activeCentre)];
-  const unmarked = attendanceRows.filter(({ registration }) => !exam.attendance[registration.id]).length;
+  const lock =
+    exam.attendanceLocks[
+      attendanceLockKey(activeBatch, semester, activeSubject, activeCentre)
+    ];
+  const unmarked = attendanceRows.filter(
+    ({ registration }) => !exam.attendance[registration.id],
+  ).length;
   const isAdmin = session?.role === "admin";
 
   return (
-    <DeskPage kicker="Course work" title="Hall tickets & seating">
+    <DeskPage kicker="Examination" title="Hall tickets & seating">
       {exam.detail ? <p className="text-sm text-secondary">{exam.detail}</p> : null}
       {notice ? (
         <p role="status" className="text-sm font-medium text-secondary">
@@ -417,7 +454,9 @@ export function ExamTicketsScreen() {
                           <td className="px-3 py-2 font-medium text-primary">
                             {ticket.scholarName}
                           </td>
-                          <td className="px-3 py-2 font-mono text-xs">{ticket.registration}</td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {ticket.registration}
+                          </td>
                           <td className="px-3 py-2">
                             {canWrite && centres.length > 0 ? (
                               <NativeSelect
@@ -480,7 +519,8 @@ export function ExamTicketsScreen() {
                   onClick={() =>
                     void run(
                       arrangeExamSeating(activeBatch, semester, activeCentre),
-                      (result) => `${(result as { seated?: number }).seated ?? 0} scholar(s) seated.`,
+                      (result) =>
+                        `${(result as { seated?: number }).seated ?? 0} scholar(s) seated.`,
                     )
                   }
                 >
@@ -523,8 +563,8 @@ export function ExamTicketsScreen() {
                     seatingRows.map((ticket) => (
                       <tr key={ticket.id} className="border-t border-border">
                         <td className="px-3 py-2">
-                          {roomOf(centreOf(settings, ticket.centreId), ticket.roomId)?.name ??
-                            "Not seated yet"}
+                          {roomOf(centreOf(settings, ticket.centreId), ticket.roomId)
+                            ?.name ?? "Not seated yet"}
                         </td>
                         <td className="px-3 py-2 font-semibold">{ticket.seat || "—"}</td>
                         <td className="px-3 py-2 font-mono text-xs">{ticket.ticketNo}</td>
@@ -553,7 +593,11 @@ export function ExamTicketsScreen() {
               data-readonly-allow
               disabled={attendanceRows.length === 0}
               onClick={() =>
-                setPrinting({ kind: "attendance", centreId: activeCentre, subjectId: activeSubject })
+                setPrinting({
+                  kind: "attendance",
+                  centreId: activeCentre,
+                  subjectId: activeSubject,
+                })
               }
             >
               Print attendance sheets
@@ -563,7 +607,9 @@ export function ExamTicketsScreen() {
           <div className="space-y-3 p-4">
             {lock ? (
               <p className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-sm">
-                <span className="font-semibold text-primary">Frozen and forwarded to the COE</span>{" "}
+                <span className="font-semibold text-primary">
+                  Frozen and forwarded to the COE
+                </span>{" "}
                 for marks entry · {lock.by} · {formatIsoDate(lock.on)}
                 {isAdmin ? (
                   <Button
@@ -574,7 +620,12 @@ export function ExamTicketsScreen() {
                     disabled={busy}
                     onClick={() =>
                       void run(
-                        reopenAttendance(activeBatch, semester, activeSubject, activeCentre),
+                        reopenAttendance(
+                          activeBatch,
+                          semester,
+                          activeSubject,
+                          activeCentre,
+                        ),
                         () => "The attendance is open again.",
                       )
                     }
@@ -632,8 +683,14 @@ export function ExamTicketsScreen() {
                     disabled={busy || attendanceRows.length === 0 || unmarked > 0}
                     onClick={() =>
                       void run(
-                        forwardAttendance(activeBatch, semester, activeSubject, activeCentre),
-                        () => "The attendance is frozen and forwarded to the COE for marks entry.",
+                        forwardAttendance(
+                          activeBatch,
+                          semester,
+                          activeSubject,
+                          activeCentre,
+                        ),
+                        () =>
+                          "The attendance is frozen and forwarded to the COE for marks entry.",
                       )
                     }
                   >
@@ -643,7 +700,9 @@ export function ExamTicketsScreen() {
               ) : null}
               <span className="ml-auto text-sm text-muted-foreground">
                 {markSummary(
-                  attendanceRows.map(({ registration }) => exam.attendance[registration.id] ?? ""),
+                  attendanceRows.map(
+                    ({ registration }) => exam.attendance[registration.id] ?? "",
+                  ),
                 )}
               </span>
             </div>
@@ -668,8 +727,8 @@ export function ExamTicketsScreen() {
                     attendanceRows.map(({ registration, ticket }) => (
                       <tr key={registration.id} className="border-t border-border">
                         <td className="px-3 py-2">
-                          {roomOf(centreOf(settings, ticket.centreId), ticket.roomId)?.name ??
-                            "—"}{" "}
+                          {roomOf(centreOf(settings, ticket.centreId), ticket.roomId)
+                            ?.name ?? "—"}{" "}
                           · {ticket.seat || "—"}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs">{ticket.ticketNo}</td>

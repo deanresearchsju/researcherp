@@ -21,7 +21,7 @@ Everything your scholars submit comes to you first.
 
 ## The RAC
 
-After your scholar is admitted, **RAC proposal**: name two internal and two external members with their designation, department, institution, e-mail, phone and specialisation. The Dean approves one internal and one external member. After that the RAC shows to you and to the scholar.
+Name **1 to 3 internal and 2 to 3 external members**, each with designation, institution, address, e-mail, contact number, area of research and the latest five publications (type them; no document is uploaded). The Dean selects one external member and the Vice Chancellor gives the final approval. Thesis evaluators need the same details.
 
 ## Thesis evaluators (confidential)
 
@@ -30,6 +30,10 @@ After the Dean accepts the synopsis, **Thesis evaluators**: propose nine experts
 ## Your scholars and your vacancy
 
 Your quota is fixed by your designation (Professor 8, Associate Professor 6, Assistant Professor 4). The office allots scholars only while you have a vacancy.
+
+## Your password
+
+Press **Change password** at the top: give the current password, then a strong new one (10 or more characters, with a capital letter, a small letter, a digit and a symbol).
 
 ## My details
 

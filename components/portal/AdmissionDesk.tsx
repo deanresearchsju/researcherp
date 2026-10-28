@@ -376,7 +376,7 @@ export function AdmissionDesk({
     void syncAllotments(users?.users ?? []);
   }, [canSync, users]);
 
-  if (!ready || !store) {
+  if (!ready || !store || !storedApplications) {
     return <p className="text-sm text-muted-foreground">Loading the admission file…</p>;
   }
 
@@ -1413,7 +1413,10 @@ export function AdmissionDesk({
     const options = new Map<string, { name: string; department: string }>();
     for (const item of researchRegister.supervisors) {
       if (item.active) {
-        options.set(item.name.toLowerCase(), { name: item.name, department: item.department });
+        options.set(item.name.toLowerCase(), {
+          name: item.name,
+          department: item.department,
+        });
       }
     }
     for (const account of accounts) {
@@ -3475,7 +3478,9 @@ export function AdmissionDesk({
               </Button>
             ) : null}
           </div>
-          <p className={cn("text-sm", block ? "text-secondary" : "text-muted-foreground")}>
+          <p
+            className={cn("text-sm", block ? "text-secondary" : "text-muted-foreground")}
+          >
             {block ??
               (isAdmin
                 ? "Every selected candidate is verified. Finishing archives the remaining files and starts the admitted scholars in semester 1."
@@ -3801,14 +3806,17 @@ export function AdmissionDesk({
         >
           <ul className="list-disc space-y-1 pl-5 text-sm">
             <li>
-              {cases.length} application(s) of {sessionName || "this session"} are deleted.
+              {cases.length} application(s) of {sessionName || "this session"} are
+              deleted.
             </li>
             <li>
               {cases.filter((row) => row.verification === "Approved").length} admitted
               scholar(s) are removed from the ERP with their sign-ins, guides and course
               records.
             </li>
-            <li>The selection file and its progress are cleared. This cannot be undone.</li>
+            <li>
+              The selection file and its progress are cleared. This cannot be undone.
+            </li>
           </ul>
           <label className="mt-3 grid gap-1 text-sm">
             <span className="font-semibold text-primary">Type DISCARD to confirm</span>

@@ -57,9 +57,12 @@ export function ExamResultsScreen() {
   const isAdmin = session?.role === "admin";
   const settings = exam.settings;
   const files = [...exam.files].sort((left, right) =>
-    `${right.sessionYear}${right.semester}`.localeCompare(`${left.sessionYear}${left.semester}`),
+    `${right.sessionYear}${right.semester}`.localeCompare(
+      `${left.sessionYear}${left.semester}`,
+    ),
   );
-  const batchName = (id: string) => doctoral.batches.find((batch) => batch.id === id)?.name ?? id;
+  const batchName = (id: string) =>
+    doctoral.batches.find((batch) => batch.id === id)?.name ?? id;
   const subjectLabel = (id: string) => {
     const subject = doctoral.subjects.find((item) => item.id === id);
     return subject ? `${subject.code} ${subject.name}` : id;
@@ -72,7 +75,8 @@ export function ExamResultsScreen() {
     setNotice(
       result.ok
         ? done
-        : ((result as unknown as { message?: string }).message ?? "That could not be done."),
+        : ((result as unknown as { message?: string }).message ??
+            "That could not be done."),
     );
     return result.ok;
   }
@@ -115,13 +119,19 @@ export function ExamResultsScreen() {
               `Semester: ${file.semester}`,
               `Session: ${file.sessionMonth} ${file.sessionYear}`,
               `Status: ${statusWords[file.status]}`,
-              file.boardOn ? `Passing board: ${formatIsoDate(file.boardOn)}` : "Passing board: —",
+              file.boardOn
+                ? `Passing board: ${formatIsoDate(file.boardOn)}`
+                : "Passing board: —",
             ]}
             headers={["Registration No.", "Name", "Code", "Marks", "Grade", "Result"]}
             widths={["w-36", "", "w-24", "w-16", "w-14", "w-16"]}
             bold={[1]}
             rows={rows.map((row) => row.cells)}
-            signatures={["Controller of Examinations", "Dean, Research and Development", "Vice Chancellor"]}
+            signatures={[
+              "Controller of Examinations",
+              "Dean, Research and Development",
+              "Vice Chancellor",
+            ]}
             perPage={24}
           />
         </PrintFrame>
@@ -132,7 +142,7 @@ export function ExamResultsScreen() {
   const decidingFile = exam.files.find((file) => file.id === deciding) ?? null;
 
   return (
-    <DeskPage kicker="Course work" title="Result approval">
+    <DeskPage kicker="Examination" title="Result approval">
       {exam.detail ? <p className="text-sm text-secondary">{exam.detail}</p> : null}
       {notice ? (
         <p role="status" className="text-sm font-medium text-secondary">
@@ -148,7 +158,8 @@ export function ExamResultsScreen() {
         files.map((file) => {
           const frozen = file.sheets.filter((sheet) => sheet.status === "Frozen").length;
           const canPublish =
-            file.status === "Approved" || (file.status === "Submitted" && file.afterBoard);
+            file.status === "Approved" ||
+            (file.status === "Submitted" && file.afterBoard);
           return (
             <DeskSection
               key={file.id}
@@ -202,7 +213,9 @@ export function ExamResultsScreen() {
                   {file.boardOn
                     ? ` · passing board ${formatIsoDate(file.boardOn)}${file.boardRef ? ` (${file.boardRef})` : ""}`
                     : ""}
-                  {file.publishedOn ? ` · published ${formatIsoDate(file.publishedOn)}` : ""}
+                  {file.publishedOn
+                    ? ` · published ${formatIsoDate(file.publishedOn)}`
+                    : ""}
                 </p>
                 {file.boardNote && file.status !== "Published" ? (
                   <p className="font-medium text-secondary">Board: {file.boardNote}</p>
@@ -275,12 +288,16 @@ export function ExamResultsScreen() {
                     ) : (
                       file.log.map((entry, index) => (
                         <li key={index}>
-                          <span className="font-semibold text-primary">{entry.action}</span>
+                          <span className="font-semibold text-primary">
+                            {entry.action}
+                          </span>
                           <span className="text-muted-foreground">
                             {" "}
                             · {formatIsoDate(entry.on)} · {entry.by}
                           </span>
-                          {entry.note ? <p className="text-muted-foreground">{entry.note}</p> : null}
+                          {entry.note ? (
+                            <p className="text-muted-foreground">{entry.note}</p>
+                          ) : null}
                         </li>
                       ))
                     )}
@@ -295,7 +312,9 @@ export function ExamResultsScreen() {
       {decidingFile ? (
         <FormDialog
           title="Passing board"
-          submitLabel={decision === "Approved" ? "Record approval" : "Send back to the COE"}
+          submitLabel={
+            decision === "Approved" ? "Record approval" : "Send back to the COE"
+          }
           busy={busy}
           size="lg"
           onClose={() => setDeciding(null)}
@@ -327,13 +346,17 @@ export function ExamResultsScreen() {
                     checked={decision === item}
                     onChange={() => setDecision(item)}
                   />
-                  {item === "Approved" ? "Approved as it is" : "Changes suggested (bossing etc.)"}
+                  {item === "Approved"
+                    ? "Approved as it is"
+                    : "Changes suggested (bossing etc.)"}
                 </label>
               ))}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-1">
-                <span className="font-semibold text-primary">Date of the passing board</span>
+                <span className="font-semibold text-primary">
+                  Date of the passing board
+                </span>
                 <Input
                   type="date"
                   value={on}
@@ -393,4 +416,3 @@ export function ExamResultsScreen() {
     </DeskPage>
   );
 }
-

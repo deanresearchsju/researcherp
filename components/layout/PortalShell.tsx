@@ -7,6 +7,7 @@ import {
   GraduationCap,
   Landmark,
   LayoutDashboard,
+  KeyRound,
   LogOut,
   Menu,
   UserRound,
@@ -17,6 +18,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type SyntheticEvent } from "react";
 
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { Logo } from "@/components/brand/Logo";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,7 @@ import {
 import { clearPreviewSession, loginHref, type PreviewSession } from "@/lib/auth";
 import { university } from "@/lib/constants";
 import { closeOfficeView } from "@/lib/office-view";
+import { useSignInWatch } from "@/lib/use-sign-in-watch";
 import { useOfficeView, usePreviewSession } from "@/lib/use-preview-session";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 import { warmPortalData } from "@/lib/portal-warm";
@@ -320,6 +323,8 @@ export function PortalShell({
   const view = useOfficeView();
   const [viewNotice, setViewNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  useSignInWatch();
   const users = useSyncExternalStore(
     subscribePortalUsers,
     currentPortalUsers,
@@ -562,15 +567,15 @@ export function PortalShell({
           >
             <Menu className="size-5" />
           </button>
-          <div className="min-w-0">
-            <p className="text-[0.65rem] font-bold tracking-[0.16em] text-gold-ink uppercase">
+          <div className="min-w-0 flex-1 sm:flex-none">
+            <p className="truncate text-[0.65rem] font-bold tracking-[0.16em] text-gold-ink uppercase">
               {roleProfiles[role].label}
             </p>
             <p className="truncate text-sm font-semibold text-foreground">
               {university.productName}
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -652,6 +657,18 @@ export function PortalShell({
             <span className="hidden max-w-40 truncate text-sm text-muted-foreground sm:inline">
               {identity}
             </span>
+            {!viewing ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPasswordOpen(true)}
+                data-readonly-allow
+              >
+                <KeyRound className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Change password</span>
+                <span className="sr-only sm:hidden">Change password</span>
+              </Button>
+            ) : null}
             {viewing ? (
               <Button variant="outline" size="sm" onClick={leaveView}>
                 {session?.role === "supervisor"
@@ -697,6 +714,9 @@ export function PortalShell({
           )}
         </div>
       </div>
+      {passwordOpen ? (
+        <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />
+      ) : null}
     </div>
   );
 }

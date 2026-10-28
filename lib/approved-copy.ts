@@ -186,11 +186,29 @@ export async function buildApprovedCopy(
       });
       let lineY = top - 33;
       const stampLine = (label: string, by: string, at: string) => {
-        page.drawText(label, { x: x + 10, y: lineY, size: 6.6, font: bold, color: green });
+        page.drawText(label, {
+          x: x + 10,
+          y: lineY,
+          size: 6.6,
+          font: bold,
+          color: green,
+        });
         lineY -= 9;
-        page.drawText(by.slice(0, 40), { x: x + 10, y: lineY, size: 8, font, color: green });
+        page.drawText(by.slice(0, 40), {
+          x: x + 10,
+          y: lineY,
+          size: 8,
+          font,
+          color: green,
+        });
         lineY -= 9;
-        page.drawText(momentLabel(at), { x: x + 10, y: lineY, size: 8, font, color: green });
+        page.drawText(momentLabel(at), {
+          x: x + 10,
+          y: lineY,
+          size: 8,
+          font,
+          color: green,
+        });
         lineY -= 11;
       };
       if (stamp.supervisor) {
@@ -301,14 +319,19 @@ export async function buildApprovedCopy(
     ...(stamp.scholarId ? ([["Scholar ID", stamp.scholarId]] as [string, string][]) : []),
     ...(stamp.details ?? []).map((item) => [item.label, item.value] as [string, string]),
     ["Document", fileName?.trim() || "Recorded by the research office"],
-    ["Status", "APPROVED"],
+    ["Status", partial ? "APPROVED BY SUPERVISOR · AWAITING THE DEAN" : "APPROVED"],
     ...(stamp.supervisor
       ? ([
           [
             "Approved by Supervisor",
             `${stamp.supervisor.by || "—"} · ${momentLabel(stamp.supervisor.at)}`,
           ],
-          ["Approved by Dean", `${deanBy} · ${momentLabel(deanAt)}`],
+          ...(partial
+            ? []
+            : ([["Approved by Dean", `${deanBy} · ${momentLabel(deanAt)}`]] as [
+                string,
+                string,
+              ][])),
         ] as [string, string][])
       : ([
           ["Approved on", momentLabel(deanAt)],
@@ -439,9 +462,7 @@ export async function stampedPreview(
   fileName: string | null | undefined,
   stamp: ApprovalStamp,
 ) {
-  const bytes = await buildApprovedCopy(fileData, fileName, stamp, null, {
-    recordPage: false,
-  });
+  const bytes = await buildApprovedCopy(fileData, fileName, stamp, null);
   let binary = "";
   for (let index = 0; index < bytes.length; index += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));

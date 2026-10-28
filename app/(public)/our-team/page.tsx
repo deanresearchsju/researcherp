@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { TeamList } from "@/components/team/TeamList";
-import { Container } from "@/components/ui/container";
 import { pageHeroes } from "@/data/page-heroes";
 import { university } from "@/lib/constants";
-import { loadTeam, officeTeam } from "@/lib/team";
+import { publicTeam } from "@/lib/public-team";
 
 export const metadata: Metadata = {
   title: "Our Team",
@@ -14,26 +12,13 @@ export const metadata: Metadata = {
   alternates: { canonical: "/our-team" },
 };
 
-async function TeamBoard() {
-  const loaded = await loadTeam();
-  const members = loaded.source === "empty" ? officeTeam() : loaded.members;
-  return <TeamList members={members} />;
-}
-
-export default function OurTeamPage() {
+export default async function OurTeamPage() {
   const copy = pageHeroes.team;
+  const members = await publicTeam();
   return (
     <>
       <PageHeader eyebrow={copy.eyebrow} title={copy.title} summary={copy.summary} />
-      <Suspense
-        fallback={
-          <Container className="py-10">
-            <p className="text-sm text-muted-foreground">Loading the team…</p>
-          </Container>
-        }
-      >
-        <TeamBoard />
-      </Suspense>
+      <TeamList members={members} />
     </>
   );
 }

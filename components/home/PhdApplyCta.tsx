@@ -5,7 +5,11 @@ import { useSyncExternalStore } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { heroCopy } from "@/data/sections";
-import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
+import {
+  currentSiteSettings,
+  defaultSiteSettings,
+  subscribeSiteSettings,
+} from "@/lib/office";
 
 export function PhdApplyCta() {
   const settings = useSyncExternalStore(

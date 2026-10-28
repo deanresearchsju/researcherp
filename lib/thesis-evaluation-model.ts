@@ -22,8 +22,13 @@ export type Evaluator = {
   address: string;
   email: string;
   phone: string;
+  /** Area of research. */
   specialization: string;
+  /** The latest publications (five), named in words: no document is uploaded. */
+  publications: string[];
 };
+
+export const publicationsRequired = 5;
 
 export const inviteStatuses = [
   "Not contacted",
@@ -73,7 +78,13 @@ export type EvaluationRecord = {
 /** What a supervisor may see: own nominations only, never the Dean's choice or invitations. */
 export type SupervisorEvaluationView = Omit<
   EvaluationRecord,
-  "selection" | "selectedBy" | "selectedOn" | "selectedAt" | "approvedBy" | "approvedOn" | "approvedAt"
+  | "selection"
+  | "selectedBy"
+  | "selectedOn"
+  | "selectedAt"
+  | "approvedBy"
+  | "approvedOn"
+  | "approvedAt"
 > & { locked: boolean };
 
 export function scholarKeyOf(identifier: string) {
@@ -89,7 +100,16 @@ export function blankEvaluator(): Evaluator {
     email: "",
     phone: "",
     specialization: "",
+    publications: Array.from({ length: publicationsRequired }, () => ""),
   };
+}
+
+/** Exactly five entries, whatever was saved (older records had none). */
+export function publicationList(value: unknown) {
+  const list = Array.isArray(value)
+    ? value.map((item) => (typeof item === "string" ? item : ""))
+    : [];
+  return Array.from({ length: publicationsRequired }, (_, index) => list[index] ?? "");
 }
 
 function text(value: unknown) {
@@ -107,6 +127,7 @@ function parseEvaluator(value: unknown): Evaluator {
     email: text(row.email),
     phone: text(row.phone),
     specialization: text(row.specialization),
+    publications: publicationList(row.publications),
   };
 }
 
@@ -279,6 +300,16 @@ export function nominationProblem(
       }
       if (!/^\S+@\S+\.\S+$/.test(person.email.trim())) {
         return `Enter a valid email for ${person.name || "each evaluator"}.`;
+      }
+      const who = person.name.trim() || "each evaluator";
+      if (person.designation.trim().length < 2) return `Enter the designation of ${who}.`;
+      if (person.address.trim().length < 5) return `Enter the address of ${who}.`;
+      if (person.phone.replace(/\D/g, "").length < 8)
+        return `Enter the contact number of ${who}.`;
+      if (person.specialization.trim().length < 2)
+        return `Enter the area of research of ${who}.`;
+      if (publicationList(person.publications).some((item) => item.trim().length < 5)) {
+        return `Name the latest ${publicationsRequired} publications of ${who}.`;
       }
     }
   }

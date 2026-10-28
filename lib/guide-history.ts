@@ -67,7 +67,11 @@ async function read() {
       .eq("id", rowId)
       .maybeSingle();
     if (!error) {
-      return { changes: parse(data?.payload), stamp: data?.updated_at ?? null, remote: true };
+      return {
+        changes: parse(data?.payload),
+        stamp: data?.updated_at ?? null,
+        remote: true,
+      };
     }
   }
   try {
@@ -124,7 +128,8 @@ export async function recordGuideChange(entry: ChangeInput) {
     };
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const current = await read();
-      if (await write([...current.changes, change], current.stamp, current.remote)) return;
+      if (await write([...current.changes, change], current.stamp, current.remote))
+        return;
     }
   } catch {
     // The history is a record; it must not stop the work it records.

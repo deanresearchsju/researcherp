@@ -9,6 +9,8 @@ import {
   supervisorKeys,
   vidwanLink,
 } from "@/lib/register";
+import { parseSchools } from "@/lib/research-areas";
+import { schoolOfDepartment } from "@/lib/schools";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { createSupabase } from "@/lib/supabase/client";
 
@@ -18,6 +20,8 @@ export type PublicSupervisor = {
   name: string;
   designation: string;
   department: string;
+  /** The school the department belongs to. */
+  school: string;
   researchArea: string;
   bio: string;
   vidwanUrl: string;
@@ -56,6 +60,16 @@ async function loadEntries(): Promise<Entry[]> {
     .eq("id", "register")
     .maybeSingle();
   const payload = data?.payload as { profiles?: unknown } | null;
+  const areasRow = await supabase
+    .from("research_areas")
+    .select("payload")
+    .eq("id", "areas")
+    .maybeSingle();
+  const kept = parseSchools(
+    (areasRow.data?.payload as { schools?: unknown } | null)?.schools,
+  );
+  // The schools kept under Research areas; the built-in list until something is kept there.
+  const catalogue = kept.length > 0 ? kept : undefined;
   const published = parseProfiles(payload?.profiles)
     .filter((item) => item.published && item.name.trim())
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -80,6 +94,7 @@ async function loadEntries(): Promise<Entry[]> {
       name: item.name.trim(),
       designation: item.designation.trim(),
       department: item.department.trim(),
+      school: schoolOfDepartment(item.department, catalogue),
       researchArea: item.researchArea.trim(),
       bio: item.bio.trim(),
       vidwanUrl: vidwanLink(item.vidwan),
@@ -97,6 +112,7 @@ export async function publicSupervisors(): Promise<PublicSupervisor[]> {
     name: entry.name,
     designation: entry.designation,
     department: entry.department,
+    school: entry.school,
     researchArea: entry.researchArea,
     bio: entry.bio,
     vidwanUrl: entry.vidwanUrl,

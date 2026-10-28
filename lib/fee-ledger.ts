@@ -4,7 +4,12 @@ import { currentDoctoral, enrollmentFor } from "@/lib/doctoral";
 import { feePlan, programmeStart, type FeeYear } from "@/lib/fees";
 import { sameId } from "@/lib/office";
 import { batchById, intakeOfCase } from "@/lib/batches";
-import { isPassedOut, scholarBySignIn, scholarSignInId, registerScholarsInOrder } from "@/lib/register";
+import {
+  isPassedOut,
+  scholarBySignIn,
+  scholarSignInId,
+  registerScholarsInOrder,
+} from "@/lib/register";
 import type { ScholarRecord } from "@/lib/scholar-records";
 
 export type FeeLedger = {

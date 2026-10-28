@@ -29,7 +29,13 @@ function Portrait({
       {photo ? (
         // Stored team photograph; next/image cannot serve a data URL.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={photo} alt={name} className="size-full object-cover object-top" />
+        <img
+          src={photo}
+          alt={name}
+          loading="lazy"
+          decoding="async"
+          className="size-full object-cover object-top"
+        />
       ) : (
         <div className="flex size-full items-center justify-center">
           <UserRound className="size-10 text-muted-foreground/60" aria-hidden="true" />

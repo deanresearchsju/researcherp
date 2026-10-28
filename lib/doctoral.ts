@@ -66,6 +66,10 @@ export type CourseSubject = {
   inChargeEmail: string;
   syllabusName: string | null;
   syllabusData: string | null;
+  /** Only an approved subject can be chosen at course-work registration. */
+  status: "Pending" | "Approved";
+  approvedBy: string;
+  approvedOn: string;
 };
 
 export type CourseEnrollment = {
@@ -544,6 +548,11 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           inChargeEmail: text(subject.inChargeEmail),
           syllabusName: text(subject.syllabusName) || null,
           syllabusData: text(subject.syllabusData) || null,
+          // A subject saved before approval existed counts as approved.
+          status:
+            subject.status === "Pending" ? ("Pending" as const) : ("Approved" as const),
+          approvedBy: text(subject.approvedBy),
+          approvedOn: text(subject.approvedOn),
         },
       ];
     }),
@@ -1089,9 +1098,94 @@ export async function setBatch(
   return saveDoctoral(next);
 }
 
-export async function saveSubject(subject: Omit<CourseSubject, "id">) {
+/** A subject code compared without case or spaces, so "RM 101" and "rm101" are the same code. */
+export function subjectCodeKey(code: string) {
+  return code.toLowerCase().replace(/\s+/g, "");
+}
+
+/**
+ * Why a subject can not be saved: the code, the title and the syllabus must all be given, and a
+ * code can be used for one subject only.
+ */
+export function subjectProblem(
+  subjects: readonly Pick<CourseSubject, "id" | "code">[],
+  input: {
+    code: string;
+    name: string;
+    syllabusName: string | null;
+    syllabusData: string | null;
+  },
+  ignoreId = "",
+) {
+  if (input.code.trim().length < 2) return "Enter the subject code.";
+  if (input.name.trim().length < 2) return "Enter the subject title.";
+  if (!input.syllabusName || !input.syllabusData) return "Upload the syllabus (PDF).";
+  const key = subjectCodeKey(input.code);
+  if (
+    subjects.some((item) => item.id !== ignoreId && subjectCodeKey(item.code) === key)
+  ) {
+    return `The subject code ${input.code.trim().toUpperCase()} is already used. Each code belongs to one subject.`;
+  }
+  return null;
+}
+
+/** A new subject waits for approval; it is not offered at registration until then. */
+export async function saveSubject(
+  subject: Omit<CourseSubject, "id" | "status" | "approvedBy" | "approvedOn">,
+) {
   const next = snapshot();
-  next.subjects = [{ ...subject, id: localId() }, ...next.subjects];
+  const problem = subjectProblem(next.subjects, subject);
+  if (problem) return { ok: false as const, message: problem };
+  next.subjects = [
+    {
+      ...subject,
+      code: subject.code.trim(),
+      name: subject.name.trim(),
+      id: localId(),
+      status: "Pending",
+      approvedBy: "",
+      approvedOn: "",
+    },
+    ...next.subjects,
+  ];
+  return saveDoctoral(next);
+}
+
+/** The Dean or the administrator approves a subject for registration. */
+export async function approveSubject(id: string) {
+  const session = readPreviewSession();
+  if (!session || (session.role !== "admin" && session.role !== "dean")) {
+    return {
+      ok: false as const,
+      message: "Only the Dean or the administrator can approve a subject.",
+    };
+  }
+  const next = snapshot();
+  const subject = next.subjects.find((item) => item.id === id);
+  if (!subject) return { ok: false as const, message: "That subject is not listed." };
+  next.subjects = next.subjects.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          status: "Approved" as const,
+          approvedBy: session.name.trim() || session.identifier,
+          approvedOn: clientToday(),
+        }
+      : item,
+  );
+  return saveDoctoral(next);
+}
+
+/** A subject that nobody has registered can be removed (for example a wrong entry). */
+export async function removeSubject(id: string) {
+  const next = snapshot();
+  if (next.registrations.some((item) => item.subjectId === id)) {
+    return {
+      ok: false as const,
+      message: "Scholars have registered this subject. It can not be removed.",
+    };
+  }
+  next.subjects = next.subjects.filter((item) => item.id !== id);
   return saveDoctoral(next);
 }
 
@@ -1987,8 +2081,7 @@ export async function recommendSubmission(
   const next = snapshot();
   const label = kind === "synopsis" ? "synopsis" : "thesis";
   const list = (kind === "synopsis" ? next.synopses : next.theses) as (
-    | SynopsisSubmission
-    | ThesisSubmission
+    SynopsisSubmission | ThesisSubmission
   )[];
   const current = list.find((item) => item.id === id);
   if (!current || current.status !== "Submitted" || current.supervisorStatus !== "") {
@@ -2526,7 +2619,10 @@ export async function decideSynopsis(
     current.needsSupervisor &&
     current.supervisorStatus !== "Recommended"
   ) {
-    return { ok: false as const, message: "The supervisor has to approve the synopsis first." };
+    return {
+      ok: false as const,
+      message: "The supervisor has to approve the synopsis first.",
+    };
   }
   next.synopses = next.synopses.map((item) =>
     item.id === id ? { ...item, ...decision, ...deanStamp() } : item,
@@ -2552,7 +2648,14 @@ export async function decideSynopsis(
 export async function saveThesis(
   thesis: Omit<
     ThesisSubmission,
-    "id" | "status" | "remarks" | "decidedOn" | "createdAt" | "version" | "versions" | ChainKeys
+    | "id"
+    | "status"
+    | "remarks"
+    | "decidedOn"
+    | "createdAt"
+    | "version"
+    | "versions"
+    | ChainKeys
   >,
 ) {
   const next = snapshot();
@@ -2644,7 +2747,10 @@ export async function decideThesis(
     current.needsSupervisor &&
     current.supervisorStatus !== "Recommended"
   ) {
-    return { ok: false as const, message: "The supervisor has to approve the thesis first." };
+    return {
+      ok: false as const,
+      message: "The supervisor has to approve the thesis first.",
+    };
   }
   next.theses = next.theses.map((item) =>
     item.id === id ? { ...item, ...decision, ...deanStamp() } : item,
@@ -3189,6 +3295,7 @@ export function courseCatalogFor(
     enrollmentFor(state, input.identifier)?.school,
   );
   return state.subjects.filter((subject) => {
+    if (subject.status !== "Approved") return false;
     if (subject.semester !== input.semester) return false;
     if (subject.batchId && subject.batchId !== input.batchId) return false;
     if (input.semester === 1) return isCommonSchool(subject.school);

@@ -21,6 +21,7 @@ export function SupervisorCard({
   first?: boolean;
 }) {
   const role = [profile.designation, profile.department].filter(Boolean).join(" · ");
+  const school = profile.school;
   return (
     <article
       id={profile.slug}
@@ -65,12 +66,19 @@ export function SupervisorCard({
               >
                 Vidwan{profile.vidwanId ? ` · ${profile.vidwanId}` : ""}
                 <ExternalLink className="size-3.5" aria-hidden="true" />
-                <span className="sr-only">profile of {profile.name} (opens in a new tab)</span>
+                <span className="sr-only">
+                  profile of {profile.name} (opens in a new tab)
+                </span>
               </a>
             ) : null}
           </div>
           {role ? (
             <p className="mt-1 text-sm font-medium text-muted-foreground">{role}</p>
+          ) : null}
+          {school ? (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              <span className="font-semibold text-primary">School:</span> {school}
+            </p>
           ) : null}
           {profile.researchArea ? (
             <div className="mt-4 rounded-xl bg-muted/60 px-4 py-3">

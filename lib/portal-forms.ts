@@ -77,16 +77,13 @@ export function formDownloadHref(id: string) {
   return `/api/forms?id=${encodeURIComponent(id)}`;
 }
 
-type ListResult =
-  | { ok: true; forms: PortalForm[] }
-  | { ok: false; message: string };
+type ListResult = { ok: true; forms: PortalForm[] } | { ok: false; message: string };
 
 export async function listForms(): Promise<ListResult> {
   try {
     const response = await fetch("/api/forms", { cache: "no-store" });
     const body = (await response.json()) as
-      | { ok: true; forms: PortalForm[] }
-      | { ok: false; message: string };
+      { ok: true; forms: PortalForm[] } | { ok: false; message: string };
     return body.ok ? { ok: true, forms: body.forms } : body;
   } catch {
     return { ok: false, message: "The forms could not be loaded. Check the connection." };

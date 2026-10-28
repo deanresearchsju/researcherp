@@ -7,6 +7,7 @@ import {
   subscribeResearchAreas,
 } from "@/lib/research-areas";
 import { guideOptions } from "@/lib/supervision";
+import { schoolOfDepartment } from "@/lib/schools";
 import { vacancySchoolName, type Vacancy } from "@/lib/vacancies";
 
 /** Waits until a store has loaded its data (the stores load on the first subscription). */
@@ -57,9 +58,21 @@ export async function loadLiveVacancies(): Promise<Vacancy[]> {
   await ready(currentAreaLoad, subscribeResearchAreas);
   const rows: Vacancy[] = [];
   let serial = 1;
-  for (const school of currentResearchAreas()) {
+  const catalogue = currentResearchAreas();
+  for (const school of catalogue) {
     const own = shortName(school.name).trim();
-    const departments = school.areas.length > 0 ? school.areas : [own];
+    // The departments kept for the school, and any department a supervisor of the school is in
+    // that is not kept there yet: every department shown under the supervisors list is listed.
+    const kept = school.areas.length > 0 ? school.areas : [own];
+    const fromSupervisors = [
+      ...new Set(options.map((item) => item.subject.trim())),
+    ].filter(
+      (subject) =>
+        subject &&
+        !kept.some((name) => sameDepartment(subject, name)) &&
+        schoolOfDepartment(subject, catalogue) === school.name,
+    );
+    const departments = [...kept, ...fromSupervisors];
     for (const department of departments) {
       const seats = options
         .filter(

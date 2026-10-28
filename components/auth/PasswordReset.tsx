@@ -17,12 +17,10 @@ import { usePreviewSession } from "@/lib/use-preview-session";
 
 const schema = z
   .object({
-    password: z
-      .string()
-      .superRefine((value, context) => {
-        const problem = passwordProblem(value);
-        if (problem) context.addIssue({ code: "custom", message: problem });
-      }),
+    password: z.string().superRefine((value, context) => {
+      const problem = passwordProblem(value);
+      if (problem) context.addIssue({ code: "custom", message: problem });
+    }),
     confirm: z.string().min(1, "Repeat the new password.").max(128),
   })
   .refine((value) => value.password === value.confirm, {

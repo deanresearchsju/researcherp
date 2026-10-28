@@ -24,7 +24,10 @@ export type PasswordCheck = { label: string; ok: boolean };
 
 export function passwordChecks(password: string): PasswordCheck[] {
   return [
-    { label: `At least ${passwordMinLength} characters`, ok: password.length >= passwordMinLength },
+    {
+      label: `At least ${passwordMinLength} characters`,
+      ok: password.length >= passwordMinLength,
+    },
     { label: "A capital letter", ok: /[A-Z]/.test(password) },
     { label: "A small letter", ok: /[a-z]/.test(password) },
     { label: "A digit", ok: /\d/.test(password) },

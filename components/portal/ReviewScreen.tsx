@@ -28,7 +28,6 @@ import {
 import { usePortalSession } from "@/lib/use-preview-session";
 import { recordViewStamp } from "@/lib/approved-documents";
 
-
 export function ReviewScreen() {
   const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);

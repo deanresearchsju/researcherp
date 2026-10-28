@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 
 import { PrintFit } from "@/components/layout/PrintFit";
@@ -15,6 +15,12 @@ const inter = Inter({
 });
 
 const description = `Ph.D. admissions in January and July, scholar milestones, and supervisor recognition at ${university.name}. ${university.tagline}.`;
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#4b1f6f",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(university.siteUrl),
@@ -49,7 +55,12 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
-    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
 };
 

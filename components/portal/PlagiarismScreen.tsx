@@ -92,7 +92,7 @@ function IssueDialog({
       setError("Tick every checklist item before issuing the certificate.");
       return;
     }
-    const problem = fileError(file?.file ?? null, "document", true);
+    const problem = fileError(file?.file ?? null, "pdfDocument", true);
     if (problem || !file?.file) {
       setError(problem ?? "Attach the plagiarism report.");
       return;
@@ -167,7 +167,7 @@ function IssueDialog({
         <FormField label="Plagiarism report" htmlFor="plag-file" required>
           <FileUpload
             id="plag-file"
-            acceptRule="document"
+            acceptRule="pdfDocument"
             value={file}
             onChange={setFile}
           />

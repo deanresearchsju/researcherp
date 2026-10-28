@@ -1,7 +1,7 @@
 export const registrationCopy = {
   menu: "Registration numbers",
   title: "Registration numbers",
-  kicker: "Admissions",
+  kicker: "Examination",
   detail:
     "Record registration numbers batch-wise. A number is permanent: once recorded it is never changed.",
   batch: "Batch",

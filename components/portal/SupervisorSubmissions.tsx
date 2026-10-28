@@ -4,7 +4,12 @@ import { useState, useSyncExternalStore } from "react";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
-import { DeskPage, FormDialog, GateBanner, ViewFilesButton } from "@/components/portal/Desk";
+import {
+  DeskPage,
+  FormDialog,
+  GateBanner,
+  ViewFilesButton,
+} from "@/components/portal/Desk";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +21,12 @@ import {
   type SynopsisSubmission,
   type ThesisSubmission,
 } from "@/lib/doctoral";
-import { currentOffice, sameId, scholarsStillGuidedBy, subscribeOffice } from "@/lib/office";
+import {
+  currentOffice,
+  sameId,
+  scholarsStillGuidedBy,
+  subscribeOffice,
+} from "@/lib/office";
 import { scholarSignInId } from "@/lib/register";
 import { usePortalSession } from "@/lib/use-preview-session";
 import { chainViewStamp } from "@/lib/approved-documents";
@@ -35,9 +45,10 @@ export function SupervisorSubmissions() {
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
-  const [acting, setActing] = useState<{ item: Item; status: "Recommended" | "Returned" } | null>(
-    null,
-  );
+  const [acting, setActing] = useState<{
+    item: Item;
+    status: "Recommended" | "Returned";
+  } | null>(null);
   const [remarks, setRemarks] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +174,9 @@ export function SupervisorSubmissions() {
           onClose={() => setActing(null)}
           onSubmit={(event) => void submit(event)}
           submitLabel={
-            acting.status === "Recommended" ? "Approve and send to the Dean" : "Reject with comments"
+            acting.status === "Recommended"
+              ? "Approve and send to the Dean"
+              : "Reject with comments"
           }
           size="sm"
         >

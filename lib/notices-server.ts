@@ -12,13 +12,11 @@ export async function insertOfficeNotice(input: {
   const { error } = await supabase.from("portal_notices").insert(row);
   if (error) {
     // Before the inbox migration the table has no href column.
-    await supabase
-      .from("portal_notices")
-      .insert({
-        role: row.role,
-        identifier: row.identifier,
-        title: row.title,
-        detail: row.detail,
-      });
+    await supabase.from("portal_notices").insert({
+      role: row.role,
+      identifier: row.identifier,
+      title: row.title,
+      detail: row.detail,
+    });
   }
 }

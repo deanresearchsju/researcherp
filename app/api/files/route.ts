@@ -64,7 +64,8 @@ export async function POST(request: NextRequest) {
   if (!isPublic && s3Enabled()) {
     const month = new Date().toISOString().slice(0, 7);
     const key = `${folder}/${month}/${crypto.randomUUID()}.${kind.ext}`;
-    if (!(await putS3(key, bytes, kind.mime))) return fail("File storage is not ready.", 503);
+    if (!(await putS3(key, bytes, kind.mime)))
+      return fail("File storage is not ready.", 503);
     return NextResponse.json({ ok: true, ref: `/api/files/${key}` });
   }
   const supabase = createAdminSupabase();

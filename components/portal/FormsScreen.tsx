@@ -47,14 +47,22 @@ export function FormsScreen({ mode }: { mode: "office" | "reader" }) {
 
   const refresh = useCallback(async () => {
     const result = await listForms();
-    setLoad(result.ok ? { forms: result.forms, error: null } : { forms: [], error: result.message });
+    setLoad(
+      result.ok
+        ? { forms: result.forms, error: null }
+        : { forms: [], error: result.message },
+    );
   }, []);
 
   useEffect(() => {
     let live = true;
     void listForms().then((result) => {
       if (!live) return;
-      setLoad(result.ok ? { forms: result.forms, error: null } : { forms: [], error: result.message });
+      setLoad(
+        result.ok
+          ? { forms: result.forms, error: null }
+          : { forms: [], error: result.message },
+      );
     });
     return () => {
       live = false;
@@ -62,13 +70,21 @@ export function FormsScreen({ mode }: { mode: "office" | "reader" }) {
   }, []);
 
   async function remove(form: PortalForm) {
-    if (!window.confirm(`Remove "${form.title}"? Scholars and supervisors will no longer see it.`)) {
+    if (
+      !window.confirm(
+        `Remove "${form.title}"? Scholars and supervisors will no longer see it.`,
+      )
+    ) {
       return;
     }
     setRemoving(form.id);
     const result = await deleteForm(form.id);
     setRemoving(null);
-    setNotice(result.ok ? `${form.title} removed.` : (result.message ?? "That form could not be removed."));
+    setNotice(
+      result.ok
+        ? `${form.title} removed.`
+        : (result.message ?? "That form could not be removed."),
+    );
     if (result.ok) await refresh();
   }
 
@@ -159,9 +175,14 @@ export function FormsScreen({ mode }: { mode: "office" | "reader" }) {
 
           {shown.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center">
-              <FileText className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+              <FileText
+                className="mx-auto size-8 text-muted-foreground"
+                aria-hidden="true"
+              />
               <p className="mt-3 text-sm text-muted-foreground">
-                {forms.length === 0 ? "No form has been published yet." : "No form matches."}
+                {forms.length === 0
+                  ? "No form has been published yet."
+                  : "No form matches."}
               </p>
             </div>
           ) : (
@@ -189,10 +210,13 @@ export function FormsScreen({ mode }: { mode: "office" | "reader" }) {
                           {formKindLabel(form.fileName) === "PDF" ? "PDF" : "DOC"}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold break-words text-primary">{form.title}</p>
+                          <p className="font-semibold break-words text-primary">
+                            {form.title}
+                          </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            {formKindLabel(form.fileName)} · {formSizeLabel(form.fileSize)} ·
-                            Updated {formatIsoDate(form.updatedAt.slice(0, 10))}
+                            {formKindLabel(form.fileName)} ·{" "}
+                            {formSizeLabel(form.fileSize)} · Updated{" "}
+                            {formatIsoDate(form.updatedAt.slice(0, 10))}
                           </p>
                           {office ? (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -422,7 +446,9 @@ function FormEditor({
                     setAudience((current) =>
                       current.includes(item)
                         ? current.filter((value) => value !== item)
-                        : formAudiences.filter((value) => value === item || current.includes(value)),
+                        : formAudiences.filter(
+                            (value) => value === item || current.includes(value),
+                          ),
                     )
                   }
                 />

@@ -34,7 +34,10 @@ export type School = {
   id: string;
   name: string;
   summary: string;
+  /** The departments of the school. */
   areas: string[];
+  /** The key research areas of each department (by department name), kept in the ERP. */
+  topics?: Record<string, string[]>;
   icon: SchoolIcon;
 };
 

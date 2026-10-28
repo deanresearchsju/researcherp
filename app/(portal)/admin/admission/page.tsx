@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { AdmissionDesk } from "@/components/portal/AdmissionDesk";
-import { loadStoredApplications } from "@/lib/records";
 import { loadVacancies, officeVacancies } from "@/lib/vacancies";
 
 export const metadata: Metadata = {
@@ -11,13 +10,13 @@ export const metadata: Metadata = {
 };
 
 async function Desk() {
-  const [applications, vacancies] = await Promise.all([
-    loadStoredApplications(),
-    loadVacancies(),
-  ]);
+  // Only the small vacancy list is fetched here. The applications (which carry their uploaded
+  // files) are read by the desk in the browser, so the page does not wait for them or carry
+  // them twice.
+  const vacancies = await loadVacancies();
   return (
     <AdmissionDesk
-      applications={applications.records.filter((row) => row.kind === "phd")}
+      applications={[]}
       vacancies={vacancies.rows.length > 0 ? vacancies.rows : officeVacancies()}
     />
   );

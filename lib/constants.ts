@@ -164,6 +164,13 @@ export const fileLimits = {
     accept: "application/pdf,image/jpeg,image/png",
     label: uploadStandards.documents.label,
   },
+  pdfDocument: {
+    minBytes: 1,
+    maxBytes: uploadStandards.documents.maxBytes,
+    types: ["application/pdf"],
+    accept: "application/pdf",
+    label: "PDF only, up to 1 MB",
+  },
   resume: {
     minBytes: 1,
     maxBytes: uploadStandards.documents.maxBytes,

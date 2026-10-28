@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { CourseWorkScreen } from "@/components/portal/CourseWorkScreen";
 
 export const metadata: Metadata = {
-  title: "Course work",
+  title: "Course work registrations",
   robots: { index: false, follow: false },
 };
 

@@ -17,6 +17,10 @@ What you see depends on the menus the administrator gave you. The administrator 
 - **Incomplete applications**: follow up applications that were started and not finished.
 - **Admission archive** keeps closed sessions.
 
+## Research areas (website)
+
+**Website, Research areas**: **Add research area** (a school), then on its card **Add department**; on a department **Add area**. Every school, department and area has **Edit** and **Remove**. **Add the areas from the supervisors' profiles** fills a department's list from what the supervisors wrote. The home page and the Ph.D. application form show this list at once.
+
 ## Registers
 
 - **Edit** is on every supervisor of the Supervisor register (including those recognised later). The administrator can also **import supervisors and scholars from Excel** (see [../DATA-UPLOAD.md](../DATA-UPLOAD.md)).
@@ -27,20 +31,29 @@ What you see depends on the menus the administrator gave you. The administrator 
 
 ## Course work and examination
 
-1. **Registration**: first add the subject code and title (Subjects); then open the window for the batch.
+1. **Registration**: first add each subject under **Subjects** with its code, title and syllabus (PDF); a code can be used once. The Dean or the administrator **approves** the subject; only approved subjects can be chosen by scholars. Then open the window for the batch.
 2. **Exam setup**: campuses with rooms and seats, the timetable, marks and grades, instructions.
 3. **Hall tickets and seating**: issue hall tickets after Accounts approves; arrange seating; print the plan; mark attendance Present or Absent for each paper and campus and **Freeze and forward to COE**.
 4. **Result approval** (administrator): record the passing board decision; **publish**.
 5. **Semester promotion**: promote batches; a scholar is held for the reasons shown (course work, report, RAC, first committee, passed out or exit, annual fee) unless you tick Promote anyway.
 
+## Examination menu and consolidated list
+
+Exam set-up, hall tickets and seating, invigilation duty, result approval and results are under **Examination**. In **Invigilation duty**, the **Consolidated list** gives one row for each invigilator with all duties; it exports to Excel and PDF.
+
+## RAC
+
+**Supervision, RAC decisions**: the nominations of the supervisors with the Dean and the Vice Chancellor. To enter a RAC yourself for a scholar press **Enter RAC details**: choose the scholar, give 1 to 3 internal members and 2 to 3 external candidates with all details (address, contact, area of research, five publications). The Dean selects one internal and one external member; the Vice Chancellor gives the final approval.
+
 ## Invigilation duty
 
 Under **Admissions, Entrance invigilation** (the entrance test) and **Course work, Invigilation duty** (the course-work examination):
 
-1. **Invigilators**: add the people (one by one, paste a list from Excel, or add the supervisors from the register). Add the dates a person cannot attend.
+1. **Invigilators**: for each session **upload the name list** (Excel or CSV with the headings ID, Name, Designation, Department, Mobile, or paste it from Excel). Choose **a new session** to replace the old list (the duty plans start again), or **the same session** to add names. You can also add or edit one person and mark the dates a person cannot attend.
 2. **Duty plan**: set the number of candidates from which a room gets two invigilators, how many invigilators are on reserved duty in each sitting, the heading of the letter and the Chief Superintendent. The rooms come from the seating: arrange the seating (Selection, Entrance) or issue the hall tickets with seating (Course work) first. Press **Allot invigilators**; change any place from its list (the system refuses a person already on duty in that sitting or not available that day). Then **Finalise plan**.
 3. **Letters**: after the plan is final, download one letter for each person or all in one PDF. The letters carry no signatures; the footer says they are system-generated.
-4. **Date-wise list**: all duties by date and sitting in one running serial order, with the reserved invigilators at the end of each sitting; export to Excel or PDF.
+4. **Order for the Chief Superintendent**: name one or two Chief Superintendents under Rules for this plan, then download their order(s) (PDF) from the Letters tab.
+5. **Date-wise list**: all duties by date and sitting in one running serial order, with the reserved invigilators at the end of each sitting; export to Excel or PDF.
 
 Only the administrator can reopen a final plan. If seating changes after allotting, press **Allot again** (while the plan is a draft).
 

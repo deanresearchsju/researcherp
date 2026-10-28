@@ -16,7 +16,9 @@ async function TeamEditor() {
 
 export default function AdminTeamPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading the team…</p>}>
+    <Suspense
+      fallback={<p className="text-sm text-muted-foreground">Loading the team…</p>}
+    >
       <TeamEditor />
     </Suspense>
   );

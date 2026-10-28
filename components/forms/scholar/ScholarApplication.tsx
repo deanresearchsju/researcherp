@@ -630,7 +630,7 @@ export function ScholarApplication() {
             {vacancies.length > 0 && !hasAnyOpenVacancy(vacancies) ? (
               <p
                 role="alert"
-                className="text-sm font-semibold text-secondary sm:col-span-2 lg:col-span-3"
+                className="text-sm font-semibold text-red-700 sm:col-span-2 lg:col-span-3"
               >
                 {scholarFormCopy.noVacancy}
               </p>
@@ -638,7 +638,7 @@ export function ScholarApplication() {
             {values.school && values.specialization && !departmentOpen ? (
               <p
                 role="alert"
-                className="rounded-lg border border-secondary/40 bg-secondary/10 px-3 py-2 text-sm font-semibold text-secondary sm:col-span-2 lg:col-span-3"
+                className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 sm:col-span-2 lg:col-span-3"
               >
                 {scholarFormCopy.noVacancyDepartment}
               </p>

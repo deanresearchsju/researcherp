@@ -15,6 +15,7 @@ export const portalModules = {
   scholarRecords: "Scholar records",
   requests: "Requests",
   courseWork: "Course work",
+  examination: "Examination",
   doctoralProgress: "Doctoral progress",
   website: "Website",
   reports: "Letters & reports",
@@ -115,25 +116,26 @@ const adminGroups: PortalNavGroup[] = [
     items: [
       { label: "Scholar register", href: "/admin/register", ready: true },
       { label: "Scholar information", href: "/admin/scholar-info", ready: true },
-      {
-        label: registrationCopy.menu,
-        href: "/admin/registration-numbers",
-        ready: true,
-      },
       { label: "Supervisor register", href: "/admin/supervisors", ready: true },
       { label: "Passed-out scholars", href: "/admin/passed-out", ready: true },
     ],
   },
   {
-    heading: portalModules.courseWork,
+    heading: portalModules.examination,
     items: [
-      { label: "Registration", href: "/admin/course-work", ready: true },
+      { label: "Registration windows", href: "/admin/course-windows", ready: true },
+      { label: "Course registrations", href: "/admin/course-work", ready: true },
+      {
+        label: registrationCopy.menu,
+        href: "/admin/registration-numbers",
+        ready: true,
+      },
+      { label: "Semester promotion", href: "/admin/promotions", ready: true },
       { label: "Exam setup", href: "/admin/exam-setup", ready: true },
       { label: "Hall tickets & seating", href: "/admin/exam-tickets", ready: true },
       { label: "Invigilation duty", href: "/admin/invigilation", ready: true },
       { label: "Result approval", href: "/admin/exam-results", ready: true },
       { label: "Results", href: "/admin/results", ready: true },
-      { label: "Semester promotion", href: "/admin/promotions", ready: true },
     ],
   },
   {
@@ -310,7 +312,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
     },
     {
-      heading: "Examinations",
+      heading: portalModules.examination,
       items: [{ label: "Marks entry", href: "/admin/coe/marks", ready: true }],
     },
   ],
@@ -320,7 +322,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
     },
     {
-      heading: "Examinations",
+      heading: portalModules.examination,
       items: [{ label: "Verify & freeze marks", href: "/admin/coe/verify", ready: true }],
     },
   ],
@@ -338,7 +340,10 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
     },
     {
       heading: portalModules.doctoralProgress,
-      items: [{ label: "Thesis evaluators", href: "/admin/evaluators", ready: true }],
+      items: [
+        { label: "RAC approval", href: "/admin/rac", ready: true },
+        { label: "Thesis evaluators", href: "/admin/evaluators", ready: true },
+      ],
     },
   ],
 };

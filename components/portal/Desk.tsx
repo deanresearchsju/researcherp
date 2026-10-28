@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,6 +15,7 @@ import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
 import { researchTitleOf } from "@/lib/research-title";
 import { scholarIdentity } from "@/lib/scholar-identity";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
+import { canOpenSection, matchMenuHref, resolvedMenus } from "@/lib/access";
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -362,9 +364,24 @@ export function DeskTabs({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const pathname = usePathname();
+  const session = usePreviewSession();
+  // A sign-in whose rights name the sections of this menu sees only the sections it was given.
+  const href =
+    session && pathname.startsWith("/admin")
+      ? matchMenuHref(pathname, session.role)
+      : null;
+  const menus = session ? resolvedMenus(session) : null;
+  const allowed = tabs.filter((tab) => canOpenSection(menus, href, tab.id));
+  const firstAllowed = allowed[0]?.id;
+  const blocked = allowed.length > 0 && !allowed.some((tab) => tab.id === value);
+  useEffect(() => {
+    if (blocked && firstAllowed) onChange(firstAllowed);
+  }, [blocked, firstAllowed, onChange]);
+  if (allowed.length === tabs.length && allowed.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 border-b border-border">
-      {tabs.map((tab) => (
+      {allowed.map((tab) => (
         <button
           key={tab.id}
           type="button"

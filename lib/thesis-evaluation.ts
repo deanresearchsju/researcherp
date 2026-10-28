@@ -191,6 +191,9 @@ export async function downloadEvaluatorSheet(record: EvaluationRecord) {
         [person.email, person.phone, person.specialization].filter(Boolean).join(" · "),
         9,
       );
+      person.publications
+        .filter(Boolean)
+        .forEach((item, at) => line(`${at + 1}) ${item}`, 8.5));
       if (state) line(state, 9);
       y += 1.5;
     });

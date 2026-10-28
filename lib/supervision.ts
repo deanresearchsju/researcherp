@@ -1,6 +1,21 @@
 import { researchRegister } from "@/data/research-register";
 import { sameId, type Allocation } from "@/lib/office";
-import { batchOf, exitFor, guideFigures, isPassedOut, registrationOf, sameGuide, scholarSignInId, supervisorForGuide, supervisorKeys, supervisorListingActive, type ApprovedQuota, type RegistrationAllotment, type SupervisorStanding, registrationCompare } from "@/lib/register";
+import {
+  batchOf,
+  exitFor,
+  guideFigures,
+  isPassedOut,
+  registrationOf,
+  sameGuide,
+  scholarSignInId,
+  supervisorForGuide,
+  supervisorKeys,
+  supervisorListingActive,
+  type ApprovedQuota,
+  type RegistrationAllotment,
+  type SupervisorStanding,
+  registrationCompare,
+} from "@/lib/register";
 import type { PortalUser } from "@/lib/users";
 
 export type GuideStatus = "Active" | "Leaving" | "Past";

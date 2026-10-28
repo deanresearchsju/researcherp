@@ -280,7 +280,8 @@ export function approvedDocuments(
           {
             label: "Approved by the Dean",
             by: record.payload.approvedBy || "Research office",
-            on: record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
+            on:
+              record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
             note: record.payload.remarks,
           },
         ],
@@ -340,9 +341,7 @@ export function recordViewStamp(record: ScholarRecord): ApprovalStamp | null {
           dean: {
             by: record.payload.approvedBy || "Research office",
             at:
-              record.payload.approvedAt ||
-              record.payload.approvedOn ||
-              record.createdAt,
+              record.payload.approvedAt || record.payload.approvedOn || record.createdAt,
           },
         }
       : {}),

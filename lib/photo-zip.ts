@@ -4,7 +4,12 @@ import { scholarBySignIn } from "@/lib/register";
 import { registerScholarKeys, type ScholarReport } from "@/lib/scholar-report";
 
 function safe(value: string) {
-  return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim() || "scholar";
+  return (
+    value
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, " ")
+      .trim() || "scholar"
+  );
 }
 
 function extensionOf(dataUrl: string) {
@@ -16,9 +21,12 @@ function keysOf(row: ScholarReport) {
   const scholar = scholarBySignIn(row.identifier);
   return [
     ...new Set(
-      [row.identifier, row.registration, row.email, ...(scholar ? registerScholarKeys(scholar) : [])].filter(
-        (key) => key.trim(),
-      ),
+      [
+        row.identifier,
+        row.registration,
+        row.email,
+        ...(scholar ? registerScholarKeys(scholar) : []),
+      ].filter((key) => key.trim()),
     ),
   ];
 }
@@ -64,7 +72,8 @@ export async function downloadScholarPhotos(
       const base = safe(registration || row.name);
       const extension = extensionOf(photo);
       path = `${folder}/${base}${extension}`;
-      for (let copy = 2; used.has(path); copy += 1) path = `${folder}/${base}-${copy}${extension}`;
+      for (let copy = 2; used.has(path); copy += 1)
+        path = `${folder}/${base}-${copy}${extension}`;
       used.add(path);
       zip.file(path, photo.slice(photo.indexOf(",") + 1), { base64: true });
       included += 1;

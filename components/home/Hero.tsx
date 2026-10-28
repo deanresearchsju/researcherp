@@ -8,7 +8,11 @@ import { useSyncExternalStore } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { researchPage } from "@/data/research-home";
 import { heroCopy } from "@/data/sections";
-import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
+import {
+  currentSiteSettings,
+  defaultSiteSettings,
+  subscribeSiteSettings,
+} from "@/lib/office";
 import { cn } from "@/lib/utils";
 
 export function Hero() {

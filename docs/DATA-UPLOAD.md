@@ -8,14 +8,14 @@ Only the **main administrator** sees the upload boxes.
 
 1. **Back up** the database (BACKUP-AND-RESTORE), then **clear the test data** (Administration, Clear test data). See TESTING.
 2. **Research areas** (Website): check that every school and department is there, so that supervisors and scholars can be placed.
-3. **Supervisors**: Registers, **Supervisor register**, box *Import supervisors from Excel*.
-4. **Scholars**: Registers, **Scholar information**, box *Import scholars and their details from Excel*.
+3. **Supervisors**: Registers, **Supervisor register**, box _Import supervisors from Excel_.
+4. **Scholars**: Registers, **Scholar information**, box _Import scholars and their details from Excel_.
 5. **Sign-ins**: Administration, **Users**, to give each supervisor and scholar a sign-in (the upload does not create sign-ins or passwords).
 6. **Check** the counts and a few records (below), then hand out the sign-ins.
 
 ## How an upload works
 
-1. Press **Download the blank sheet** to see the headings, or use your own sheet. The headings of the University's own sheet (for example *Guide Name, Supervisor ID, Phone No, Mail ID*, and *Reg No, Name, Department, Batch, Phone, Mail, Title, Category, Working Institution, 1st DC ...*) are understood as they are.
+1. Press **Download the blank sheet** to see the headings, or use your own sheet. The headings of the University's own sheet (for example _Guide Name, Supervisor ID, Phone No, Mail ID_, and _Reg No, Name, Department, Batch, Phone, Mail, Title, Category, Working Institution, 1st DC ..._) are understood as they are.
 2. Choose the file: an Excel workbook (`.xlsx`) or a `.csv`. If the workbook has several sheets, choose the sheet to read. (Save an old `.xls` as `.xlsx` first.)
 3. The page shows what **would** happen, row by row: **Add**, **Update**, **No change**, **Skipped**, and what to check. Nothing is saved yet.
 4. Press **Save**. The register is saved in one step; scholars' personal details and the vacancy list follow.
@@ -24,28 +24,28 @@ An empty cell **never** removes what is stored. A filled cell replaces the store
 
 ## Supervisors
 
-| Column (any of these headings)                    | Used for                                                                 |
-| ------------------------------------------------- | ------------------------------------------------------------------------ |
-| Name, Guide Name                                  | **Required.** Matching, and the name                                     |
-| Supervisor ID                                     | Matching and the ID                                                      |
-| Department, Designation, Campus                   | The supervisor register                                                  |
-| Area of research                                  | The key research areas shown on the website                              |
-| Phone, Phone No, Mobile / Email, Mail ID          | Contact (10 digits; `+91` and spaces are removed). The e-mail is the sign-in |
-| Vidwan ID, Biography                              | The profile (not shown to the public until the office ticks it)          |
-| Quota, Current Scholars, Active                   | Used only for a **new** supervisor (see below)                           |
+| Column (any of these headings)           | Used for                                                                     |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| Name, Guide Name                         | **Required.** Matching, and the name                                         |
+| Supervisor ID                            | Matching and the ID                                                          |
+| Department, Designation, Campus          | The supervisor register                                                      |
+| Area of research                         | The key research areas shown on the website                                  |
+| Phone, Phone No, Mobile / Email, Mail ID | Contact (10 digits; `+91` and spaces are removed). The e-mail is the sign-in |
+| Vidwan ID, Biography                     | The profile (not shown to the public until the office ticks it)              |
+| Quota, Current Scholars, Active          | Used only for a **new** supervisor (see below)                               |
 
 - A supervisor is matched by **ID or e-mail**, then by the same name. A name that nearly matches is used only when it can be nobody else, and never when the ID or e-mail says it is another person.
-- **New supervisors** are added with the **quota of the designation** (Professor 8, Associate 6, Assistant 4). A designation with "Prof." counts as Professor, "Assoc." as Associate, "Asst." as Assistant. The sheet's *Current Scholars* sets how many they already guide, so the vacancy is right. They are also put on the vacancy list that Selection uses.
+- **New supervisors** are added with the **quota of the designation** (Professor 8, Associate 6, Assistant 4). A designation with "Prof." counts as Professor, "Assoc." as Associate, "Asst." as Assistant. The sheet's _Current Scholars_ sets how many they already guide, so the vacancy is right. They are also put on the vacancy list that Selection uses.
 - A supervisor listed twice in the sheet is read once; the second row is shown as skipped.
 
 ## Scholars
 
-| Column (any of these headings)                              | Used for                                                                          |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Name                                                        | **Required**                                                                      |
-| Mail, Email / Reg No, Application number, File number       | Matching a scholar already on the register; for a new one, the e-mail is required |
-| Phone, Department, Batch, Category (mode of study), Guide, Working institution, Title | The scholar register                                       |
-| 1st DC, 2nd DC, Confirmation, Colloq 1, Colloq 2, Synopsis, Thesis, Viva | The milestones before the ERP (dates)                        |
+| Column (any of these headings)                                                                                                                                                                                                              | Used for                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Name                                                                                                                                                                                                                                        | **Required**                                                                       |
+| Mail, Email / Reg No, Application number, File number                                                                                                                                                                                       | Matching a scholar already on the register; for a new one, the e-mail is required  |
+| Phone, Department, Batch, Category (mode of study), Guide, Working institution, Title                                                                                                                                                       | The scholar register                                                               |
+| 1st DC, 2nd DC, Confirmation, Colloq 1, Colloq 2, Synopsis, Thesis, Viva                                                                                                                                                                    | The milestones before the ERP (dates)                                              |
 | Date of birth, Gender, Nationality, Blood group, Father name, Mother name, Parent contact, Parent email, Address, Pincode, District, State, Community, Date of admission, Area of research, UG / PG degree and university, NET / SET / GATE | **Scholar information** (locked, and it then changes the register and the reports) |
 
 - A scholar is matched by e-mail, registration number, application number or file number. One **not on the register** is **added** if the sheet gives an e-mail and a recognised **batch** (for example `July 2026`, `2026-07-01` or `2026-june`); otherwise the row is skipped and says why.

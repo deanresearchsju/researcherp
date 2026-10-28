@@ -13,7 +13,12 @@ import { researchRegister } from "@/data/research-register";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { periodState, reportPeriodsFor, type DoctoralState } from "@/lib/doctoral";
 import { sameId } from "@/lib/office";
-import { batchOf, isPassedOut, scholarSignInId, registerScholarsInOrder } from "@/lib/register";
+import {
+  batchOf,
+  isPassedOut,
+  scholarSignInId,
+  registerScholarsInOrder,
+} from "@/lib/register";
 import { saveScholarRecord, type ScholarRecord } from "@/lib/scholar-records";
 
 type Row = {

@@ -1,11 +1,26 @@
 export type MailEvent =
-  | { event: "ack"; kind: "phd" | "supervisor"; applicationNo: string; dateOfBirth: string }
+  | {
+      event: "ack";
+      kind: "phd" | "supervisor";
+      applicationNo: string;
+      dateOfBirth: string;
+    }
   | { event: "hall-ticket"; applicationNos: string[] }
   | { event: "selection-letter"; applicationNos: string[] }
   | { event: "recognition"; applicationNos: string[] }
-  | { event: "credentials"; role: "scholar" | "supervisor"; identifier: string; password: string };
+  | {
+      event: "credentials";
+      role: "scholar" | "supervisor";
+      identifier: string;
+      password: string;
+    };
 
-export type MailResult = { ok: boolean; sent: number; failed: number; configured: boolean };
+export type MailResult = {
+  ok: boolean;
+  sent: number;
+  failed: number;
+  configured: boolean;
+};
 
 /** Asks the server to send an event's mail. Never throws: mail must not hold up the office. */
 export async function sendMailEvent(body: MailEvent): Promise<MailResult> {

@@ -28,7 +28,9 @@ import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-re
 import { guideOptions, scholarRows, type GuideOption } from "@/lib/supervision";
 import { currentPortalUsers, subscribePortalUsers } from "@/lib/users";
 
-function useRecords(kind: "payment" | "six_month_report" | "publication" | "personal_details") {
+function useRecords(
+  kind: "payment" | "six_month_report" | "publication" | "personal_details",
+) {
   return useSyncExternalStore(
     (onChange) => subscribeScholarRecords(kind, onChange),
     () => currentScholarRecords(kind),
@@ -69,7 +71,11 @@ export function useScholarReports():
     currentPassedOut,
     currentPassedOut,
   );
-  const admission = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
+  const admission = useSyncExternalStore(
+    subscribeAdmission,
+    currentAdmission,
+    () => null,
+  );
   const payments = useRecords("payment");
   const sixMonth = useRecords("six_month_report");
   const publications = useRecords("publication");

@@ -133,7 +133,7 @@ function PayDialog({
       setError("Enter the transaction reference.");
       return;
     }
-    const problem = fileError(receipt?.file ?? null, "document", true);
+    const problem = fileError(receipt?.file ?? null, "pdfDocument", true);
     if (problem || !receipt?.file) {
       setError(problem ?? "Upload the payment receipt.");
       return;
@@ -237,7 +237,7 @@ function PayDialog({
         >
           <FileUpload
             id="fee-receipt"
-            acceptRule="document"
+            acceptRule="pdfDocument"
             value={receipt}
             onChange={setReceipt}
           />
@@ -318,8 +318,7 @@ function YearCard({
                 </td>
                 <td className="px-5 py-3 text-muted-foreground">Due</td>
                 <td className="px-5 py-3 font-bold text-secondary tabular-nums">
-                  ₹
-                  {formatInr(next.number ? next.due : year.balance)}
+                  ₹{formatInr(next.number ? next.due : year.balance)}
                 </td>
                 <td className="px-5 py-3 text-muted-foreground" colSpan={2}>
                   {next.blocked ??

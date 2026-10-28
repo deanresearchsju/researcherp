@@ -43,7 +43,8 @@ export type ExamCentre = {
   rooms: ExamRoom[];
 };
 
-export type GradeBand = { min: number; grade: string };
+/** A grade for the marks from `min` to `max` (both included). */
+export type GradeBand = { min: number; max: number; grade: string };
 
 export type TimetableEntry = {
   id: string;
@@ -64,12 +65,12 @@ export type ExamSettings = {
 };
 
 export const defaultGrades: GradeBand[] = [
-  { min: 90, grade: "O" },
-  { min: 80, grade: "A+" },
-  { min: 70, grade: "A" },
-  { min: 60, grade: "B+" },
-  { min: 55, grade: "B" },
-  { min: 50, grade: "C" },
+  { min: 90, max: 100, grade: "O" },
+  { min: 80, max: 89, grade: "A+" },
+  { min: 70, max: 79, grade: "A" },
+  { min: 60, max: 69, grade: "B+" },
+  { min: 55, max: 59, grade: "B" },
+  { min: 50, max: 54, grade: "C" },
 ];
 
 export const defaultInstructions = [
@@ -212,9 +213,18 @@ function parseFileStatus(value: string): FileStatus {
 export function parseExam(value: unknown): Stored {
   const row = object(value);
   const settings = object(row.settings);
-  const grades = rows(settings.grades)
-    .map((item) => ({ min: whole(item.min, 0), grade: text(item.grade).trim() }))
-    .filter((item) => item.grade);
+  const maxMarks = whole(settings.maxMarks, 100) || 100;
+  // A grade saved before "to" marks existed runs up to the mark below the next grade up.
+  const grades = withUpperMarks(
+    rows(settings.grades)
+      .map((item) => ({
+        min: whole(item.min, 0),
+        max: item.max === undefined || item.max === "" ? -1 : whole(item.max, -1),
+        grade: text(item.grade).trim(),
+      }))
+      .filter((item) => item.grade),
+    maxMarks,
+  );
   const instructions = Array.isArray(settings.instructions)
     ? settings.instructions.filter((item): item is string => typeof item === "string")
     : defaultInstructions;
@@ -231,7 +241,13 @@ export function parseExam(value: unknown): Stored {
             rooms: rows(centre.rooms).flatMap((room) => {
               const roomId = text(room.id);
               return roomId
-                ? [{ id: roomId, name: text(room.name), capacity: whole(room.capacity, 0) }]
+                ? [
+                    {
+                      id: roomId,
+                      name: text(room.name),
+                      capacity: whole(room.capacity, 0),
+                    },
+                  ]
                 : [];
             }),
           },
@@ -272,7 +288,9 @@ export function parseExam(value: unknown): Stored {
           ticketNo: text(ticket.ticketNo),
           issuedOn: text(ticket.issuedOn),
           registrationIds: Array.isArray(ticket.registrationIds)
-            ? ticket.registrationIds.filter((item): item is string => typeof item === "string")
+            ? ticket.registrationIds.filter(
+                (item): item is string => typeof item === "string",
+              )
             : [],
           roomId: text(ticket.roomId),
           seat: text(ticket.seat),
@@ -287,7 +305,9 @@ export function parseExam(value: unknown): Stored {
     attendanceLocks: Object.fromEntries(
       Object.entries(object(row.attendanceLocks)).flatMap(([key, value]) => {
         const lock = object(value);
-        return text(lock.on) ? [[key, { by: text(lock.by), on: text(lock.on) }] as const] : [];
+        return text(lock.on)
+          ? [[key, { by: text(lock.by), on: text(lock.on) }] as const]
+          : [];
       }),
     ),
     files: rows(row.files).flatMap((file) => {
@@ -454,7 +474,8 @@ async function commit(
     if (problem) return { ok: false, message: problem };
     const saved = await saveExam(state);
     if (saved.ok) return { ok: true };
-    if (!("conflict" in saved && saved.conflict)) return { ok: false, message: saved.message };
+    if (!("conflict" in saved && saved.conflict))
+      return { ok: false, message: saved.message };
     publish(await loadExam());
   }
   return { ok: false, message: "The exam records are busy. Try again in a moment." };
@@ -487,11 +508,63 @@ function viewProblem() {
 
 /* ------------------------------------------ marks --------------------------------------- */
 
+/** Fills a missing "to" mark: the top grade ends at the maximum marks, the others below the grade above. */
+export function withUpperMarks(
+  bands: readonly { min: number; max: number; grade: string }[],
+  maxMarks: number,
+): GradeBand[] {
+  const sorted = [...bands].sort((left, right) => right.min - left.min);
+  return sorted.map((band, index) => ({
+    ...band,
+    max: band.max >= 0 ? band.max : index === 0 ? maxMarks : sorted[index - 1].min - 1,
+  }));
+}
+
+/**
+ * Why the grade table can not be saved: every grade needs marks from and to, the marks may not
+ * overlap or leave a gap, and together they must run from the pass mark to the maximum marks.
+ */
+export function gradesProblem(
+  bands: readonly GradeBand[],
+  passMark: number,
+  maxMarks: number,
+) {
+  if (bands.length === 0) return "Add at least one grade.";
+  const sorted = [...bands].sort((left, right) => left.min - right.min);
+  for (const band of sorted) {
+    if (!band.grade.trim()) return "Every grade needs a name.";
+    if (band.max < band.min) {
+      return `Grade ${band.grade}: the "to" marks (${band.max}) are below the "from" marks (${band.min}).`;
+    }
+  }
+  for (let index = 1; index < sorted.length; index += 1) {
+    const before = sorted[index - 1];
+    const band = sorted[index];
+    if (band.min <= before.max) {
+      return `Grades ${before.grade} (${before.min}-${before.max}) and ${band.grade} (${band.min}-${band.max}) overlap.`;
+    }
+    if (band.min > before.max + 1) {
+      return `Marks ${before.max + 1} to ${band.min - 1} have no grade (between ${before.grade} and ${band.grade}).`;
+    }
+  }
+  if (sorted[0].min > passMark) {
+    return `Marks ${passMark} to ${sorted[0].min - 1} have no grade: the lowest grade must start at the pass mark (${passMark}).`;
+  }
+  if (sorted[sorted.length - 1].max < maxMarks) {
+    return `Marks ${sorted[sorted.length - 1].max + 1} to ${maxMarks} have no grade: the top grade must reach the maximum marks (${maxMarks}).`;
+  }
+  return null;
+}
+
 export function gradeFor(settings: ExamSettings, marks: number) {
+  if (marks < settings.passMark) return "RA";
   const bands = [...settings.grades].sort((left, right) => right.min - left.min);
-  return marks >= settings.passMark
-    ? (bands.find((band) => marks >= band.min)?.grade ?? bands[bands.length - 1]?.grade ?? "P")
-    : "RA";
+  return (
+    bands.find((band) => marks >= band.min && marks <= band.max)?.grade ??
+    bands.find((band) => marks >= band.min)?.grade ??
+    bands[bands.length - 1]?.grade ??
+    "P"
+  );
 }
 
 export function outcomeFor(
@@ -559,9 +632,14 @@ export function ticketsOfScholar(state: Pick<ExamState, "tickets">, identifier: 
     .sort((left, right) => right.issuedOn.localeCompare(left.issuedOn));
 }
 
-export function fileFor(state: Pick<ExamState, "files">, batchId: string, semester: number) {
+export function fileFor(
+  state: Pick<ExamState, "files">,
+  batchId: string,
+  semester: number,
+) {
   return (
-    state.files.find((file) => file.batchId === batchId && file.semester === semester) ?? null
+    state.files.find((file) => file.batchId === batchId && file.semester === semester) ??
+    null
   );
 }
 
@@ -574,7 +652,9 @@ function registrationLabel(identifier: string) {
   const scholar = scholarBySignIn(identifier);
   if (scholar) {
     return (
-      registrationOf(scholar, currentAllotments()) || scholar.applicationNumber || identifier
+      registrationOf(scholar, currentAllotments()) ||
+      scholar.applicationNumber ||
+      identifier
     );
   }
   return admittedRegistration(identifier) || identifier;
@@ -593,6 +673,8 @@ export async function saveExamSettings(next: ExamSettings): Promise<Outcome> {
   if (next.passMark < 0 || next.passMark > next.maxMarks) {
     return { ok: false, message: "The pass mark must be within the maximum marks." };
   }
+  const gradeProblem = gradesProblem(next.grades, next.passMark, next.maxMarks);
+  if (gradeProblem) return { ok: false, message: gradeProblem };
   const names = next.centres.map((centre) => centre.name.trim().toLowerCase());
   if (names.some((name) => !name)) {
     return { ok: false, message: "Every campus needs a name." };
@@ -618,7 +700,9 @@ export async function saveExamSettings(next: ExamSettings): Promise<Outcome> {
 
 function ticketPrefix(settings: ExamSettings, batchId: string, semester: number) {
   const first = settings.timetable
-    .filter((entry) => entry.batchId === batchId && entry.semester === semester && entry.date)
+    .filter(
+      (entry) => entry.batchId === batchId && entry.semester === semester && entry.date,
+    )
     .map((entry) => entry.date)
     .sort()[0];
   const date = first || clientToday();
@@ -633,7 +717,8 @@ export async function generateExamTickets(batchId: string, semester: number) {
   const blocked = viewProblem() ?? officeProblem();
   if (blocked) return { ok: false as const, message: blocked };
   const doctoral = currentDoctoral();
-  if (!doctoral) return { ok: false as const, message: "The course-work records are loading." };
+  if (!doctoral)
+    return { ok: false as const, message: "The course-work records are loading." };
   const papers = examRegistrations(doctoral, batchId, semester);
   const withCentre = papers.filter((paper) => paper.examCentreId);
   if (withCentre.length === 0) {
@@ -662,7 +747,9 @@ export async function generateExamTickets(batchId: string, semester: number) {
     ];
     const today = clientToday();
     for (const key of scholars) {
-      const own = withCentre.filter((paper) => paper.scholarIdentifier.toLowerCase() === key);
+      const own = withCentre.filter(
+        (paper) => paper.scholarIdentifier.toLowerCase() === key,
+      );
       const ids = own.map((paper) => paper.id);
       const existing = state.tickets.find(
         (ticket) =>
@@ -708,7 +795,10 @@ export async function generateExamTickets(batchId: string, semester: number) {
 }
 
 /** Moves a scholar's ticket to another campus (before seating) when the scholar asks. */
-export async function setTicketCentre(ticketId: string, centreId: string): Promise<Outcome> {
+export async function setTicketCentre(
+  ticketId: string,
+  centreId: string,
+): Promise<Outcome> {
   const blocked = viewProblem() ?? officeProblem();
   if (blocked) return { ok: false, message: blocked };
   return commit((state) => {
@@ -727,7 +817,11 @@ export async function setTicketCentre(ticketId: string, centreId: string): Promi
  * Seats the scholars of one campus room by room in registration-number order. Seat numbers
  * start at 1 in each room.
  */
-export async function arrangeExamSeating(batchId: string, semester: number, centreId: string) {
+export async function arrangeExamSeating(
+  batchId: string,
+  semester: number,
+  centreId: string,
+) {
   const blocked = viewProblem() ?? officeProblem();
   if (blocked) return { ok: false as const, message: blocked };
   let seated = 0;
@@ -776,7 +870,9 @@ function sheetLocked(
   const file = fileFor(state, registration.batchId, registration.semester);
   const sheet = sheetOf(file, registration.subjectId);
   return Boolean(
-    file?.status === "Published" || sheet?.status === "Frozen" || sheet?.status === "Sent",
+    file?.status === "Published" ||
+    sheet?.status === "Frozen" ||
+    sheet?.status === "Sent",
   );
 }
 
@@ -795,11 +891,18 @@ export function attendanceLockOf(
   state: Pick<ExamState, "tickets" | "attendanceLocks">,
   registration: Pick<CourseRegistration, "id" | "batchId" | "semester" | "subjectId">,
 ) {
-  const ticket = state.tickets.find((item) => item.registrationIds.includes(registration.id));
+  const ticket = state.tickets.find((item) =>
+    item.registrationIds.includes(registration.id),
+  );
   if (!ticket) return null;
   return (
     state.attendanceLocks[
-      attendanceLockKey(registration.batchId, registration.semester, registration.subjectId, ticket.centreId)
+      attendanceLockKey(
+        registration.batchId,
+        registration.semester,
+        registration.subjectId,
+        ticket.centreId,
+      )
     ] ?? null
   );
 }
@@ -809,12 +912,17 @@ export async function markExamAttendance(
 ): Promise<Outcome> {
   const blocked =
     viewProblem() ??
-    roleProblem(["admin", "staff", "coe"], "Only the research office or the COE can mark attendance.");
+    roleProblem(
+      ["admin", "staff", "coe"],
+      "Only the research office or the COE can mark attendance.",
+    );
   if (blocked) return { ok: false, message: blocked };
   const doctoral = currentDoctoral();
   return commit((state) => {
     for (const entry of entries) {
-      const registration = doctoral?.registrations.find((row) => row.id === entry.registrationId);
+      const registration = doctoral?.registrations.find(
+        (row) => row.id === entry.registrationId,
+      );
       if (registration && attendanceLockOf(state, registration)) {
         return `${registration.scholarName}: the attendance of this paper at this campus is frozen and already forwarded to the COE.`;
       }
@@ -840,13 +948,17 @@ export async function forwardAttendance(
 ): Promise<Outcome> {
   const blocked =
     viewProblem() ??
-    roleProblem(["admin", "staff", "coe"], "Only the research office or the COE can forward the attendance.");
+    roleProblem(
+      ["admin", "staff", "coe"],
+      "Only the research office or the COE can forward the attendance.",
+    );
   if (blocked) return { ok: false, message: blocked };
   const doctoral = currentDoctoral();
   if (!doctoral) return { ok: false, message: "The records are loading." };
   return commit((state) => {
     const key = attendanceLockKey(batchId, semester, subjectId, centreId);
-    if (state.attendanceLocks[key]) return "This attendance is already forwarded to the COE.";
+    if (state.attendanceLocks[key])
+      return "This attendance is already forwarded to the COE.";
     const sitting = candidatesFor(doctoral, state, batchId, semester, subjectId).filter(
       ({ ticket }) => ticket.centreId === centreId,
     );
@@ -869,14 +981,20 @@ export async function reopenAttendance(
   subjectId: string,
   centreId: string,
 ): Promise<Outcome> {
-  const blocked = viewProblem() ?? roleProblem(["admin"], "Only the administrator can reopen the attendance.");
+  const blocked =
+    viewProblem() ??
+    roleProblem(["admin"], "Only the administrator can reopen the attendance.");
   if (blocked) return { ok: false, message: blocked };
   return commit((state) => {
     const key = attendanceLockKey(batchId, semester, subjectId, centreId);
     if (!state.attendanceLocks[key]) return "This attendance is not forwarded.";
     const file = fileFor(state, batchId, semester);
     const sheet = sheetOf(file, subjectId);
-    if (file?.status === "Published" || sheet?.status === "Sent" || sheet?.status === "Frozen") {
+    if (
+      file?.status === "Published" ||
+      sheet?.status === "Sent" ||
+      sheet?.status === "Frozen"
+    ) {
       return "The marks of this paper are already sent for verification or frozen.";
     }
     delete state.attendanceLocks[key];
@@ -906,7 +1024,9 @@ function ensureFile(state: Stored, batchId: string, semester: number) {
   let file = fileFor(state, batchId, semester);
   if (!file) {
     const first = state.settings.timetable
-      .filter((entry) => entry.batchId === batchId && entry.semester === semester && entry.date)
+      .filter(
+        (entry) => entry.batchId === batchId && entry.semester === semester && entry.date,
+      )
       .map((entry) => entry.date)
       .sort()[0];
     const date = first || clientToday();
@@ -992,18 +1112,22 @@ export async function saveExamMarks(
     const max = state.settings.maxMarks;
     for (const entry of entries) {
       if (entry.marks === null) continue;
-      const registration = doctoral?.registrations.find((row) => row.id === entry.registrationId);
+      const registration = doctoral?.registrations.find(
+        (row) => row.id === entry.registrationId,
+      );
       if (registration && !attendanceLockOf(state, registration)) {
         return `${registration.scholarName}: the attendance of this paper at this campus has not been forwarded to the COE yet.`;
       }
     }
     const file = ensureFile(state, batchId, semester);
-    if (file.status === "Published") return "These results are published. They can not be changed.";
+    if (file.status === "Published")
+      return "These results are published. They can not be changed.";
     if (file.status === "Submitted" || file.status === "Approved") {
       return "This file is with the research office. Marks can change only if the passing board sends it back.";
     }
     const sheet = ensureSheet(file, subjectId);
-    if (sheet.status === "Frozen") return "These marks are frozen. They can not be changed.";
+    if (sheet.status === "Frozen")
+      return "These marks are frozen. They can not be changed.";
     if (sheet.status === "Sent") {
       return "These marks are with the verifier. Ask the verifier to send them back to change one.";
     }
@@ -1040,7 +1164,8 @@ export function missingMarks(
   return candidatesFor(doctoral, state, batchId, semester, subjectId).filter(
     ({ registration }) =>
       state.attendance[registration.id] !== "Absent" &&
-      (sheet?.marks[registration.id] === undefined || sheet.marks[registration.id] === null),
+      (sheet?.marks[registration.id] === undefined ||
+        sheet.marks[registration.id] === null),
   );
 }
 
@@ -1089,7 +1214,8 @@ export async function sendMarksBack(
 ): Promise<Outcome> {
   const blocked = viewProblem() ?? roleProblem(["coeverify"], verifierMessage);
   if (blocked) return { ok: false, message: blocked };
-  if (note.trim().length < 3) return { ok: false, message: "Say what has to be corrected." };
+  if (note.trim().length < 3)
+    return { ok: false, message: "Say what has to be corrected." };
   return commit((state) => {
     const file = fileFor(state, batchId, semester);
     const sheet = sheetOf(file, subjectId);
@@ -1142,7 +1268,9 @@ export function readyToSubmit(
   const subjects = [
     ...new Set(
       examRegistrations(doctoral, batchId, semester)
-        .filter((row) => state.tickets.some((ticket) => ticket.registrationIds.includes(row.id)))
+        .filter((row) =>
+          state.tickets.some((ticket) => ticket.registrationIds.includes(row.id)),
+        )
         .map((row) => row.subjectId),
     ),
   ];
@@ -1152,7 +1280,10 @@ export function readyToSubmit(
   );
 }
 
-export async function submitToOffice(batchId: string, semester: number): Promise<Outcome> {
+export async function submitToOffice(
+  batchId: string,
+  semester: number,
+): Promise<Outcome> {
   const blocked = viewProblem() ?? roleProblem(["coeverify"], verifierMessage);
   if (blocked) return { ok: false, message: blocked };
   const doctoral = currentDoctoral();
@@ -1168,7 +1299,12 @@ export async function submitToOffice(batchId: string, semester: number): Promise
     file.status = "Submitted";
     file.submittedOn = clientToday();
     file.submittedBy = actor().name;
-    log(file, file.afterBoard ? "Final result file submitted" : "Submitted to the research office");
+    log(
+      file,
+      file.afterBoard
+        ? "Final result file submitted"
+        : "Submitted to the research office",
+    );
     return null;
   });
 }
@@ -1181,7 +1317,8 @@ export async function recordPassingBoard(
   details: { on: string; reference: string; note: string; subjectIds: string[] },
 ): Promise<Outcome> {
   const blocked =
-    viewProblem() ?? roleProblem(["admin"], "Only an administrator can record the passing board.");
+    viewProblem() ??
+    roleProblem(["admin"], "Only an administrator can record the passing board.");
   if (blocked) return { ok: false, message: blocked };
   if (!details.on) return { ok: false, message: "Enter the date of the passing board." };
   if (decision === "Changes" && details.note.trim().length < 3) {
@@ -1205,7 +1342,9 @@ export async function recordPassingBoard(
       return null;
     }
     const chosen =
-      details.subjectIds.length > 0 ? details.subjectIds : file.sheets.map((s) => s.subjectId);
+      details.subjectIds.length > 0
+        ? details.subjectIds
+        : file.sheets.map((s) => s.subjectId);
     for (const sheet of file.sheets) {
       if (!chosen.includes(sheet.subjectId)) continue;
       sheet.status = "Returned";
@@ -1226,18 +1365,26 @@ export async function publishExamResults(fileId: string) {
   if (blocked) return { ok: false as const, message: blocked };
   const doctoral = currentDoctoral();
   const live = memory;
-  if (!doctoral || !live) return { ok: false as const, message: "The records are loading." };
+  if (!doctoral || !live)
+    return { ok: false as const, message: "The records are loading." };
   const file = live.files.find((item) => item.id === fileId);
   if (!file) return { ok: false as const, message: "That file was not found." };
   if (file.status === "Published") {
     return { ok: false as const, message: "These results are already published." };
   }
-  const final = file.status === "Approved" || (file.status === "Submitted" && file.afterBoard);
+  const final =
+    file.status === "Approved" || (file.status === "Submitted" && file.afterBoard);
   if (!final) {
-    return { ok: false as const, message: "Record the passing board's approval before publishing." };
+    return {
+      ok: false as const,
+      message: "Record the passing board's approval before publishing.",
+    };
   }
   if (file.sheets.some((sheet) => sheet.status !== "Frozen")) {
-    return { ok: false as const, message: "Every paper must be frozen before publishing." };
+    return {
+      ok: false as const,
+      message: "Every paper must be frozen before publishing.",
+    };
   }
   const entries = file.sheets.flatMap((sheet) =>
     candidatesFor(doctoral, live, file.batchId, file.semester, sheet.subjectId).map(
@@ -1254,7 +1401,12 @@ export async function publishExamResults(fileId: string) {
     ),
   );
   const today = clientToday();
-  const published = await publishResults(entries, file.sessionMonth, file.sessionYear, today);
+  const published = await publishResults(
+    entries,
+    file.sessionMonth,
+    file.sessionYear,
+    today,
+  );
   if (!published.ok) return published;
   const saved = await commit((state) => {
     const target = state.files.find((item) => item.id === fileId);

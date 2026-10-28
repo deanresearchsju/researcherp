@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { PaymentApprovalsScreen } from "@/components/portal/PaymentApprovalsScreen";
+import { PaymentDesk } from "@/components/portal/PaymentDesk";
 
 export const metadata: Metadata = {
   title: "Payment approvals",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function PaymentApprovalsPage() {
-  return <PaymentApprovalsScreen />;
+  return <PaymentDesk />;
 }

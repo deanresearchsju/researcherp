@@ -18,6 +18,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { currentAdmission, subscribeAdmission } from "@/lib/admission";
 import { officeWriteBlock } from "@/lib/access";
 import { downloadCsvAsSheet } from "@/lib/sheet";
+import { openSpreadsheet } from "@/lib/spreadsheet";
 import { toCsv } from "@/lib/csv";
 import { currentExam, subscribeExam } from "@/lib/exam-office";
 import {
@@ -26,6 +27,7 @@ import {
   currentInvigilation,
   finalisePlan,
   removeInvigilator,
+  replaceInvigilators,
   reopenPlan,
   saveInvigilator,
   savePlanSettings,
@@ -34,20 +36,24 @@ import {
   subscribeInvigilation,
 } from "@/lib/invigilation";
 import {
+  consolidatedList,
   courseWorkSittings,
   dutyCounts,
   dutyList,
   entranceSittings,
+  invigilatorsFromTable,
+  invigilatorsFromText,
   lettersFor,
   planProblems,
   scopeLabel,
   shortDate,
   sittingKey,
+  type Chief,
   type InvigilationScope,
   type Invigilator,
 } from "@/lib/invigilation-core";
-import { downloadInvigilatorLetters } from "@/lib/invigilation-pdf";
-import { researchRegister } from "@/data/research-register";
+import { downloadChiefOrders, downloadInvigilatorLetters } from "@/lib/invigilation-pdf";
+import { clientToday } from "@/lib/dates";
 import { downloadTablePdf } from "@/lib/table-pdf";
 import { useCanMenuAction } from "@/lib/use-menu-action";
 import { usePreviewSession } from "@/lib/use-preview-session";
@@ -57,6 +63,7 @@ const tabs = [
   { id: "plan", label: "Duty plan" },
   { id: "pool", label: "Invigilators" },
   { id: "list", label: "Date-wise list" },
+  { id: "consolidated", label: "Consolidated list" },
   { id: "letters", label: "Letters" },
 ] as const;
 
@@ -159,23 +166,6 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
     );
   }
 
-  const registerSupervisors = researchRegister.supervisors.filter((item) => item.active);
-  async function addFromRegister() {
-    const people = registerSupervisors.map((item) => ({
-      ...emptyPerson,
-      id: item.supervisorId,
-      name: item.name,
-      designation: item.designation,
-      department: item.department,
-    }));
-    const result = await addInvigilators(people);
-    setNotice(
-      result.ok
-        ? `${result.added} supervisor(s) added to the invigilators.`
-        : (result as { message: string }).message,
-    );
-  }
-
   const exportHeaders = [
     "S. No.",
     "Date",
@@ -205,10 +195,35 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
     row.phone,
   ]);
   const days = [...new Set(rows.map((row) => row.date))];
+  const consolidated = consolidatedList(plan, pool);
+  const consolidatedHeaders = [
+    "S. No.",
+    "ID",
+    "Name",
+    "Designation",
+    "Department",
+    "Mobile",
+    "Room duties",
+    "Reserved",
+    "Total",
+    "Duties (date, session, hall)",
+  ];
+  const consolidatedRows = consolidated.map((row) => [
+    String(row.serial),
+    row.invigilatorId,
+    row.name,
+    row.designation,
+    row.department,
+    row.phone,
+    String(row.roomDuties),
+    String(row.reservedDuties),
+    String(row.total),
+    row.duties,
+  ]);
 
   return (
     <DeskPage
-      kicker={scope === "entrance" ? "Selection" : "Course work"}
+      kicker={scope === "entrance" ? "Selection" : "Examination"}
       title={`Invigilation duty · ${title}`}
     >
       {store.detail ? <p className="text-sm text-secondary">{store.detail}</p> : null}
@@ -236,18 +251,8 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
                   variant="outline"
                   onClick={() => setPasting(true)}
                 >
-                  Paste a list
+                  Upload the list
                 </Button>
-                {registerSupervisors.length > 0 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={addFromRegister}
-                  >
-                    Add supervisors from the register
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   size="sm"
@@ -325,7 +330,7 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
             action={<Badge variant={final ? "gold" : "outline"}>{plan.status}</Badge>}
           >
             <PlanSettings
-              key={`${plan.twoFrom}-${plan.reservedPerSitting}-${plan.examination}-${plan.chiefSuperintendent}-${plan.status}`}
+              key={`${plan.twoFrom}-${plan.reservedPerSitting}-${plan.examination}-${JSON.stringify(plan.chiefs)}-${plan.status}`}
               plan={plan}
               editable={editable}
               busy={busy}
@@ -567,6 +572,62 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
         </DeskSection>
       ) : null}
 
+      {tab === "consolidated" ? (
+        <DeskSection
+          title={`Consolidated list of invigilators (${consolidated.length})`}
+          action={
+            canExport && consolidated.length > 0 ? (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    downloadCsvAsSheet(
+                      `invigilators-consolidated-${scope}`,
+                      toCsv(consolidatedHeaders, consolidatedRows),
+                    )
+                  }
+                >
+                  Export Excel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void downloadTablePdf({
+                      title: `Consolidated invigilators list · ${title}`,
+                      criteria: [
+                        `Status: ${plan.status}`,
+                        `Chief Superintendent: ${plan.chiefSuperintendent || "—"}`,
+                      ],
+                      headers: consolidatedHeaders,
+                      rows: consolidatedRows,
+                      filename: `invigilators-consolidated-${scope}`,
+                    })
+                  }
+                >
+                  Export PDF
+                </Button>
+              </div>
+            ) : null
+          }
+        >
+          <DeskTable headers={consolidatedHeaders} empty={consolidated.length === 0}>
+            {consolidatedRows.map((row, index) => (
+              <tr key={index} className="border-t border-border">
+                {row.map((cell, column) => (
+                  <td key={column} className="px-4 py-2">
+                    {cell || "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </DeskTable>
+        </DeskSection>
+      ) : null}
+
       {tab === "letters" ? (
         <DeskSection
           title={`Invigilation letters (${letters.length})`}
@@ -634,6 +695,52 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
         </DeskSection>
       ) : null}
 
+      {tab === "letters" ? (
+        <DeskSection
+          title={`Order for the Chief Superintendent (${plan.chiefs.length})`}
+          action={
+            canExport && plan.chiefs.length > 0 && plan.duties.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() =>
+                  void downloadChiefOrders(
+                    plan,
+                    `chief-superintendent-order-${scope}`,
+                    plan.finalisedOn || clientToday(),
+                  )
+                }
+              >
+                Download order{plan.chiefs.length > 1 ? "s" : ""} (PDF)
+              </Button>
+            ) : null
+          }
+        >
+          {plan.chiefs.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">
+              Name the Chief Superintendent (one or two) under Duty plan, Rules for this
+              plan.
+            </p>
+          ) : (
+            <DeskTable headers={["Chief Superintendent", "Designation", "Department"]}>
+              {plan.chiefs.map((chief) => (
+                <tr key={chief.name} className="border-t border-border">
+                  <td className="px-4 py-2 font-medium">{chief.name}</td>
+                  <td className="px-4 py-2">{chief.designation || "—"}</td>
+                  <td className="px-4 py-2">{chief.department || "—"}</td>
+                </tr>
+              ))}
+            </DeskTable>
+          )}
+          {plan.chiefs.length > 0 && plan.duties.length === 0 ? (
+            <p className="px-4 pb-4 text-sm text-muted-foreground">
+              The order lists the dates and venues of the plan: allot the invigilators
+              first.
+            </p>
+          ) : null}
+        </DeskSection>
+      ) : null}
+
       {editing ? (
         <PersonDialog
           state={editing}
@@ -650,9 +757,20 @@ export function InvigilationDesk({ scope }: { scope: InvigilationScope }) {
         />
       ) : null}
       {pasting ? (
-        <PasteDialog
+        <ListDialog
           busy={busy}
+          hasList={pool.length > 0}
           onClose={() => setPasting(false)}
+          onReplace={(people) =>
+            void replaceInvigilators(people).then((result) => {
+              setNotice(
+                result.ok
+                  ? `The list is replaced by ${people.length} invigilator(s). Allot the duties again.`
+                  : (result as { message: string }).message,
+              );
+              if (result.ok) setPasting(false);
+            })
+          }
           onAdd={(people) =>
             void addInvigilators(people).then((result) => {
               setNotice(
@@ -712,7 +830,7 @@ function PlanSettings({
     twoFrom: number;
     reservedPerSitting: number;
     examination: string;
-    chiefSuperintendent: string;
+    chiefs: Chief[];
   };
   editable: boolean;
   busy: boolean;
@@ -720,13 +838,21 @@ function PlanSettings({
     twoFrom: number;
     reservedPerSitting: number;
     examination: string;
-    chiefSuperintendent: string;
+    chiefs: Chief[];
   }) => void;
 }) {
   const [twoFrom, setTwoFrom] = useState(String(plan.twoFrom));
   const [reserved, setReserved] = useState(String(plan.reservedPerSitting));
   const [examination, setExamination] = useState(plan.examination);
-  const [chief, setChief] = useState(plan.chiefSuperintendent);
+  const blank: Chief = { name: "", designation: "", department: "" };
+  const [chiefs, setChiefs] = useState<Chief[]>([
+    plan.chiefs[0] ?? blank,
+    plan.chiefs[1] ?? blank,
+  ]);
+  const setChief = (index: number, field: keyof Chief, value: string) =>
+    setChiefs((current) =>
+      current.map((item, at) => (at === index ? { ...item, [field]: value } : item)),
+    );
   return (
     <form
       className="grid gap-3 p-4 md:grid-cols-2"
@@ -736,30 +862,23 @@ function PlanSettings({
           twoFrom: Number(twoFrom),
           reservedPerSitting: Number(reserved),
           examination: examination.trim(),
-          chiefSuperintendent: chief.trim(),
+          chiefs: chiefs.filter((item) => item.name.trim()),
         });
       }}
     >
       <label className="space-y-1 text-sm font-medium">
         Two invigilators for a room of at least (candidates)
-        <Input
-          inputMode="numeric"
-          value={twoFrom}
-          disabled={!editable}
-          onChange={(event) => typed(inputRules.integer, event.target.value, setTwoFrom)}
-        />
+        <Input {...typed(inputRules.integer, twoFrom, setTwoFrom)} disabled={!editable} />
       </label>
       <label className="space-y-1 text-sm font-medium">
         Invigilators on reserved duty in each sitting
         <Input
-          inputMode="numeric"
-          value={reserved}
+          {...typed(inputRules.integer, reserved, setReserved)}
           disabled={!editable}
-          onChange={(event) => typed(inputRules.integer, event.target.value, setReserved)}
         />
       </label>
-      <label className="space-y-1 text-sm font-medium">
-        Heading of the letter
+      <label className="space-y-1 text-sm font-medium md:col-span-2">
+        Heading of the letters and orders
         <Input
           value={examination}
           placeholder="Semester Examination - April 2026"
@@ -767,14 +886,46 @@ function PlanSettings({
           onChange={(event) => setExamination(event.target.value)}
         />
       </label>
-      <label className="space-y-1 text-sm font-medium">
-        Chief Superintendent
-        <Input
-          value={chief}
-          disabled={!editable}
-          onChange={(event) => typed(inputRules.names, event.target.value, setChief)}
-        />
-      </label>
+      {chiefs.map((chief, index) => (
+        <fieldset
+          key={index}
+          className="space-y-2 rounded-xl border border-border p-3 md:col-span-2"
+        >
+          <legend className="px-1 text-sm font-semibold text-primary">
+            Chief Superintendent {index + 1}
+            {index === 1 ? " (optional)" : ""}
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="space-y-1 text-sm font-medium">
+              Name
+              <Input
+                {...typed(inputRules.names, chief.name, (value) =>
+                  setChief(index, "name", value),
+                )}
+                disabled={!editable}
+              />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Designation
+              <Input
+                {...typed(inputRules.letters, chief.designation, (value) =>
+                  setChief(index, "designation", value),
+                )}
+                disabled={!editable}
+              />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Department
+              <Input
+                {...typed(inputRules.letters, chief.department, (value) =>
+                  setChief(index, "department", value),
+                )}
+                disabled={!editable}
+              />
+            </label>
+          </div>
+        </fieldset>
+      ))}
       {editable ? (
         <div className="md:col-span-2">
           <Button type="submit" size="sm" disabled={busy}>
@@ -819,10 +970,7 @@ function PersonDialog({
         <label className="space-y-1 text-sm font-medium">
           Name
           <Input
-            value={person.name}
-            onChange={(event) =>
-              typed(inputRules.names, event.target.value, (value) => set("name", value))
-            }
+            {...typed(inputRules.names, person.name, (value) => set("name", value))}
           />
         </label>
         <label className="space-y-1 text-sm font-medium">
@@ -842,11 +990,7 @@ function PersonDialog({
         <label className="space-y-1 text-sm font-medium">
           Mobile
           <Input
-            inputMode="tel"
-            value={person.phone}
-            onChange={(event) =>
-              typed(inputRules.phone, event.target.value, (value) => set("phone", value))
-            }
+            {...typed(inputRules.phone, person.phone, (value) => set("phone", value))}
           />
         </label>
         <div className="space-y-1 text-sm font-medium">
@@ -897,53 +1041,144 @@ function PersonDialog({
   );
 }
 
-/** A pasted list, one person a line: ID, name, designation, department, mobile (tab or comma). */
-function PasteDialog({
+/**
+ * The name list of a session: an Excel or CSV file (first row = headings: ID, Name, Designation,
+ * Department, Mobile), or text pasted from Excel. It either replaces the list (a new session)
+ * or is added to it.
+ */
+function ListDialog({
   busy,
+  hasList,
   onClose,
   onAdd,
+  onReplace,
 }: {
   busy: boolean;
+  hasList: boolean;
   onClose: () => void;
   onAdd: (people: Invigilator[]) => void;
+  onReplace: (people: Invigilator[]) => void;
 }) {
-  const [value, setValue] = useState("");
-  const people = value
-    .split(/\r?\n/)
-    .map((line) => line.split(/\t|,/).map((part) => part.trim()))
-    .filter((parts) => parts[0] && parts[1])
-    .map((parts): Invigilator => ({
-      id: parts[0],
-      name: parts[1],
-      designation: parts[2] ?? "",
-      department: parts[3] ?? "",
-      phone: parts[4] ?? "",
-      unavailable: [],
-    }));
+  const [text, setText] = useState("");
+  const [fromFile, setFromFile] = useState<{
+    people: Invigilator[];
+    skipped: number;
+    name: string;
+  } | null>(null);
+  const [mode, setMode] = useState<"replace" | "add">(hasList ? "replace" : "add");
+  const [error, setError] = useState("");
+  const pasted = invigilatorsFromText(text);
+  const read = fromFile ?? { ...pasted, name: "" };
+
+  async function choose(file: File | undefined) {
+    setError("");
+    setFromFile(null);
+    if (!file) return;
+    try {
+      const book = await openSpreadsheet(file);
+      const table = await book.read(book.sheets[0] ?? "");
+      const result = invigilatorsFromTable(table);
+      if (result.missingName) {
+        setError(
+          "The first row needs a heading called Name (and ID, Designation, Department, Mobile).",
+        );
+        return;
+      }
+      setFromFile({ people: result.people, skipped: result.skipped, name: file.name });
+    } catch (problem) {
+      setError(
+        problem instanceof Error ? problem.message : "That file could not be read.",
+      );
+    }
+  }
+
   return (
     <FormDialog
-      title="Paste a list of invigilators"
+      title="Upload the invigilators list"
       onClose={onClose}
       busy={busy}
-      submitLabel={`Add ${people.length}`}
+      submitLabel={
+        mode === "replace"
+          ? `Replace with ${read.people.length}`
+          : `Add ${read.people.length}`
+      }
       onSubmit={(event) => {
         event.preventDefault();
-        if (people.length > 0) onAdd(people);
+        if (read.people.length === 0)
+          return setError("There is no invigilator to save yet.");
+        if (mode === "replace") onReplace(read.people);
+        else onAdd(read.people);
       }}
     >
-      <p className="mb-2 text-sm text-muted-foreground">
-        One person on each line: ID, name, designation, department, mobile. Separate with
-        a comma or a tab (copy straight from Excel). IDs already in the list are skipped.
-      </p>
-      <textarea
-        className="h-48 w-full rounded-xl border border-input bg-card p-3 text-sm"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        aria-label="Invigilators list"
-      />
-      <p className="mt-1 text-xs text-muted-foreground">
-        {people.length} person(s) read.
-      </p>
+      <div className="space-y-3 text-sm">
+        <label className="block space-y-1 font-medium">
+          Excel or CSV file
+          <input
+            type="file"
+            accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:font-semibold file:text-primary"
+            onChange={(event) => {
+              void choose(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+          <span className="block text-xs font-normal text-muted-foreground">
+            First row: ID, Name, Designation, Department, Mobile. Only Name is required;
+            an ID is made if the sheet has none.
+          </span>
+        </label>
+        <label className="block space-y-1 font-medium">
+          Or paste from Excel (one person on each line, comma or tab apart)
+          <textarea
+            className="h-32 w-full rounded-xl border border-input bg-card p-3 text-sm font-normal"
+            value={text}
+            disabled={Boolean(fromFile)}
+            onChange={(event) => setText(event.target.value)}
+            aria-label="Invigilators list"
+          />
+        </label>
+        {hasList ? (
+          <fieldset className="space-y-1">
+            <legend className="font-medium">This list is for</legend>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                checked={mode === "replace"}
+                onChange={() => setMode("replace")}
+                className="mt-1"
+              />
+              <span>
+                A new session: replace the present list. The duty plans start again; the
+                rules, heading and Chief Superintendent stay.
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                checked={mode === "add"}
+                onChange={() => setMode("add")}
+                className="mt-1"
+              />
+              <span>
+                The same session: add these to the present list (IDs already there are
+                skipped).
+              </span>
+            </label>
+          </fieldset>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          {read.people.length} invigilator(s) read{read.name ? ` from ${read.name}` : ""}
+          {read.skipped > 0
+            ? `; ${read.skipped} row(s) skipped (no name or a repeated ID)`
+            : ""}
+          .
+        </p>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </div>
     </FormDialog>
   );
 }

@@ -131,7 +131,9 @@ export function FilePreview({
           )}
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/40 px-4 py-3">
-          <p className="text-xs text-muted-foreground">Press Esc or Close when you have checked the file.</p>
+          <p className="text-xs text-muted-foreground">
+            Press Esc or Close when you have checked the file.
+          </p>
           <Button type="button" variant="outline" onClick={onClose} data-readonly-allow>
             {filePreviewCopy.close}
           </Button>

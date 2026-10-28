@@ -40,6 +40,7 @@ import {
 import {
   activeIndex,
   blankEvaluator,
+  publicationsRequired,
   evaluatorGroupLabel,
   evaluatorGroups,
   evaluatorsPerGroup,
@@ -195,7 +196,7 @@ function NominationDialog({
                     key={key}
                     label={label}
                     htmlFor={`${group}-${index}-${key}`}
-                    required={key === "name" || key === "institution" || key === "email"}
+                    required
                   >
                     <Input
                       id={`${group}-${index}-${key}`}
@@ -204,6 +205,35 @@ function NominationDialog({
                       onChange={(event) => update(group, index, key, event.target.value)}
                     />
                   </FormField>
+                ))}
+              </div>
+              <div className="mt-3 space-y-2">
+                <p className="text-sm font-medium">
+                  Latest {publicationsRequired} publications (type each one; no file is
+                  uploaded)
+                </p>
+                {person.publications.map((item, at) => (
+                  <Input
+                    key={at}
+                    aria-label={`Publication ${at + 1} of ${person.name || "the evaluator"}`}
+                    placeholder={`Publication ${at + 1}: authors, title, journal, year`}
+                    value={item}
+                    onChange={(event) =>
+                      setNominees((current) => ({
+                        ...current,
+                        [group]: current[group].map((entry, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...entry,
+                                publications: entry.publications.map((value, slot) =>
+                                  slot === at ? event.target.value : value,
+                                ),
+                              }
+                            : entry,
+                        ),
+                      }))
+                    }
+                  />
                 ))}
               </div>
             </fieldset>
@@ -447,6 +477,13 @@ function SelectDialog({
                       <span className="text-muted-foreground">
                         {person.specialization}
                       </span>
+                      {person.publications.filter(Boolean).length > 0 ? (
+                        <ol className="mt-1 list-decimal pl-4 text-xs text-muted-foreground">
+                          {person.publications.filter(Boolean).map((item, at) => (
+                            <li key={at}>{item}</li>
+                          ))}
+                        </ol>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -536,6 +573,13 @@ function ReviewDialog({
                     <td className="px-3 py-2">
                       {person.specialization || "Not stated"}
                       <p className="text-muted-foreground">{person.email}</p>
+                      {person.publications.filter(Boolean).length > 0 ? (
+                        <ol className="mt-1 list-decimal pl-4 text-xs text-muted-foreground">
+                          {person.publications.filter(Boolean).map((item, at) => (
+                            <li key={at}>{item}</li>
+                          ))}
+                        </ol>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

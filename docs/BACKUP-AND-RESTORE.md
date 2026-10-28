@@ -2,11 +2,11 @@
 
 The data of the ERP is in three places. Each needs its own protection.
 
-| What                                   | Where it is                     | Protected by                                                            |
-| -------------------------------------- | ------------------------------- | ----------------------------------------------------------------------- |
-| Records (applications, scholars, ...)  | Supabase database               | The backup script below, and the plan's own backups if the plan has any |
-| Uploaded files                         | Amazon S3 (and older ones in Supabase Storage) | S3 **versioning** (turn it on), and the copy script |
-| Sign-in accounts                       | Supabase, table `portal_users`  | **Not** in the backup script on purpose (they hold password hashes)     |
+| What                                  | Where it is                                    | Protected by                                                            |
+| ------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| Records (applications, scholars, ...) | Supabase database                              | The backup script below, and the plan's own backups if the plan has any |
+| Uploaded files                        | Amazon S3 (and older ones in Supabase Storage) | S3 **versioning** (turn it on), and the copy script                     |
+| Sign-in accounts                      | Supabase, table `portal_users`                 | **Not** in the backup script on purpose (they hold password hashes)     |
 
 ## Saving the records
 

@@ -17,7 +17,9 @@ async function Register() {
 
 export default function SupervisorRegisterPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading supervisors…</p>}>
+    <Suspense
+      fallback={<p className="text-sm text-muted-foreground">Loading supervisors…</p>}
+    >
       <Register />
     </Suspense>
   );

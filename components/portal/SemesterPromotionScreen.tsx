@@ -15,7 +15,14 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { programmeSemesters } from "@/data/doctoral";
 import { officeActionCopy } from "@/data/office-actions";
 import { currentDoctoral, promoteScholars, subscribeDoctoral } from "@/lib/doctoral";
-import { batchOf, currentAllotments, registrationOf, scholarSignInId, subscribeRegister, registerScholarsInOrder } from "@/lib/register";
+import {
+  batchOf,
+  currentAllotments,
+  registrationOf,
+  scholarSignInId,
+  subscribeRegister,
+  registerScholarsInOrder,
+} from "@/lib/register";
 import { formatSemester, scholarSemesterLabel } from "@/lib/scholar-identity";
 import { allBatches } from "@/lib/batches";
 

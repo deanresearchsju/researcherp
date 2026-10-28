@@ -84,12 +84,14 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
       return;
     }
     const slot = files[key] ?? null;
-    const problem = fileError(slot?.file ?? null, "document", false);
+    const problem = fileError(slot?.file ?? null, "pdfDocument", false);
     if (problem) {
       setNotice(problem);
       return;
     }
-    const data = slot?.file ? await storeFile(slot.file, "documents").catch(() => "") : "";
+    const data = slot?.file
+      ? await storeFile(slot.file, "documents").catch(() => "")
+      : "";
     const saved = await saveExaminerReport({
       thesisId: thesis.id,
       scholarIdentifier: thesis.scholarIdentifier,
@@ -111,7 +113,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
 
   async function resubmit() {
     if (!mine) return;
-    const problem = fileError(reviseFile?.file ?? null, "document", true);
+    const problem = fileError(reviseFile?.file ?? null, "pdfDocument", true);
     if (problem || !reviseFile?.file) {
       setNotice(problem ?? "Attach the revised thesis.");
       return;
@@ -198,7 +200,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                     <FormField label="Revised thesis" htmlFor="revise-file" required>
                       <FileUpload
                         id="revise-file"
-                        acceptRule="document"
+                        acceptRule="pdfDocument"
                         value={reviseFile}
                         onChange={setReviseFile}
                       />
@@ -343,7 +345,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
                             />
                             <FileUpload
                               id={`${key}-file`}
-                              acceptRule="document"
+                              acceptRule="pdfDocument"
                               value={files[key] ?? null}
                               onChange={(value) =>
                                 setFiles((current) => ({ ...current, [key]: value }))

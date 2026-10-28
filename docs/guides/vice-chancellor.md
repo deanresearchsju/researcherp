@@ -13,3 +13,7 @@ After the supervisor has proposed nine evaluators (three foreign, three Indian o
 ## The approval of the selection list
 
 The provisional selection list is approved by the Research Advisory Board or by you; the office records the approval (body, reference, date) before letters are issued.
+
+## RAC approval
+
+Open **RAC approval**. The Dean has selected the external member; the nomination shows all members with their address, contact, area of research and latest five publications. **Approve the RAC**, or **Return to supervisor** with remarks (required). The RAC is in force, and shown to the scholar and the supervisor, only after your approval.

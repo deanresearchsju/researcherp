@@ -190,7 +190,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice("That period is not open. Request access if the report was missed.");
       return;
     }
-    const problem = fileError(file?.file ?? null, "document", true);
+    const problem = fileError(file?.file ?? null, "pdfDocument", true);
     if (problem || !file?.file) {
       setNotice(problem ?? "Attach the report.");
       return;
@@ -758,7 +758,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                   <FormField label="Report" htmlFor="report-file" required>
                     <FileUpload
                       id="report-file"
-                      acceptRule="document"
+                      acceptRule="pdfDocument"
                       value={file}
                       onChange={setFile}
                     />

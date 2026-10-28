@@ -27,8 +27,12 @@ import {
   menuLabels,
   parseMenuActionKey,
   storedMenus,
+  sectionKey,
+  sectionsMarker,
+  withAllSections,
   type MenuActionKind,
 } from "@/lib/access";
+import { menuSections } from "@/data/menu-sections";
 import { activateRegisterAccounts, type ActivationReport } from "@/lib/register-access";
 import { cn } from "@/lib/utils";
 import {
@@ -116,20 +120,40 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   const createRole = useWatch({ control: createForm.control, name: "role" });
   const [menuRole, setMenuRole] = useState<(typeof accessRoles)[number]>("scholar");
   const [selectedMenus, setSelectedMenus] = useState<string[]>(
-    defaultMenuHrefs("scholar"),
+    withAllSections("scholar", defaultMenuHrefs("scholar")),
   );
   const [editMenus, setEditMenus] = useState<string[]>([]);
   const [issued, setIssued] = useState<ActivationReport["issued"]>([]);
   const editingUser = users.find((user) => user.id === editingId) ?? null;
   if (createRole !== menuRole) {
     setMenuRole(createRole);
-    setSelectedMenus(defaultMenuHrefs(createRole));
+    setSelectedMenus(withAllSections(createRole, defaultMenuHrefs(createRole)));
+  }
+
+  /** The section keys of a menu, so a menu that is opened starts with all its sections open. */
+  function sectionKeysOf(hrefs: readonly string[]) {
+    return hrefs.flatMap((href) =>
+      (menuSections[href] ?? []).map((section) => sectionKey(href, section.id)),
+    );
   }
 
   function toggleMenu(current: string[], href: string, checked: boolean) {
     if (href.endsWith("/dashboard")) return current;
-    if (checked) return current.includes(href) ? current : [...current, href];
+    if (checked) {
+      if (current.includes(href)) return current;
+      return [
+        ...current,
+        href,
+        ...sectionKeysOf([href]).filter((key) => !current.includes(key)),
+        ...(current.includes(sectionsMarker) ? [] : [sectionsMarker]),
+      ];
+    }
     return current.filter((item) => item !== href && !item.startsWith(`${href}#`));
+  }
+
+  function toggleSection(current: string[], key: string, checked: boolean) {
+    if (!checked) return current.filter((item) => item !== key);
+    return current.includes(key) ? current : [...current, key];
   }
 
   function toggleGroup(current: string[], hrefs: readonly string[], checked: boolean) {
@@ -138,7 +162,14 @@ export function UserManager({ initial }: { initial: UserLoad }) {
       (item) =>
         !extra.includes(item) && extra.every((href) => !item.startsWith(`${href}#`)),
     );
-    return checked ? [...without, ...extra] : without;
+    return checked
+      ? [
+          ...without,
+          ...extra,
+          ...sectionKeysOf(extra),
+          ...(without.includes(sectionsMarker) ? [] : [sectionsMarker]),
+        ]
+      : without;
   }
 
   function toggleAction(
@@ -161,7 +192,7 @@ export function UserManager({ initial }: { initial: UserLoad }) {
   function beginEdit(user: PortalUser) {
     setEditingId(user.id);
     form.reset({ name: user.name, password: "" });
-    setEditMenus(user.menus ?? defaultMenuHrefs(user.role));
+    setEditMenus(withAllSections(user.role, user.menus ?? defaultMenuHrefs(user.role)));
   }
 
   function cancelEdit() {
@@ -435,7 +466,12 @@ export function UserManager({ initial }: { initial: UserLoad }) {
                   toggleAction(current, href, action, checked),
                 )
               }
-              onSelectAll={() => setSelectedMenus(menuHrefs(createRole))}
+              onToggleSection={(key, checked) =>
+                setSelectedMenus((current) => toggleSection(current, key, checked))
+              }
+              onSelectAll={() =>
+                setSelectedMenus(withAllSections(createRole, menuHrefs(createRole)))
+              }
               onClear={() =>
                 setSelectedMenus(
                   menuHrefs(createRole).filter((href) => href.endsWith("/dashboard")),
@@ -493,7 +529,14 @@ export function UserManager({ initial }: { initial: UserLoad }) {
                 onToggleAction={(href, action, checked) =>
                   setEditMenus((current) => toggleAction(current, href, action, checked))
                 }
-                onSelectAll={() => setEditMenus(menuHrefs(editingUser.role))}
+                onToggleSection={(key, checked) =>
+                  setEditMenus((current) => toggleSection(current, key, checked))
+                }
+                onSelectAll={() =>
+                  setEditMenus(
+                    withAllSections(editingUser.role, menuHrefs(editingUser.role)),
+                  )
+                }
                 onClear={() =>
                   setEditMenus(
                     menuHrefs(editingUser.role).filter((href) =>
@@ -700,6 +743,7 @@ function MenuPicker({
   onToggle,
   onToggleGroup,
   onToggleAction,
+  onToggleSection,
   onSelectAll,
   onClear,
 }: {
@@ -708,11 +752,13 @@ function MenuPicker({
   onToggle: (href: string, checked: boolean) => void;
   onToggleGroup: (hrefs: readonly string[], checked: boolean) => void;
   onToggleAction: (href: string, action: MenuActionKind, checked: boolean) => void;
+  onToggleSection: (key: string, checked: boolean) => void;
   onSelectAll: () => void;
   onClear: () => void;
 }) {
   const office = isOfficeRole(role);
   const columns: MenuActionKind[] = office ? ["edit", "approve", "export", "upload"] : [];
+  const pageOnFor = (href: string) => office && selected.includes(href);
 
   function grantColumn(
     hrefs: readonly string[],
@@ -745,6 +791,11 @@ function MenuPicker({
               );
               onToggleGroup(hrefs, true);
               for (const action of columns) grantColumn(hrefs, action, true);
+              for (const href of hrefs) {
+                for (const section of menuSections[href] ?? []) {
+                  onToggleSection(sectionKey(href, section.id), true);
+                }
+              }
             }}
           >
             Full rights on every menu
@@ -863,6 +914,49 @@ function MenuPicker({
                     </tr>
                   );
                 })}
+                {group.items
+                  .filter(
+                    (item) =>
+                      pageOnFor(item.href) && (menuSections[item.href] ?? []).length > 0,
+                  )
+                  .map((item) => (
+                    <tr
+                      key={`${item.href}-sections`}
+                      className="border-t border-border/40 bg-muted/20"
+                    >
+                      <td
+                        className="px-3 py-1.5 pl-9 text-xs text-muted-foreground"
+                        colSpan={2}
+                      >
+                        {item.label} · sections
+                      </td>
+                      <td className="px-2 py-1.5" colSpan={columns.length || 1}>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {(menuSections[item.href] ?? []).map((section) => (
+                            <label
+                              key={section.id}
+                              className="flex items-center gap-1.5 text-xs"
+                            >
+                              <input
+                                type="checkbox"
+                                aria-label={`${section.label} · ${item.label}`}
+                                checked={selected.includes(
+                                  sectionKey(item.href, section.id),
+                                )}
+                                onChange={(event) =>
+                                  onToggleSection(
+                                    sectionKey(item.href, section.id),
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                              {section.label}
+                            </label>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             );
           })}

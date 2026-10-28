@@ -34,7 +34,9 @@ function readerAudiences(session: CookieSession | null): FormAudience[] | null {
 }
 
 function mayRead(audience: readonly string[], allowed: FormAudience[] | null) {
-  return allowed === null || audience.some((item) => (allowed as string[]).includes(item));
+  return (
+    allowed === null || audience.some((item) => (allowed as string[]).includes(item))
+  );
 }
 
 type ListRow = {
@@ -90,8 +92,13 @@ export async function GET(request: NextRequest) {
       return fail("That form is not available.", 404);
     }
     const comma = data.file_data.indexOf(",");
-    const bytes = Buffer.from(comma >= 0 ? data.file_data.slice(comma + 1) : data.file_data, "base64");
-    const inline = request.nextUrl.searchParams.get("view") === "1" && data.file_type === "application/pdf";
+    const bytes = Buffer.from(
+      comma >= 0 ? data.file_data.slice(comma + 1) : data.file_data,
+      "base64",
+    );
+    const inline =
+      request.nextUrl.searchParams.get("view") === "1" &&
+      data.file_type === "application/pdf";
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "Content-Type": data.file_type,
@@ -124,7 +131,10 @@ export async function POST(request: NextRequest) {
     return fail("Only the research office can change forms.", 403);
   }
   if (!canMenuAction(session, formsHref, "edit")) {
-    return fail("Your sign-in is not permitted to add or edit forms. Ask the administrator.", 403);
+    return fail(
+      "Your sign-in is not permitted to add or edit forms. Ask the administrator.",
+      403,
+    );
   }
   const supabase = createAdminSupabase();
   if (!supabase) return fail(migrationHint, 503);
@@ -140,7 +150,8 @@ export async function POST(request: NextRequest) {
 
   const id = text(body.id, 64);
   if (body.action === "delete") {
-    if (session.role !== "admin") return fail("Only the administrator can remove a form.", 403);
+    if (session.role !== "admin")
+      return fail("Only the administrator can remove a form.", 403);
     if (!id) return fail("Choose a form to remove.");
     const { error } = await supabase.from("portal_forms").delete().eq("id", id);
     if (error) return fail("That form could not be removed.", 500);
@@ -149,13 +160,15 @@ export async function POST(request: NextRequest) {
   if (body.action === "append") {
     // The next part of a large file; the last part completes the form.
     const part = typeof body.data === "string" ? body.data : "";
-    if (!id || !part || !/^[A-Za-z0-9+/=]+$/.test(part)) return fail("That part could not be read.");
+    if (!id || !part || !/^[A-Za-z0-9+/=]+$/.test(part))
+      return fail("That part could not be read.");
     const { data: row, error } = await supabase
       .from("portal_forms")
       .select("file_data, complete, title")
       .eq("id", id)
       .maybeSingle();
-    if (error || !row) return fail("That upload was not found. Upload the file again.", 404);
+    if (error || !row)
+      return fail("That upload was not found. Upload the file again.", 404);
     if (row.complete) return fail("That upload is already complete.");
     const fileData = row.file_data + part;
     const last = body.last === true;
@@ -165,10 +178,13 @@ export async function POST(request: NextRequest) {
       .from("portal_forms")
       .update({
         file_data: fileData,
-        ...(last ? { complete: true, file_size: size, updated_at: new Date().toISOString() } : {}),
+        ...(last
+          ? { complete: true, file_size: size, updated_at: new Date().toISOString() }
+          : {}),
       })
       .eq("id", id);
-    if (saveError) return fail("That part could not be saved. Upload the file again.", 500);
+    if (saveError)
+      return fail("That part could not be saved. Upload the file again.", 500);
     return NextResponse.json({ ok: true, message: last ? `${row.title} uploaded.` : "" });
   }
   if (body.action !== "save") return fail("That request was not valid.");
@@ -196,10 +212,13 @@ export async function POST(request: NextRequest) {
     const fileType = formFileType(fileName);
     if (!fileType) return fail("Upload a Word (.doc, .docx) or PDF file.");
     const comma = fileData.indexOf(",");
-    if (!fileData.startsWith("data:") || comma < 0) return fail("That file could not be read.");
+    if (!fileData.startsWith("data:") || comma < 0)
+      return fail("That file could not be read.");
     const declared = Number(body.fileSize);
     const size = morePartsFollow
-      ? Number.isFinite(declared) ? Math.floor(declared) : 0
+      ? Number.isFinite(declared)
+        ? Math.floor(declared)
+        : 0
       : Math.floor(((fileData.length - comma - 1) * 3) / 4);
     if (size <= 0) return fail("That file is empty.");
     if (size > formMaxBytes) return fail("That file is larger than 10 MB.");
@@ -217,7 +236,14 @@ export async function POST(request: NextRequest) {
   if (id) {
     const { error } = await supabase
       .from("portal_forms")
-      .update({ title, category, audience, uploaded_by: uploadedBy, updated_at: now, ...(file ?? {}) })
+      .update({
+        title,
+        category,
+        audience,
+        uploaded_by: uploadedBy,
+        updated_at: now,
+        ...(file ?? {}),
+      })
       .eq("id", id);
     if (error) return fail("That form could not be saved.", 500);
     return NextResponse.json({ ok: true, id, message: `${title} updated.` });
@@ -229,7 +255,10 @@ export async function POST(request: NextRequest) {
     .select("id")
     .single();
   if (error || !inserted) {
-    return fail(error?.code === "42P01" ? migrationHint : "That form could not be saved.", 500);
+    return fail(
+      error?.code === "42P01" ? migrationHint : "That form could not be saved.",
+      500,
+    );
   }
   return NextResponse.json({ ok: true, id: inserted.id, message: `${title} uploaded.` });
 }

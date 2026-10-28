@@ -104,7 +104,7 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
       setNotice(feeBlocked);
       return;
     }
-    const problem = fileError(file?.file ?? null, "document", true);
+    const problem = fileError(file?.file ?? null, "pdfDocument", true);
     if (problem || !file?.file) {
       setNotice(problem ?? "Attach the thesis.");
       return;
@@ -228,7 +228,7 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
           <FormField label="Thesis" htmlFor="thesis-file" required>
             <FileUpload
               id="thesis-file"
-              acceptRule="document"
+              acceptRule="pdfDocument"
               value={file}
               onChange={setFile}
             />

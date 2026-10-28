@@ -18,7 +18,8 @@ type SortState = {
   applied: HTMLTableRowElement[];
 };
 
-type Key = { kind: "empty" } | { kind: "number"; value: number } | { kind: "text"; value: string };
+type Key =
+  { kind: "empty" } | { kind: "number"; value: number } | { kind: "text"; value: string };
 
 const monthPattern = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i;
 
@@ -39,7 +40,10 @@ function keyOf(raw: string): Key {
   if (iso) return { kind: "number", value: Date.parse(`${iso[1]}-${iso[2]}-${iso[3]}`) };
   const dmy = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) {
-    return { kind: "number", value: Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])) };
+    return {
+      kind: "number",
+      value: Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])),
+    };
   }
   if (monthPattern.test(text) && /\b\d{4}\b/.test(text) && /\d/.test(text)) {
     const parsed = Date.parse(text);
@@ -61,7 +65,8 @@ function dataRows(table: HTMLTableElement) {
   const body = table.tBodies[0];
   if (!body) return [];
   return Array.from(body.rows).filter(
-    (row) => row.cells.length > 0 && !Array.from(row.cells).some((cell) => cell.colSpan > 1),
+    (row) =>
+      row.cells.length > 0 && !Array.from(row.cells).some((cell) => cell.colSpan > 1),
   );
 }
 
@@ -105,7 +110,11 @@ function apply(table: HTMLTableElement, state: SortState) {
   state.applied = ordered;
 }
 
-function mark(table: HTMLTableElement, column: number | null, direction: Direction | null) {
+function mark(
+  table: HTMLTableElement,
+  column: number | null,
+  direction: Direction | null,
+) {
   const cells = headerCells(table);
   if (!cells) return;
   cells.forEach((cell, index) => {

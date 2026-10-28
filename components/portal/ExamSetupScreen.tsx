@@ -4,12 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 import { useClientReady } from "@/components/forms/ClientGate";
-import {
-  DeskPage,
-  DeskSection,
-  DeskTabs,
-  FormDialog,
-} from "@/components/portal/Desk";
+import { DeskPage, DeskSection, DeskTabs, FormDialog } from "@/components/portal/Desk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +13,7 @@ import { officeWriteBlock } from "@/lib/access";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import {
   currentExam,
+  gradesProblem,
   saveExamSettings,
   subscribeExam,
   type ExamCentre,
@@ -66,7 +62,8 @@ export function ExamSetupScreen() {
     return <p className="text-sm text-muted-foreground">Loading the exam set-up…</p>;
   }
   const settings = exam.settings;
-  const canWrite = Boolean(session) && !officeWriteBlock() && session?.role !== "accounts";
+  const canWrite =
+    Boolean(session) && !officeWriteBlock() && session?.role !== "accounts";
 
   async function save(next: ExamSettings, message: string) {
     setBusy(true);
@@ -77,7 +74,7 @@ export function ExamSetupScreen() {
   }
 
   return (
-    <DeskPage kicker="Course work" title="Exam setup">
+    <DeskPage kicker="Examination" title="Exam setup">
       {exam.detail ? <p className="text-sm text-secondary">{exam.detail}</p> : null}
       {notice ? (
         <p role="status" className="text-sm font-medium text-secondary">
@@ -114,7 +111,9 @@ export function ExamSetupScreen() {
                       <div>
                         <h3 className="font-semibold text-primary">{centre.name}</h3>
                         {centre.address ? (
-                          <p className="text-sm text-muted-foreground">{centre.address}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {centre.address}
+                          </p>
                         ) : null}
                       </div>
                       <Badge variant="gold">{seatsOf(centre)} seats</Badge>
@@ -152,7 +151,9 @@ export function ExamSetupScreen() {
                             void save(
                               {
                                 ...settings,
-                                centres: settings.centres.filter((item) => item.id !== centre.id),
+                                centres: settings.centres.filter(
+                                  (item) => item.id !== centre.id,
+                                ),
                               },
                               `${centre.name} was removed.`,
                             );
@@ -322,7 +323,9 @@ function CentreDialog({
               size="sm"
               variant="ghost"
               aria-label={`Remove room ${index + 1}`}
-              onClick={() => setRooms((current) => current.filter((item) => item.id !== room.id))}
+              onClick={() =>
+                setRooms((current) => current.filter((item) => item.id !== room.id))
+              }
             >
               <Trash2 className="size-4" aria-hidden="true" />
             </Button>
@@ -376,7 +379,9 @@ function TimetablePanel({
   const entryOf = (subjectId: string) =>
     settings.timetable.find(
       (entry) =>
-        entry.batchId === batchId && entry.semester === semester && entry.subjectId === subjectId,
+        entry.batchId === batchId &&
+        entry.semester === semester &&
+        entry.subjectId === subjectId,
     );
   const valueOf = (subjectId: string) =>
     edits[subjectId] ?? {
@@ -543,7 +548,11 @@ function MarksPanel({
   const [maxMarks, setMaxMarks] = useState(String(settings.maxMarks));
   const [passMark, setPassMark] = useState(String(settings.passMark));
   const [grades, setGrades] = useState(
-    settings.grades.map((band) => ({ min: String(band.min), grade: band.grade })),
+    settings.grades.map((band) => ({
+      min: String(band.min),
+      max: String(band.max),
+      grade: band.grade,
+    })),
   );
   const [instructions, setInstructions] = useState(settings.instructions.join("\n"));
   const [error, setError] = useState("");
@@ -575,7 +584,7 @@ function MarksPanel({
         </div>
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold text-primary">
-            Grades (marks from … and above)
+            Grades (marks from … to …)
           </legend>
           {grades.map((band, index) => (
             <div key={index} className="flex items-center gap-2">
@@ -584,12 +593,33 @@ function MarksPanel({
                 inputMode="numeric"
                 className="w-24"
                 disabled={!canWrite}
+                placeholder="From"
                 aria-label={`Grade ${index + 1} from marks`}
                 onChange={(event) =>
                   setGrades((current) =>
                     current.map((item, at) =>
                       at === index
                         ? { ...item, min: event.target.value.replace(/\D/g, "") }
+                        : item,
+                    ),
+                  )
+                }
+              />
+              <span className="text-sm text-muted-foreground" aria-hidden="true">
+                to
+              </span>
+              <Input
+                value={band.max}
+                inputMode="numeric"
+                className="w-24"
+                disabled={!canWrite}
+                placeholder="To"
+                aria-label={`Grade ${index + 1} to marks`}
+                onChange={(event) =>
+                  setGrades((current) =>
+                    current.map((item, at) =>
+                      at === index
+                        ? { ...item, max: event.target.value.replace(/\D/g, "") }
                         : item,
                     ),
                   )
@@ -615,7 +645,9 @@ function MarksPanel({
                   size="sm"
                   variant="ghost"
                   aria-label={`Remove grade ${index + 1}`}
-                  onClick={() => setGrades((current) => current.filter((_, at) => at !== index))}
+                  onClick={() =>
+                    setGrades((current) => current.filter((_, at) => at !== index))
+                  }
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
@@ -627,7 +659,9 @@ function MarksPanel({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => setGrades((current) => [...current, { min: "", grade: "" }])}
+              onClick={() =>
+                setGrades((current) => [...current, { min: "", max: "", grade: "" }])
+              }
             >
               Add a grade
             </Button>
@@ -657,10 +691,19 @@ function MarksPanel({
             disabled={busy}
             onClick={() => {
               const bands: GradeBand[] = grades
-                .filter((band) => band.grade.trim() && band.min !== "")
-                .map((band) => ({ min: Number(band.min), grade: band.grade.trim() }));
-              if (bands.length === 0) {
-                setError("Add at least one grade.");
+                .filter((band) => band.grade.trim() || band.min !== "" || band.max !== "")
+                .map((band) => ({
+                  min: Number(band.min),
+                  max: band.max === "" ? Number.NaN : Number(band.max),
+                  grade: band.grade.trim(),
+                }));
+              const problem = bands.some(
+                (band) => band.min !== band.min || band.max !== band.max,
+              )
+                ? "Enter the marks from and to for every grade."
+                : gradesProblem(bands, Number(passMark) || 0, Number(maxMarks) || 0);
+              if (problem) {
+                setError(problem);
                 return;
               }
               setError("");

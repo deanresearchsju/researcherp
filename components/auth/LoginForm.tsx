@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { roleProfiles } from "@/data/roles";
 import { mockLogin } from "@/lib/auth";
+import { signOutReasons } from "@/lib/use-sign-in-watch";
 import type { Role } from "@/types";
 
 type LoginFormProps = {
@@ -28,6 +29,12 @@ export function LoginForm({ role }: LoginFormProps) {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const search = useSyncExternalStore(
+    () => () => undefined,
+    () => window.location.search,
+    () => "",
+  );
+  const notice = signOutReasons[new URLSearchParams(search).get("reason") ?? ""] ?? null;
   const [signingIn, setSigningIn] = useState(false);
 
   const schema = useMemo(
@@ -118,6 +125,14 @@ export function LoginForm({ role }: LoginFormProps) {
         >
           {profile.title}
         </h2>
+        {notice ? (
+          <p
+            role="status"
+            className="mt-4 rounded-xl bg-primary/5 px-3 py-2 text-sm text-primary"
+          >
+            {notice}
+          </p>
+        ) : null}
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
           {formError ? (
             <p

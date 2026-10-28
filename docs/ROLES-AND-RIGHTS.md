@@ -2,17 +2,17 @@
 
 ## The sign-ins
 
-| Role (sign-in)       | Page            | Sees                                                                                         | Can change data                              |
-| -------------------- | --------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| **Administrator**    | `/login/admin`  | Everything. The main one is named `admin`                                                    | Everything, including users and fees         |
-| **Staff**            | `/login/admin`  | Only the menus the administrator ticks                                                       | What those menus allow                       |
-| **Dean**             | `/login/admin`  | Only the menus the administrator ticks                                                       | Gives the final approval; approves the RAC; checks evaluator nominees |
-| **Accounts**         | `/login/admin`  | The five fee menus                                                                           | Approves or rejects payments                 |
-| **Vice Chancellor**  | `/login/admin`  | Scholar register, Supervisor register, Thesis evaluators                                     | Reads the registers; selects evaluators      |
-| **COE: marks entry** | `/login/admin`  | Marks entry                                                                                  | Enters marks (any number of such sign-ins)   |
-| **COE: verification**| `/login/admin`  | Verify and freeze marks                                                                      | Sends back, freezes, submits to the office   |
-| **Supervisor**       | `/login/supervisor` | Own scholars, their requests, committees, synopsis and thesis, RAC, evaluators           | Approves or rejects the scholars' submissions; nominates the RAC and evaluators |
-| **Scholar**          | `/login/scholar`| Own record only                                                                              | Own records and requests                     |
+| Role (sign-in)        | Page                | Sees                                                                           | Can change data                                                                 |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **Administrator**     | `/login/admin`      | Everything. The main one is named `admin`                                      | Everything, including users and fees                                            |
+| **Staff**             | `/login/admin`      | Only the menus the administrator ticks                                         | What those menus allow                                                          |
+| **Dean**              | `/login/admin`      | Only the menus the administrator ticks                                         | Gives the final approval; approves the RAC; checks evaluator nominees           |
+| **Accounts**          | `/login/admin`      | The five fee menus                                                             | Approves or rejects payments                                                    |
+| **Vice Chancellor**   | `/login/admin`      | Scholar register, Supervisor register, Thesis evaluators                       | Reads the registers; selects evaluators                                         |
+| **COE: marks entry**  | `/login/admin`      | Marks entry                                                                    | Enters marks (any number of such sign-ins)                                      |
+| **COE: verification** | `/login/admin`      | Verify and freeze marks                                                        | Sends back, freezes, submits to the office                                      |
+| **Supervisor**        | `/login/supervisor` | Own scholars, their requests, committees, synopsis and thesis, RAC, evaluators | Approves or rejects the scholars' submissions; nominates the RAC and evaluators |
+| **Scholar**           | `/login/scholar`    | Own record only                                                                | Own records and requests                                                        |
 
 A scholar's sign-in is the **e-mail only**; it opens once the admission checklist is submitted. A supervisor's sign-in opens when the recognition is approved. The first password is issued by the office and must be changed at the first sign-in.
 

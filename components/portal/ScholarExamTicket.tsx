@@ -43,7 +43,9 @@ export function ScholarExamTicket() {
   const identifier = session?.identifier ?? "";
   const tickets = ticketsOfScholar(exam, identifier);
   const settings = exam.settings;
-  const mine = doctoral.registrations.filter((row) => sameId(row.scholarIdentifier, identifier));
+  const mine = doctoral.registrations.filter((row) =>
+    sameId(row.scholarIdentifier, identifier),
+  );
   const waiting = mine.filter(
     (row) =>
       !doctoral.results.some((result) => result.registrationId === row.id) &&
@@ -118,7 +120,9 @@ export function ScholarExamTicket() {
                 <dl className="grid gap-3 sm:grid-cols-4">
                   <div>
                     <dt className="text-xs text-muted-foreground">Hall ticket No.</dt>
-                    <dd className="font-mono font-semibold text-primary">{ticket.ticketNo}</dd>
+                    <dd className="font-mono font-semibold text-primary">
+                      {ticket.ticketNo}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Campus</dt>
@@ -130,7 +134,9 @@ export function ScholarExamTicket() {
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Seat</dt>
-                    <dd className="font-medium">{ticket.seat || "Shown at the campus"}</dd>
+                    <dd className="font-medium">
+                      {ticket.seat || "Shown at the campus"}
+                    </dd>
                   </div>
                 </dl>
                 <div className="overflow-x-auto rounded-xl border border-border">
@@ -168,7 +174,9 @@ export function ScholarExamTicket() {
           <ul className="space-y-2 p-4 text-sm">
             {waiting.map((row) => (
               <li key={row.id} className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-primary">{row.code}</span>
+                <span className="font-mono text-xs font-semibold text-primary">
+                  {row.code}
+                </span>
                 <span>{row.name}</span>
                 <Badge variant="outline">Semester {row.semester}</Badge>
                 <span className="text-muted-foreground">

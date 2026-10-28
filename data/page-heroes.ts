@@ -69,6 +69,7 @@ export const pageHeroes = {
   privacy: {
     eyebrow: "Legal",
     title: "Privacy",
-    summary: "What personal information the research portal collects, why, and who can see it.",
+    summary:
+      "What personal information the research portal collects, why, and who can see it.",
   },
 } as const;

@@ -57,6 +57,8 @@ import {
   registerCoursePapers,
   resultFor,
   saveCourseWindow,
+  approveSubject,
+  removeSubject,
   saveSubject,
   subscribeDoctoral,
   type CourseSubject,
@@ -313,7 +315,7 @@ function RegistrationForm({
       setReceiptMessage("Upload the payment receipt.");
       return;
     }
-    const problem = fileError(receipt.file, "document", true);
+    const problem = fileError(receipt.file, "pdfDocument", true);
     setReceiptMessage(problem);
     if (problem) return;
     const receiptData = await storeFile(receipt.file, "receipts").catch(() => "");
@@ -502,7 +504,7 @@ function RegistrationForm({
         >
           <FileUpload
             id="payment-receipt"
-            acceptRule="document"
+            acceptRule="pdfDocument"
             value={receipt}
             onChange={setReceipt}
           />
@@ -939,7 +941,14 @@ function ScholarCourseWork({
   );
 }
 
-export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
+export function CourseWorkScreen({
+  mode,
+  view = "work",
+}: {
+  mode: "admin" | "scholar";
+  /** Office: "windows" is the registration windows menu; "work" is registrations, arrears and subjects. */
+  view?: "windows" | "work";
+}) {
   const ready = useClientReady();
   const session = usePortalSession();
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
@@ -949,14 +958,16 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [batchFilter, setBatchFilter] = useState("");
   const [syllabus, setSyllabus] = useState<StoredFile | null>(null);
   const [syllabusMessage, setSyllabusMessage] = useState<string | null>(null);
-  const [tab, setTab] = useState<"windows" | "registrations" | "arrears" | "subjects">(
-    "windows",
+  const [chosenTab, setTab] = useState<"registrations" | "arrears" | "subjects">(
+    "registrations",
   );
+  const tab = view === "windows" ? "windows" : chosenTab;
   const [coeFilter, setCoeFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
   const [forwarding, setForwarding] = useState(false);
   const [windowBatch, setWindowBatch] = useState<string | null>(null);
   const [addingSubject, setAddingSubject] = useState(false);
+  const canApproveSubjects = session?.role === "admin" || session?.role === "dean";
   const subjectForm = useForm<CatalogValues>({
     resolver: zodResolver(subjectCatalogSchema) as Resolver<CatalogValues>,
     defaultValues: {
@@ -1067,20 +1078,20 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
   async function addSubject(values: CatalogValues) {
     let syllabusName: string | null = null;
     let syllabusData: string | null = null;
-    if (syllabus?.file) {
-      const problem = fileError(syllabus.file, "document", true);
-      setSyllabusMessage(problem);
-      if (problem) return;
-      const data = await storeFile(syllabus.file, "documents").catch(() => "");
-      if (!data) {
-        setSyllabusMessage("That syllabus could not be read.");
-        return;
-      }
-      syllabusName = syllabus.file.name;
-      syllabusData = data;
-    } else {
-      setSyllabusMessage(null);
+    if (!syllabus?.file) {
+      setSyllabusMessage("Upload the syllabus (PDF).");
+      return;
     }
+    const problem = fileError(syllabus.file, "pdfDocument", true);
+    setSyllabusMessage(problem);
+    if (problem) return;
+    const data = await storeFile(syllabus.file, "documents").catch(() => "");
+    if (!data) {
+      setSyllabusMessage("That syllabus could not be read.");
+      return;
+    }
+    syllabusName = syllabus.file.name;
+    syllabusData = data;
     const saved = await saveSubject({
       batchId: values.batchId,
       semester: Number(values.semester),
@@ -1094,7 +1105,11 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
       syllabusName,
       syllabusData,
     });
-    setNotice(saved.ok ? "Subject saved." : saved.message);
+    setNotice(
+      saved.ok
+        ? "Subject saved. It is offered to scholars after the Dean or the administrator approves it."
+        : saved.message,
+    );
     if (saved.ok) {
       setAddingSubject(false);
       subjectForm.reset({
@@ -1115,19 +1130,21 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
   return (
     <section className="space-y-6">
       <PageTitle
-        kicker="Course work"
-        title="Course work"
+        kicker="Examination"
+        title={view === "windows" ? "Registration windows" : "Course work registrations"}
         actions={
-          <Button
-            type="button"
-            variant="gold"
-            onClick={() => {
-              setNotice(null);
-              setAddingSubject(true);
-            }}
-          >
-            Add subject
-          </Button>
+          view === "work" ? (
+            <Button
+              type="button"
+              variant="gold"
+              onClick={() => {
+                setNotice(null);
+                setAddingSubject(true);
+              }}
+            >
+              Add subject
+            </Button>
+          ) : null
         }
       />
       {doctoral.detail ? (
@@ -1139,16 +1156,17 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
         </p>
       ) : null}
 
-      <DeskTabs
-        tabs={[
-          { id: "windows", label: "Registration windows" },
-          { id: "registrations", label: "Registrations & COE" },
-          { id: "arrears", label: `Arrears (${arrearRows.length})` },
-          { id: "subjects", label: "Subjects" },
-        ]}
-        value={tab}
-        onChange={(id) => setTab(id as typeof tab)}
-      />
+      {view === "work" ? (
+        <DeskTabs
+          tabs={[
+            { id: "registrations", label: "Registrations & COE" },
+            { id: "arrears", label: `Arrears (${arrearRows.length})` },
+            { id: "subjects", label: "Subjects" },
+          ]}
+          value={tab}
+          onChange={(id) => setTab(id as typeof chosenTab)}
+        />
+      ) : null}
 
       {tab === "windows" ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1499,28 +1517,90 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
             subjectsBySchool(doctoral.subjects).map((group) => (
               <div key={group.school} className="space-y-2">
                 <h3 className="text-sm font-semibold text-primary">{group.school}</h3>
-                <table className="w-full text-left text-sm">
-                  <thead className="text-muted-foreground">
-                    <tr>
-                      <th className="py-2 pr-3 font-medium">Code</th>
-                      <th className="py-2 pr-3 font-medium">Subject</th>
-                      <th className="py-2 pr-3 font-medium">Semester</th>
-                      <th className="py-2 font-medium">Batch</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.subjects.map((subject) => (
-                      <tr key={subject.id} className="border-t border-border">
-                        <td className="py-2 pr-3">{subject.code}</td>
-                        <td className="py-2 pr-3">{subject.name}</td>
-                        <td className="py-2 pr-3">{subject.semester}</td>
-                        <td className="py-2">
-                          {subject.batchId ? batchLabel(subject.batchId) : "All batches"}
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[44rem] text-left text-sm">
+                    <thead className="text-muted-foreground">
+                      <tr>
+                        <th className="py-2 pr-3 font-medium">Code</th>
+                        <th className="py-2 pr-3 font-medium">Subject</th>
+                        <th className="py-2 pr-3 font-medium">Semester</th>
+                        <th className="py-2 pr-3 font-medium">Batch</th>
+                        <th className="py-2 pr-3 font-medium">Syllabus</th>
+                        <th className="py-2 pr-3 font-medium">Status</th>
+                        <th className="py-2 font-medium" />
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {group.subjects.map((subject) => (
+                        <tr key={subject.id} className="border-t border-border align-top">
+                          <td className="py-2 pr-3">{subject.code}</td>
+                          <td className="py-2 pr-3">{subject.name}</td>
+                          <td className="py-2 pr-3">{subject.semester}</td>
+                          <td className="py-2 pr-3">
+                            {subject.batchId
+                              ? batchLabel(subject.batchId)
+                              : "All batches"}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <ViewFilesButton
+                              fileName={subject.syllabusName}
+                              data={subject.syllabusData}
+                            />
+                          </td>
+                          <td className="py-2 pr-3">
+                            {subject.status === "Approved" ? (
+                              <Badge variant="gold">
+                                Approved
+                                {subject.approvedBy ? ` · ${subject.approvedBy}` : ""}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">Waiting for approval</Badge>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <div className="flex gap-2">
+                              {subject.status !== "Approved" && canApproveSubjects ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="gold"
+                                  onClick={() =>
+                                    void approveSubject(subject.id).then((saved) =>
+                                      setNotice(
+                                        saved.ok
+                                          ? `${subject.code} approved.`
+                                          : saved.message,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  Approve
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  if (!window.confirm(`Remove ${subject.code}?`)) return;
+                                  void removeSubject(subject.id).then((saved) =>
+                                    setNotice(
+                                      saved.ok
+                                        ? `${subject.code} removed.`
+                                        : saved.message,
+                                    ),
+                                  );
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))
           )}
@@ -1536,7 +1616,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
           submitLabel="Add subject"
           size="lg"
         >
-          {notice && notice !== "Subject saved." ? (
+          {notice && !notice.startsWith("Subject saved") ? (
             <p role="alert" className="text-sm text-secondary">
               {notice}
             </p>
@@ -1597,7 +1677,7 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
               <Input id="subject-code" {...subjectForm.register("code")} />
             </FormField>
             <FormField
-              label="Subject name"
+              label="Subject title"
               htmlFor="subject-name"
               required
               error={subjectForm.formState.errors.name?.message}
@@ -1659,13 +1739,14 @@ export function CourseWorkScreen({ mode }: { mode: "admin" | "scholar" }) {
               <Input id="subject-email" {...subjectForm.register("inChargeEmail")} />
             </FormField>
             <FormField
-              label="Syllabus"
+              label="Syllabus (PDF)"
               htmlFor="subject-syllabus"
+              required
               error={syllabusMessage ?? undefined}
             >
               <FileUpload
                 id="subject-syllabus"
-                acceptRule="document"
+                acceptRule="pdfDocument"
                 value={syllabus}
                 onChange={setSyllabus}
               />

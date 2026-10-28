@@ -110,7 +110,9 @@ export function subscribeScholarRecords(kind: ScholarRecordKind, onChange: () =>
 
 /** Starts loading every record kind; used to warm the portal after sign-in. */
 export function preloadScholarRecords() {
-  const missing = scholarRecordKinds.find((kind) => !caches.has(kind) && !loading.has(kind));
+  const missing = scholarRecordKinds.find(
+    (kind) => !caches.has(kind) && !loading.has(kind),
+  );
   if (!missing) return;
   const unsubscribe = subscribeScholarRecords(missing, () => undefined);
   unsubscribe();
@@ -221,7 +223,9 @@ function mapRow(row: RecordRow): ScholarRecord | null {
 const pageSize = 1000;
 
 /** Every record kind in one request (files are fetched only when opened). */
-async function loadAllScholarRecords(): Promise<Map<ScholarRecordKind, ScholarRecordLoad>> {
+async function loadAllScholarRecords(): Promise<
+  Map<ScholarRecordKind, ScholarRecordLoad>
+> {
   const browserRecords = readBrowserRecords();
   const byKind = (
     records: readonly ScholarRecord[],
@@ -517,7 +521,12 @@ function decisionStamp(
     return { supervisorOn: on, supervisorAt: at, supervisorBy: by };
   }
   if (status === "Returned") {
-    return { returnedOn: on, returnedAt: at, returnedBy: by, returnedByRole: signer?.role ?? "" };
+    return {
+      returnedOn: on,
+      returnedAt: at,
+      returnedBy: by,
+      returnedByRole: signer?.role ?? "",
+    };
   }
   return {};
 }

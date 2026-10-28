@@ -17,7 +17,20 @@ import { currentAdmission, subscribeAdmission } from "@/lib/admission";
 import { allBatches, intakeCasesOf } from "@/lib/batches";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { currentOffice, subscribeOffice } from "@/lib/office";
-import { currentAllotments, currentAttendance, isPassedOut, registrationOf, removeAttendanceSheet, saveAttendanceSheet, scholarSignInId, subscribeRegister, type AttendanceEntry, type AttendanceSheet, type SheetMark, registrationCompare } from "@/lib/register";
+import {
+  currentAllotments,
+  currentAttendance,
+  isPassedOut,
+  registrationOf,
+  removeAttendanceSheet,
+  saveAttendanceSheet,
+  scholarSignInId,
+  subscribeRegister,
+  type AttendanceEntry,
+  type AttendanceSheet,
+  type SheetMark,
+  registrationCompare,
+} from "@/lib/register";
 import { downloadSheet } from "@/lib/sheet";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
@@ -31,13 +44,21 @@ const countOf = (sheet: AttendanceSheet, mark: SheetMark) =>
  */
 export function AttendanceSheets() {
   const session = usePreviewSession();
-  const sheets = useSyncExternalStore(subscribeRegister, currentAttendance, currentAttendance);
+  const sheets = useSyncExternalStore(
+    subscribeRegister,
+    currentAttendance,
+    currentAttendance,
+  );
   const allotments = useSyncExternalStore(
     subscribeRegister,
     currentAllotments,
     currentAllotments,
   );
-  const admission = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
+  const admission = useSyncExternalStore(
+    subscribeAdmission,
+    currentAdmission,
+    () => null,
+  );
   useSyncExternalStore(subscribeOffice, currentOffice, () => null);
   const batches = allBatches().sort((left, right) => right.order - left.order);
 
@@ -75,7 +96,8 @@ export function AttendanceSheets() {
       mark: "" as SheetMark,
     }));
     return [...fromRegister, ...fromIntake].sort(
-      (a, b) => registrationCompare(a.reference, b.reference) || a.name.localeCompare(b.name),
+      (a, b) =>
+        registrationCompare(a.reference, b.reference) || a.name.localeCompare(b.name),
     );
   }
 
@@ -219,9 +241,9 @@ export function AttendanceSheets() {
         </p>
       ) : null}
       <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        Make a sheet for a programme or event: name it, give the date and choose the batch.
-        Print it blank for the scholars to sign, or take the attendance here and print or
-        download the marked sheet.
+        Make a sheet for a programme or event: name it, give the date and choose the
+        batch. Print it blank for the scholars to sign, or take the attendance here and
+        print or download the marked sheet.
       </p>
 
       <ListToolbar
@@ -347,7 +369,9 @@ export function AttendanceSheets() {
                               return;
                             }
                             void removeAttendanceSheet(sheet.id).then((result) =>
-                              setNotice(result.ok ? "The sheet was deleted." : result.message),
+                              setNotice(
+                                result.ok ? "The sheet was deleted." : result.message,
+                              ),
                             );
                           }}
                         >
@@ -399,10 +423,7 @@ export function AttendanceSheets() {
           )}
           onClose={() => setTaking(null)}
           onSave={async (entries) => {
-            const ok = await save(
-              { ...taking, entries },
-              "The attendance was saved.",
-            );
+            const ok = await save({ ...taking, entries }, "The attendance was saved.");
             if (ok) setTaking(null);
           }}
         />
@@ -536,8 +557,11 @@ function TakeDialog({
     setEntries((current) =>
       current.map((entry) => (entry.key === key ? { ...entry, mark: value } : entry)),
     );
-  const count = (value: SheetMark) => entries.filter((entry) => entry.mark === value).length;
-  const extra = missing.filter((entry) => !entries.some((item) => item.key === entry.key));
+  const count = (value: SheetMark) =>
+    entries.filter((entry) => entry.mark === value).length;
+  const extra = missing.filter(
+    (entry) => !entries.some((item) => item.key === entry.key),
+  );
 
   return (
     <FormDialog
@@ -564,7 +588,9 @@ function TakeDialog({
           size="sm"
           variant="outline"
           onClick={() =>
-            setEntries((current) => current.map((entry) => ({ ...entry, mark: "Present" })))
+            setEntries((current) =>
+              current.map((entry) => ({ ...entry, mark: "Present" })),
+            )
           }
         >
           All present
@@ -616,7 +642,9 @@ function TakeDialog({
               shown.map((entry) => (
                 <tr key={entry.key} className="border-t border-border">
                   <td className="px-3 py-2 font-medium text-primary">{entry.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{entry.reference || "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {entry.reference || "—"}
+                  </td>
                   <td className="px-3 py-2">{entry.department || "—"}</td>
                   <td className="px-3 py-2">
                     <MarkButtons

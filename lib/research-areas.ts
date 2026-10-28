@@ -26,7 +26,7 @@ export type AreaLoad = {
   detail: string | null;
 };
 
-function parseSchools(value: unknown): School[] {
+export function parseSchools(value: unknown): School[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
@@ -39,6 +39,24 @@ function parseSchools(value: unknown): School[] {
           typeof area === "string" && area.trim() ? [area.trim()] : [],
         )
       : [];
+    const topics: Record<string, string[]> = {};
+    if (
+      record.topics &&
+      typeof record.topics === "object" &&
+      !Array.isArray(record.topics)
+    ) {
+      for (const [department, list] of Object.entries(record.topics)) {
+        if (!Array.isArray(list)) continue;
+        const clean = [
+          ...new Set(
+            list.flatMap((item) =>
+              typeof item === "string" && item.trim() ? [item.trim()] : [],
+            ),
+          ),
+        ];
+        if (clean.length > 0) topics[department] = clean;
+      }
+    }
     return [
       {
         id: record.id,
@@ -46,6 +64,7 @@ function parseSchools(value: unknown): School[] {
         summary: record.summary?.trim() ?? "",
         icon: record.icon,
         areas,
+        ...(Object.keys(topics).length > 0 ? { topics } : {}),
       },
     ];
   });
@@ -185,4 +204,138 @@ export function schoolId(name: string, taken: readonly string[]) {
     count += 1;
   }
   return id;
+}
+
+/* ------------------------- editing the school > department > area tree ------------------- */
+
+const sameName = (left: string, right: string) =>
+  left.trim().toLowerCase() === right.trim().toLowerCase();
+
+export type TreeResult = { ok: true; schools: School[] } | { ok: false; message: string };
+
+/** The key areas of a department as kept in the ERP (empty when none are entered). */
+export function managedAreas(school: School, department: string) {
+  const key = Object.keys(school.topics ?? {}).find((name) => sameName(name, department));
+  return key ? (school.topics?.[key] ?? []) : [];
+}
+
+export function addDepartment(
+  schools: School[],
+  schoolId: string,
+  name: string,
+): TreeResult {
+  const clean = name.trim();
+  if (clean.length < 2) return { ok: false, message: "Enter the department name." };
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return { ok: false, message: "Choose a school." };
+  if (school.areas.some((item) => sameName(item, clean))) {
+    return { ok: false, message: `${clean} is already a department of this school.` };
+  }
+  return {
+    ok: true,
+    schools: schools.map((item) =>
+      item.id === schoolId ? { ...item, areas: [...item.areas, clean] } : item,
+    ),
+  };
+}
+
+/** Renames a department; its key areas move with it. */
+export function renameDepartment(
+  schools: School[],
+  schoolId: string,
+  from: string,
+  to: string,
+): TreeResult {
+  const clean = to.trim();
+  if (clean.length < 2) return { ok: false, message: "Enter the department name." };
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return { ok: false, message: "Choose a school." };
+  if (school.areas.some((item) => !sameName(item, from) && sameName(item, clean))) {
+    return { ok: false, message: `${clean} is already a department of this school.` };
+  }
+  return {
+    ok: true,
+    schools: schools.map((item) => {
+      if (item.id !== schoolId) return item;
+      const topics = { ...(item.topics ?? {}) };
+      const key = Object.keys(topics).find((name) => sameName(name, from));
+      if (key) {
+        topics[clean] = topics[key];
+        if (key !== clean) delete topics[key];
+      }
+      return {
+        ...item,
+        areas: item.areas.map((name) => (sameName(name, from) ? clean : name)),
+        topics: Object.keys(topics).length > 0 ? topics : undefined,
+      };
+    }),
+  };
+}
+
+export function removeDepartment(
+  schools: School[],
+  schoolId: string,
+  name: string,
+): School[] {
+  return schools.map((item) => {
+    if (item.id !== schoolId) return item;
+    const topics = Object.fromEntries(
+      Object.entries(item.topics ?? {}).filter(([key]) => !sameName(key, name)),
+    );
+    return {
+      ...item,
+      areas: item.areas.filter((entry) => !sameName(entry, name)),
+      topics: Object.keys(topics).length > 0 ? topics : undefined,
+    };
+  });
+}
+
+/** Sets the key areas of a department (no repeats, no empty lines). */
+export function setDepartmentAreas(
+  schools: School[],
+  schoolId: string,
+  department: string,
+  areas: readonly string[],
+): School[] {
+  const seen = new Set<string>();
+  const clean = areas
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return schools.map((item) => {
+    if (item.id !== schoolId) return item;
+    const topics = Object.fromEntries(
+      Object.entries(item.topics ?? {}).filter(([key]) => !sameName(key, department)),
+    );
+    if (clean.length > 0) topics[department] = clean;
+    return {
+      ...item,
+      ...(Object.keys(topics).length > 0 ? { topics } : { topics: undefined }),
+    };
+  });
+}
+
+/** Changes a school's name, summary or icon; the departments and areas stay with it. */
+export function editSchool(
+  schools: School[],
+  schoolId: string,
+  values: { name: string; summary: string; icon: School["icon"] },
+): TreeResult {
+  const name = values.name.trim();
+  if (name.length < 2) return { ok: false, message: "Enter the school name." };
+  if (schools.some((item) => item.id !== schoolId && sameName(item.name, name))) {
+    return { ok: false, message: `${name} is already listed.` };
+  }
+  return {
+    ok: true,
+    schools: schools.map((item) =>
+      item.id === schoolId
+        ? { ...item, name, summary: values.summary.trim(), icon: values.icon }
+        : item,
+    ),
+  };
 }

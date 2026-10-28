@@ -22,7 +22,11 @@ function stamp(iso: string) {
 }
 
 export function HelpdeskScreen({ initial }: { initial: HelpdeskLoad }) {
-  const local = useSyncExternalStore(subscribeHelpdesk, localHelpdeskMessages, serverHelpdeskMessages);
+  const local = useSyncExternalStore(
+    subscribeHelpdesk,
+    localHelpdeskMessages,
+    serverHelpdeskMessages,
+  );
   const all = mergeHelpdeskMessages(initial.items, local);
   const browserOnly = initial.source !== "database";
   const [query, setQuery] = useState("");

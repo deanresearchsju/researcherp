@@ -1,5 +1,9 @@
 import { formatIsoDate } from "@/lib/dates";
-import type { CommitteeReport, SynopsisSubmission, ThesisSubmission } from "@/lib/doctoral";
+import type {
+  CommitteeReport,
+  SynopsisSubmission,
+  ThesisSubmission,
+} from "@/lib/doctoral";
 import type { ScholarRecord } from "@/lib/scholar-records";
 
 /**
@@ -26,7 +30,12 @@ export type ApprovalSummary = {
   steps: TrailStep[];
 };
 
-type Decision = { status: "" | "approved" | "returned"; by: string; at: string; remarks?: string };
+type Decision = {
+  status: "" | "approved" | "returned";
+  by: string;
+  at: string;
+  remarks?: string;
+};
 
 type Chain = {
   needsSupervisor: boolean;
@@ -58,7 +67,14 @@ export function formatMoment(value: string) {
 export function summarise(chain: Chain): ApprovalSummary {
   const { supervisor, dean } = chain;
   const steps: TrailStep[] = chain.officeEntry
-    ? [{ label: "Recorded by the research office", by: dean.by, at: dean.at, state: "done" }]
+    ? [
+        {
+          label: "Recorded by the research office",
+          by: dean.by,
+          at: dean.at,
+          state: "done",
+        },
+      ]
     : [
         { label: "Submitted", by: "", at: chain.submittedAt, state: "done" },
         ...(chain.needsSupervisor
@@ -102,7 +118,12 @@ export function summarise(chain: Chain): ApprovalSummary {
     };
   }
   if (dean.status === "returned") {
-    return { label: "Rejected by Dean", tone: "maroon", detail: dean.remarks ?? "", steps };
+    return {
+      label: "Rejected by Dean",
+      tone: "maroon",
+      detail: dean.remarks ?? "",
+      steps,
+    };
   }
   if (supervisor.status === "returned") {
     return {
@@ -202,9 +223,10 @@ export function recordSummary(record: ScholarRecord, needsSupervisor: boolean) {
           : payload.supervisorOn
             ? "approved"
             : "",
-      by: record.status === "Returned" && returnedBySupervisor
-        ? (payload.returnedBy ?? record.supervisorName)
-        : (payload.supervisorBy ?? record.supervisorName),
+      by:
+        record.status === "Returned" && returnedBySupervisor
+          ? (payload.returnedBy ?? record.supervisorName)
+          : (payload.supervisorBy ?? record.supervisorName),
       at:
         record.status === "Returned" && returnedBySupervisor
           ? (payload.returnedAt ?? payload.returnedOn ?? "")

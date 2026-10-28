@@ -12,8 +12,15 @@ export const universityNode = {
   logo: `${siteUrl}/assets/logo-full.jpeg`,
   slogan: university.tagline,
   email: university.email,
-  address: { "@type": "PostalAddress", addressRegion: "Tamil Nadu", addressCountry: "IN" },
-  parentOrganization: { "@type": "Organization", name: university.unit.replace(/^A Unit of /i, "") },
+  address: {
+    "@type": "PostalAddress",
+    addressRegion: "Tamil Nadu",
+    addressCountry: "IN",
+  },
+  parentOrganization: {
+    "@type": "Organization",
+    name: university.unit.replace(/^A Unit of /i, ""),
+  },
 };
 
 export function siteJsonLd() {
@@ -60,11 +67,19 @@ export function personNode(profile: PublicSupervisor) {
     ...(profile.designation ? { jobTitle: profile.designation } : {}),
     worksFor: { "@id": `${siteUrl}/#university` },
     ...(profile.department
-      ? { memberOf: { "@type": "Organization", name: profile.department, parentOrganization: { "@id": `${siteUrl}/#university` } } }
+      ? {
+          memberOf: {
+            "@type": "Organization",
+            name: profile.department,
+            parentOrganization: { "@id": `${siteUrl}/#university` },
+          },
+        }
       : {}),
     ...(areas.length ? { knowsAbout: areas } : {}),
     ...(profile.bio ? { description: profile.bio } : {}),
-    ...(profile.hasPhoto ? { image: `${siteUrl}/supervisors/photo/${profile.slug}` } : {}),
+    ...(profile.hasPhoto
+      ? { image: `${siteUrl}/supervisors/photo/${profile.slug}` }
+      : {}),
     ...(profile.vidwanUrl ? { sameAs: [profile.vidwanUrl] } : {}),
   };
 }

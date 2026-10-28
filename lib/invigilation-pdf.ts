@@ -1,18 +1,16 @@
 "use client";
 
-import type { jsPDF } from "jspdf";
-
-import { university } from "@/lib/constants";
+import { formatIsoDate } from "@/lib/dates";
+import type { LetterDraft } from "@/lib/doctoral";
+import { buildLetter } from "@/lib/letter-pdf";
 import {
+  chiefNames,
   scopeLabel,
   shortDate,
+  type Chief,
   type InvigilationPlan,
   type InvigilatorLetter,
 } from "@/lib/invigilation-core";
-
-const pageW = 210;
-const margin = 18;
-const innerW = pageW - margin * 2;
 
 /** The instructions printed on every letter. The Chief Superintendent's name is added. */
 export function letterInstructions(chiefSuperintendent: string) {
@@ -52,37 +50,11 @@ export function letterInstructions(chiefSuperintendent: string) {
   ];
 }
 
-let logoCache: Promise<string | null> | null = null;
-
-function loadLogo() {
-  if (!logoCache) {
-    logoCache = fetch("/assets/logo-full.jpeg")
-      .then((response) => (response.ok ? response.blob() : null))
-      .then(
-        (blob) =>
-          new Promise<string | null>((resolve) => {
-            if (!blob) return resolve(null);
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result ?? ""));
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          }),
-      )
-      .catch(() => null);
-  }
-  return logoCache;
-}
-
 function timeLabel(value: string) {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
   if (!match) return value;
   const hours = Number(match[1]);
   return `${hours % 12 || 12}:${match[2]} ${hours >= 12 ? "PM" : "AM"}`;
-}
-
-function generatedStamp() {
-  const now = new Date();
-  return `${now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}, ${now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function dateRange(plan: InvigilationPlan) {
@@ -93,191 +65,166 @@ function dateRange(plan: InvigilationPlan) {
     : `${shortDate(days[0])} to ${shortDate(days[days.length - 1])}`;
 }
 
-function drawLetter(
-  doc: jsPDF,
-  logo: string | null,
+/** The letter as the same kind of letter the research office issues: its letterhead, boxes and footer. */
+export function invigilationLetterDraft(
   plan: InvigilationPlan,
   letter: InvigilatorLetter,
-  reference: string,
-) {
+): LetterDraft {
   const { invigilator, lines } = letter;
-  doc.setTextColor(0, 0, 0);
-  doc.setDrawColor(0, 0, 0);
-  if (logo) {
-    try {
-      const props = doc.getImageProperties(logo);
-      const width = Math.min(48, (14 * props.width) / Math.max(1, props.height));
-      doc.addImage(logo, "JPEG", margin, 10, width, (width * props.height) / props.width);
-    } catch {
-      /* printed without the logo */
-    }
-  }
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text(`${university.researchOffice} · ${university.name}`, pageW - margin, 15, {
-    align: "right",
-  });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text(university.email, pageW - margin, 19.5, { align: "right" });
-  doc.setLineWidth(0.4);
-  doc.line(margin, 27, pageW - margin, 27);
-
-  let y = 35;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text((plan.examination || scopeLabel[plan.scope]).toUpperCase(), pageW / 2, y, {
-    align: "center",
-  });
-  y += 7;
-  doc.setFontSize(11);
-  doc.text("INVIGILATION ASSIGNMENT", pageW / 2, y, { align: "center" });
-  y += 4;
-  doc.setLineWidth(0.3);
-  doc.line(pageW / 2 - 30, y, pageW / 2 + 30, y);
-
-  y += 9;
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Ref: ${reference}`, margin, y);
-  doc.text(`Date: ${shortDate(plan.finalisedOn)}`, pageW - margin, y, { align: "right" });
-  y += 8;
-  doc.setFont("helvetica", "bold");
-  doc.text(`Dear ${invigilator.name} (${invigilator.id}),`, margin, y);
-  doc.setFont("helvetica", "normal");
-  y += 6;
-  doc.text(
-    "Thank you for your continued support to the examinations of the University.",
-    margin,
-    y,
-  );
-  y += 6;
-  doc.text(
-    "You are assigned the following invigilations on the dates and sessions indicated below:",
-    margin,
-    y,
-  );
-  y += 4;
-
-  const columns = [
-    { title: "Date", width: 32 },
-    { title: "Session", width: 52 },
-    { title: "Hall", width: innerW - 84 },
-  ];
-  const rowHeight = 7;
-  const drawRow = (cells: string[], bold: boolean) => {
-    let x = margin;
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(9.5);
-    cells.forEach((cell, index) => {
-      doc.rect(x, y, columns[index].width, rowHeight);
-      const text = doc.splitTextToSize(cell, columns[index].width - 3)[0] as string;
-      doc.text(text, x + 1.5, y + 4.8);
-      x += columns[index].width;
-    });
-    y += rowHeight;
+  const prefix = plan.scope === "entrance" ? "ENT" : "CW";
+  return {
+    kind: "invigilation" as LetterDraft["kind"],
+    sourceId: `${plan.scope}:${invigilator.id}`,
+    recipientRole: "supervisor",
+    recipientIdentifier: invigilator.id,
+    recipientName: invigilator.name,
+    refNo: `INV/${prefix}/${invigilator.id}`,
+    issuedOn: plan.finalisedOn,
+    title: "Invigilation assignment",
+    toLines: [
+      `${invigilator.name} (${invigilator.id})`,
+      invigilator.designation,
+      invigilator.department,
+    ].filter(Boolean),
+    subject: `${plan.examination || scopeLabel[plan.scope]} · Invigilation duty`,
+    reference: "",
+    details: [
+      ...lines.map((line) => ({
+        label: `${shortDate(line.date)} · ${line.time ? timeLabel(line.time) : "—"}`,
+        value: line.hall,
+      })),
+      { label: "Examination dates", value: dateRange(plan) },
+    ],
+    body: [
+      `Dear ${invigilator.name},`,
+      "Thank you for your continued support to the examinations of the University. You are assigned the invigilation duties shown above, on the dates and sessions indicated.",
+      ...letterInstructions(plan.chiefSuperintendent).map(
+        (item) => `- ${item.heading}: ${item.text}`,
+      ),
+    ],
+    closing: "",
+    copyTo: [],
   };
-  drawRow(
-    columns.map((column) => column.title),
-    true,
-  );
-  for (const line of lines) {
-    if (y > 235) {
-      doc.addPage();
-      y = 20;
-      drawRow(
-        columns.map((column) => column.title),
-        true,
-      );
-    }
-    drawRow(
-      [shortDate(line.date), line.time ? timeLabel(line.time) : "", line.hall],
-      line.reserved,
-    );
-  }
-
-  y += 5;
-  doc.setLineWidth(0.3);
-  doc.rect(margin, y, innerW, 7);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.text(`Examination dates: ${dateRange(plan)}`, pageW / 2, y + 4.8, {
-    align: "center",
-  });
-  y += 12;
-
-  doc.setFontSize(9);
-  for (const item of letterInstructions(plan.chiefSuperintendent)) {
-    const body = doc.splitTextToSize(item.text, innerW - 3) as string[];
-    if (y + 4 + body.length * 4 > 268) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.setFont("helvetica", "bold");
-    doc.text(`${item.heading}:`, margin, y);
-    y += 4.2;
-    doc.setFont("helvetica", "normal");
-    doc.text(body, margin, y, { align: "left" });
-    y += body.length * 4 + 1.8;
-  }
 }
 
-function drawFooters(doc: jsPDF, reference: (page: number) => string) {
-  const pages = doc.getNumberOfPages();
-  const height = doc.internal.pageSize.getHeight();
-  for (let page = 1; page <= pages; page += 1) {
-    doc.setPage(page);
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.line(margin, height - 14, pageW - margin, height - 14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(0, 0, 0);
-    doc.text(
-      "This is a system-generated letter and does not need a signature.",
-      margin,
-      height - 9.5,
-    );
-    doc.text(
-      `${reference(page)} · Generated ${generatedStamp()}`,
-      pageW - margin,
-      height - 9.5,
-      {
-        align: "right",
-      },
-    );
+/** The sittings of the plan in words: date, session and where, for the order. */
+function sittingLines(plan: InvigilationPlan) {
+  const seen = new Map<string, Set<string>>();
+  for (const duty of plan.duties) {
+    const key = `${shortDate(duty.date)} · ${duty.time ? timeLabel(duty.time) : "—"}`;
+    seen.set(key, (seen.get(key) ?? new Set()).add(duty.venue));
   }
+  return [...seen.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([when, venues]) => ({ label: when, value: [...venues].sort().join("; ") }));
 }
 
 /**
- * One A4 letter for each invigilator, in one PDF, in the University's plain black-and-white
- * style. There are no signature blocks: the footer says the letter is system-generated.
+ * The order appointing a Chief Superintendent (one order for each person appointed, up to two
+ * for an examination), in the research office letter layout. System-generated: no signature.
  */
+export function chiefOrderDraft(
+  plan: InvigilationPlan,
+  chief: Chief,
+  issuedOn: string,
+): LetterDraft {
+  const others = plan.chiefs.filter((item) => item.name !== chief.name);
+  const prefix = plan.scope === "entrance" ? "ENT" : "CW";
+  const heading = plan.examination || scopeLabel[plan.scope];
+  const index = plan.chiefs.findIndex((item) => item.name === chief.name) + 1;
+  return {
+    kind: "order" as LetterDraft["kind"],
+    sourceId: `${plan.scope}:chief:${index}`,
+    recipientRole: "supervisor",
+    recipientIdentifier: chief.name,
+    recipientName: chief.name,
+    refNo: `ORD/${prefix}/CS/${index}`,
+    issuedOn,
+    title: "Order · Appointment of Chief Superintendent",
+    toLines: [chief.name, chief.designation, chief.department].filter(Boolean),
+    subject: `${heading} · Chief Superintendent`,
+    reference: "",
+    details: [
+      { label: "Examination", value: heading },
+      { label: "Examination dates", value: dateRange(plan) || "To be notified" },
+      ...sittingLines(plan),
+      ...(others.length > 0
+        ? [{ label: "Together with", value: chiefNames(others) }]
+        : []),
+    ],
+    body: [
+      `You are appointed Chief Superintendent for the ${heading}, on the dates, sessions and at the venues shown above.`,
+      "The Chief Superintendent is responsible for the conduct of the examination at the venue. In particular:",
+      "- Receive the question papers, answer books and attendance sheets from the Controller's Office and keep them in safe custody until the examination.",
+      "- Direct the invigilators and the reserved invigilators, and decide any exchange of duty, which is allowed only in writing before the day.",
+      "- See that candidates are admitted only with the hall ticket and a photo identity card, and that the seating plan is followed.",
+      "- Deal with doubts about a question paper through the Controller's Office, and with any malpractice by the University procedure, informing the Controller of Examinations the same day.",
+      "- Collect the answer books at the end, check them against the attendance sheet and hand them over to the Controller's Office with the report of the examination.",
+      ...(others.length > 0
+        ? [
+            `You will work together with ${chiefNames(others)}, the other Chief Superintendent.`,
+          ]
+        : []),
+    ],
+    closing: "",
+    copyTo: [
+      "The Controller of Examinations",
+      "The Invigilators of the examination",
+      "Office copy",
+    ],
+  };
+}
+
+/** One order for each Chief Superintendent in one PDF; no signature. */
+export async function downloadChiefOrders(
+  plan: InvigilationPlan,
+  filename: string,
+  issuedOn: string,
+) {
+  if (plan.chiefs.length === 0) return;
+  await mergeAndSave(
+    plan.chiefs.map((chief) => chiefOrderDraft(plan, chief, issuedOn)),
+    filename,
+  );
+}
+
+/** The date of the letter as printed, e.g. for file names and tests. */
+export const letterDate = (plan: InvigilationPlan) => formatIsoDate(plan.finalisedOn);
+
+/**
+ * One A4 letter for each invigilator, in one PDF, built with the research office's own letter
+ * layout. There is no signature block: the footer says the letter is system-generated.
+ */
+async function mergeAndSave(drafts: readonly LetterDraft[], filename: string) {
+  const { PDFDocument } = await import("pdf-lib");
+  const merged = await PDFDocument.create();
+  for (const draft of drafts) {
+    const doc = await buildLetter(draft, null);
+    const part = await PDFDocument.load(doc.output("arraybuffer"));
+    const pages = await merged.copyPages(part, part.getPageIndices());
+    pages.forEach((page) => merged.addPage(page));
+  }
+  const bytes = await merged.save();
+  const url = URL.createObjectURL(
+    new Blob([bytes as BlobPart], { type: "application/pdf" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export async function downloadInvigilatorLetters(
   plan: InvigilationPlan,
   letters: readonly InvigilatorLetter[],
   filename: string,
 ) {
   if (letters.length === 0) return;
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const logo = await loadLogo();
-  const pageOwner: string[] = [];
-  letters.forEach((letter, index) => {
-    if (index > 0) doc.addPage();
-    const before = doc.getNumberOfPages();
-    drawLetter(
-      doc,
-      logo,
-      plan,
-      letter,
-      `INV/${plan.scope === "entrance" ? "ENT" : "CW"}/${letter.invigilator.id}`,
-    );
-    for (let page = before; page <= doc.getNumberOfPages(); page += 1) {
-      pageOwner[page] =
-        `INV/${plan.scope === "entrance" ? "ENT" : "CW"}/${letter.invigilator.id}`;
-    }
-  });
-  drawFooters(doc, (page) => pageOwner[page] ?? "");
-  doc.save(filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
+  await mergeAndSave(
+    letters.map((letter) => invigilationLetterDraft(plan, letter)),
+    filename,
+  );
 }

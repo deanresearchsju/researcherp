@@ -7,6 +7,8 @@ import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { recordAudit } from "@/lib/audit";
 import { readPreviewSession } from "@/lib/auth";
 import { storageKeys, studyModes } from "@/lib/constants";
+import { currentResearchAreas } from "@/lib/research-areas";
+import { schoolOfDepartment } from "@/lib/schools";
 import { createSupabase } from "@/lib/supabase/client";
 import { saveJsonBlob } from "@/lib/json-lock";
 import {
@@ -1301,6 +1303,18 @@ export function vacancyBeforeAllotment(
   };
 }
 
+/**
+ * Scholars of the register who have this supervisor as guide and are still in the programme.
+ * This is the one count every screen agrees on, with allotments made in the ERP added on top.
+ */
+export function registerScholarsOf(supervisor: ResearchSupervisor) {
+  return researchRegister.scholars.filter(
+    (scholar) =>
+      sameGuide(scholar.guideName, supervisor.name) &&
+      !isPassedOut(scholarSignInId(scholar), scholar.name),
+  ).length;
+}
+
 export function guideFigures(
   supervisor: ResearchSupervisor,
   quotas: readonly ApprovedQuota[],
@@ -1309,16 +1323,14 @@ export function guideFigures(
   const approved = quotas.find((item) => sameGuide(item.name, supervisor.name));
   const quota = approved?.quota ?? supervisor.quota;
   const extra = netAllotments(supervisor, allocations);
-  const currentScholars = Math.max(0, supervisor.currentScholars + extra);
-  const vacancy = Math.max(
+  // The sheet's number can be behind the scholars actually linked to the supervisor (for
+  // example the June allotment), so the larger of the two is the number of scholars now.
+  const currentScholars = Math.max(
     0,
-    (approved ? quota - supervisor.currentScholars : supervisor.vacancy) - extra,
+    Math.max(supervisor.currentScholars, registerScholarsOf(supervisor)) + extra,
   );
-  const balance = Math.max(
-    0,
-    approved ? vacancy - supervisor.june2026Allotment : supervisor.balance - extra,
-  );
-  return { quota, vacancy, balance, currentScholars };
+  const vacancy = Math.max(0, quota - currentScholars);
+  return { quota, vacancy, balance: vacancy, currentScholars };
 }
 
 export function supervisorForGuide(name: string) {
@@ -1410,6 +1422,7 @@ export const supervisorDownloadHeaders = [
   "S. No.",
   "Guide name",
   "Supervisor ID",
+  "Name of the school",
   "Department",
   "Designation",
   "Area of research",
@@ -1439,6 +1452,7 @@ export function supervisorDownloadRow(
     String(supervisor.serialNo),
     supervisor.name,
     supervisor.supervisorId,
+    schoolOfDepartment(supervisor.department, currentResearchAreas()),
     supervisor.department,
     supervisor.designation,
     supervisor.researchArea,

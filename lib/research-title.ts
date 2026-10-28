@@ -46,7 +46,9 @@ export function researchTitleOf(
     return {
       title: registerTitle,
       stage: finalised ? "Final" : "Provisional",
-      note: finalised ? "As in the scholar register" : "As in the scholar register · finalised at the second committee",
+      note: finalised
+        ? "As in the scholar register"
+        : "As in the scholar register · finalised at the second committee",
       changeBlock: finalised
         ? null
         : "The title is finalised at the second doctoral committee. Propose the final title in that report.",

@@ -21,7 +21,9 @@ export async function generateMetadata(): Promise<Metadata> {
     `Ph.D. admission ${university.name}`,
     "doctoral research Chennai",
     "Vidwan profile",
-    ...supervisors.flatMap((item) => item.researchArea.split(/[,;]/).map((part) => part.trim())),
+    ...supervisors.flatMap((item) =>
+      item.researchArea.split(/[,;]/).map((part) => part.trim()),
+    ),
   ]
     .filter(Boolean)
     .slice(0, 25);
@@ -35,9 +37,21 @@ export async function generateMetadata(): Promise<Metadata> {
       url: path,
       title: `${title} | ${university.name}`,
       description,
-      images: [{ url: "/assets/og.jpeg", width: 1200, height: 630, alt: `${university.name} research supervisors` }],
+      images: [
+        {
+          url: "/assets/og.jpeg",
+          width: 1200,
+          height: 630,
+          alt: `${university.name} research supervisors`,
+        },
+      ],
     },
-    twitter: { card: "summary_large_image", title: `${title} | ${university.name}`, description, images: ["/assets/og.jpeg"] },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} | ${university.name}`,
+      description,
+      images: ["/assets/og.jpeg"],
+    },
   };
 }
 

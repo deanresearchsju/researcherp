@@ -18,7 +18,11 @@ import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { sectionCopy } from "@/data/sections";
 import { areasForDepartment, type DepartmentAreas } from "@/lib/department-areas";
-import { currentResearchAreas, subscribeResearchAreas } from "@/lib/research-areas";
+import {
+  currentResearchAreas,
+  managedAreas,
+  subscribeResearchAreas,
+} from "@/lib/research-areas";
 import { cn } from "@/lib/utils";
 import type { SchoolIcon } from "@/types";
 
@@ -58,8 +62,14 @@ export function ResearchAreas({
   const onlyOwnName =
     active?.areas.length === 1 &&
     active.areas[0].trim().toLowerCase() === shortName(active.name).trim().toLowerCase();
+  // What the administrator keeps under Research areas is shown; where nothing is kept for a
+  // department, the areas the supervisors give in their profiles fill in.
+  const areasOf = (department: string) => {
+    const kept = active ? managedAreas(active, department) : [];
+    return kept.length > 0 ? kept : areasForDepartment(department, supervisorAreas);
+  };
   const schoolAreas = active
-    ? areasForDepartment(shortName(active.name), supervisorAreas)
+    ? areasOf(onlyOwnName ? active.areas[0] : shortName(active.name))
     : [];
 
   function move(direction: 1 | -1) {
@@ -156,7 +166,7 @@ export function ResearchAreas({
           {active.areas.length > 0 && !onlyOwnName ? (
             <ul className="mt-3 space-y-2">
               {active.areas.map((area) => {
-                const keyAreas = areasForDepartment(area, supervisorAreas);
+                const keyAreas = areasOf(area);
                 const isOpen = openArea === area;
                 const panelId = `areas-${active.id}-${area.replace(/[^a-z0-9]+/gi, "-")}`;
                 return (

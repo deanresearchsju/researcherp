@@ -1,4 +1,3 @@
-
 import { Reveal } from "@/components/home/Reveal";
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";

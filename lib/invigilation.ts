@@ -9,6 +9,9 @@ import {
   defaultTwoFrom,
   emptyPlan,
   finalise,
+  chiefNames,
+  maxChiefs,
+  type Chief,
   type Duty,
   type InvigilationPlan,
   type InvigilationScope,
@@ -112,12 +115,32 @@ function parsePlan(scope: InvigilationScope, value: unknown): InvigilationPlan {
           : [];
       })
     : [];
+  const chiefs: Chief[] = Array.isArray(item.chiefs)
+    ? item.chiefs
+        .flatMap((entry) => {
+          if (!entry || typeof entry !== "object") return [];
+          const row = entry as Record<string, unknown>;
+          return text(row.name)
+            ? [
+                {
+                  name: text(row.name),
+                  designation: text(row.designation),
+                  department: text(row.department),
+                },
+              ]
+            : [];
+        })
+        .slice(0, maxChiefs)
+    : text(item.chiefSuperintendent)
+      ? [{ name: text(item.chiefSuperintendent), designation: "", department: "" }]
+      : [];
   return {
     scope,
     twoFrom: positive(item.twoFrom, defaultTwoFrom, 1),
     reservedPerSitting: positive(item.reservedPerSitting, defaultReserved),
     examination: text(item.examination),
-    chiefSuperintendent: text(item.chiefSuperintendent),
+    chiefSuperintendent: chiefNames(chiefs) || text(item.chiefSuperintendent),
+    chiefs,
     duties,
     reserved,
     status: item.status === "Final" ? "Final" : "Draft",
@@ -316,6 +339,42 @@ export async function addInvigilators(people: readonly Invigilator[]) {
   return { ...outcome, added };
 }
 
+/**
+ * A new session: the uploaded list replaces the old one, and the duty plans start again (their
+ * rules, the heading and the Chief Superintendent stay).
+ */
+export async function replaceInvigilators(people: readonly Invigilator[]) {
+  const outcome = await commit((state) => {
+    const denied = officeOnly();
+    if (denied) return denied;
+    if (people.length === 0) return "The list has no invigilators.";
+    state.pool = people.map((person) => ({
+      ...person,
+      id: person.id.trim(),
+      name: person.name.trim(),
+    }));
+    for (const scope of ["entrance", "course-work"] as const) {
+      state.plans[scope] = {
+        ...state.plans[scope],
+        duties: [],
+        reserved: [],
+        status: "Draft",
+        finalisedOn: "",
+        finalisedBy: "",
+      };
+    }
+    return null;
+  });
+  if (outcome.ok) {
+    await recordAudit({
+      action: "invigilation:list-replaced",
+      subject: "invigilators",
+      detail: `${people.length} invigilator(s) uploaded for a new session`,
+    });
+  }
+  return outcome;
+}
+
 export async function removeInvigilator(id: string) {
   return commit((state) => {
     const denied = officeOnly();
@@ -336,7 +395,7 @@ export async function savePlanSettings(
   scope: InvigilationScope,
   values: Pick<
     InvigilationPlan,
-    "twoFrom" | "reservedPerSitting" | "examination" | "chiefSuperintendent"
+    "twoFrom" | "reservedPerSitting" | "examination" | "chiefs"
   >,
 ) {
   return commit((state) => {
@@ -350,7 +409,26 @@ export async function savePlanSettings(
     if (!Number.isInteger(values.reservedPerSitting) || values.reservedPerSitting < 0) {
       return "Reserved invigilators: enter 0 or more.";
     }
-    state.plans[scope] = { ...plan, ...values };
+    const chiefs = values.chiefs
+      .map((chief) => ({
+        name: chief.name.trim(),
+        designation: chief.designation.trim(),
+        department: chief.department.trim(),
+      }))
+      .filter((chief) => chief.name);
+    if (chiefs.length > maxChiefs)
+      return `At most ${maxChiefs} Chief Superintendents can be appointed.`;
+    if (new Set(chiefs.map((chief) => chief.name.toLowerCase())).size !== chiefs.length) {
+      return "The two Chief Superintendents must be different people.";
+    }
+    state.plans[scope] = {
+      ...plan,
+      twoFrom: values.twoFrom,
+      reservedPerSitting: values.reservedPerSitting,
+      examination: values.examination,
+      chiefs,
+      chiefSuperintendent: chiefNames(chiefs),
+    };
     return null;
   });
 }
@@ -449,8 +527,7 @@ export async function finalisePlan(scope: InvigilationScope) {
     if (denied) return denied;
     const plan = state.plans[scope];
     if (plan.status === "Final") return "The plan is already final.";
-    if (!plan.chiefSuperintendent.trim())
-      return "Enter the Chief Superintendent's name first.";
+    if (plan.chiefs.length === 0) return "Enter the Chief Superintendent's name first.";
     if (!plan.examination.trim())
       return "Enter the examination heading for the letters first.";
     const result = finalise(plan, state.pool, who().name, clientToday());

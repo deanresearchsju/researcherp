@@ -52,7 +52,9 @@ export function fileError(file: File | null, ruleKey: FileLimitKey, required: bo
 
 /** Largest size an image may be for this rule (an image sent as a document counts as a photo). */
 export function imageLimitFor(ruleKey: FileLimitKey) {
-  return ruleKey === "document" ? fileLimits.photo.maxBytes : fileLimits[ruleKey].maxBytes;
+  return ruleKey === "document"
+    ? fileLimits.photo.maxBytes
+    : fileLimits[ruleKey].maxBytes;
 }
 
 export function takeFile(file: File | null): StoredFile | null {

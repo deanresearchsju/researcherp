@@ -58,15 +58,15 @@ The files bucket is in Sydney. If the University wishes the data to stay in Indi
 
 ## If a key leaks
 
-| What leaked                    | What to do                                                                                                                                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_SECRET`               | Make a new one (see SETUP), set it on the host and in `.env.local`, redeploy. Everyone is signed out and signs in again.                                                    |
-| Supabase **service role** key  | In Supabase: Project settings, API, **reset** the service key. Put the new one in the host settings and `.env.local`, redeploy. Then read the audit trail.                   |
-| Supabase public key            | It is public by design; changing it does not cure weak point 1.                                                                                                              |
-| AWS access key                 | In AWS IAM open the user, **create a new key**, update the settings, redeploy, then **delete the old key**. Look at the bucket for files you do not know.                    |
-| An SMTP password               | Change it at the mail provider and in the settings.                                                                                                                          |
-| An administrator password      | `node --env-file=.env.local scripts/create-admin.mjs "Administrator" "a-new-long-password"` (or reset in Users for others).                                                  |
-| A backup folder or a file with personal data | Remove it from where it should not be; tell the Dean; see DATA-PROTECTION for what to do about the people concerned.                                           |
+| What leaked                                  | What to do                                                                                                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SESSION_SECRET`                             | Make a new one (see SETUP), set it on the host and in `.env.local`, redeploy. Everyone is signed out and signs in again.                                   |
+| Supabase **service role** key                | In Supabase: Project settings, API, **reset** the service key. Put the new one in the host settings and `.env.local`, redeploy. Then read the audit trail. |
+| Supabase public key                          | It is public by design; changing it does not cure weak point 1.                                                                                            |
+| AWS access key                               | In AWS IAM open the user, **create a new key**, update the settings, redeploy, then **delete the old key**. Look at the bucket for files you do not know.  |
+| An SMTP password                             | Change it at the mail provider and in the settings.                                                                                                        |
+| An administrator password                    | `node --env-file=.env.local scripts/create-admin.mjs "Administrator" "a-new-long-password"` (or reset in Users for others).                                |
+| A backup folder or a file with personal data | Remove it from where it should not be; tell the Dean; see DATA-PROTECTION for what to do about the people concerned.                                       |
 
 ## Reporting
 

@@ -20,10 +20,10 @@ Receipts, synopsis and thesis files, admission documents and every file that sch
 
 ## Moving older files
 
-| Task                                          | Command                                                                   |
-| --------------------------------------------- | ------------------------------------------------------------------------- |
-| Files inside database rows to Supabase Storage| `node --env-file=.env.local scripts/migrate-files-to-storage.mjs --dry-run`, then without `--dry-run` |
-| Supabase Storage to Amazon S3                 | `node --env-file=.env.local scripts/copy-storage-to-s3.mjs --dry-run`, then without `--dry-run` |
+| Task                                           | Command                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Files inside database rows to Supabase Storage | `node --env-file=.env.local scripts/migrate-files-to-storage.mjs --dry-run`, then without `--dry-run` |
+| Supabase Storage to Amazon S3                  | `node --env-file=.env.local scripts/copy-storage-to-s3.mjs --dry-run`, then without `--dry-run`       |
 
 Both skip what is already done and can be run again. Take a database backup first (see BACKUP-AND-RESTORE).
 

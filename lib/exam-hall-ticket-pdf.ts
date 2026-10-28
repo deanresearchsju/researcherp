@@ -42,7 +42,8 @@ async function fetchAsDataUrl(src: string) {
     const blob = await response.blob();
     return await new Promise<string | null>((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onload = () =>
+        resolve(typeof reader.result === "string" ? reader.result : null);
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
@@ -51,7 +52,14 @@ async function fetchAsDataUrl(src: string) {
   }
 }
 
-function fitImage(doc: jsPDF, src: string, x: number, y: number, boxW: number, boxH: number) {
+function fitImage(
+  doc: jsPDF,
+  src: string,
+  x: number,
+  y: number,
+  boxW: number,
+  boxH: number,
+) {
   try {
     const props = doc.getImageProperties(src);
     const ratio = props.width / Math.max(props.height, 1);
@@ -61,7 +69,14 @@ function fitImage(doc: jsPDF, src: string, x: number, y: number, boxW: number, b
       height = boxH;
       width = boxH * ratio;
     }
-    doc.addImage(src, imageFormat(src), x + (boxW - width) / 2, y + (boxH - height) / 2, width, height);
+    doc.addImage(
+      src,
+      imageFormat(src),
+      x + (boxW - width) / 2,
+      y + (boxH - height) / 2,
+      width,
+      height,
+    );
   } catch {
     // The box stays empty.
   }
@@ -76,7 +91,10 @@ export type ExamTicketInput = {
 };
 
 /** The papers on a ticket with their dates and times from the timetable. */
-export function ticketPapers(ticket: ExamTicket, settings: ExamSettings): ExamTicketPaper[] {
+export function ticketPapers(
+  ticket: ExamTicket,
+  settings: ExamSettings,
+): ExamTicketPaper[] {
   const doctoral = currentDoctoral();
   return ticket.registrationIds
     .flatMap((id) => {
@@ -141,7 +159,9 @@ function drawTicket(
   doc.setTextColor(...purple);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.text(university.researchOffice.toUpperCase(), pageW - margin, y + 5, { align: "right" });
+  doc.text(university.researchOffice.toUpperCase(), pageW - margin, y + 5, {
+    align: "right",
+  });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...muted);
@@ -179,9 +199,14 @@ function drawTicket(
   } else {
     doc.setFontSize(7);
     doc.setTextColor(...muted);
-    doc.text(["Affix recent", "passport size", "photograph"], photoX + photoW / 2, y + 17, {
-      align: "center",
-    });
+    doc.text(
+      ["Affix recent", "passport size", "photograph"],
+      photoX + photoW / 2,
+      y + 17,
+      {
+        align: "center",
+      },
+    );
   }
   doc.setFontSize(6.5);
   doc.setTextColor(...muted);
@@ -309,7 +334,11 @@ function drawTicket(
   doc.text("FOR THE INVIGILATOR", margin + 3, y + 4.2);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...ink);
-  doc.text("Identity verified   [   ]          Photo matches   [   ]", margin + 3, y + 8.6);
+  doc.text(
+    "Identity verified   [   ]          Photo matches   [   ]",
+    margin + 3,
+    y + 8.6,
+  );
   y += 15;
 
   const boxW = (innerW - 9) / 4;

@@ -87,10 +87,10 @@ export function PromotionPanel({
         Every scholar moves up one semester so that the fresh batch starts in semester 1.
         A scholar stays in the same semester while any of these holds: course work not
         cleared (in semesters 1 and 2), a six-month report not approved, the Research
-        Advisory Committee not constituted, the first Doctoral Committee meeting not done, a
-        supervisor exit pending (or the scholar on the passed-out list), or the annual fee
-        pending. Tick <strong>Promote anyway</strong> to move one of them up, for example
-        to exempt the fee in a particular case.
+        Advisory Committee not constituted, the first Doctoral Committee meeting not done,
+        a supervisor exit pending (or the scholar on the passed-out list), or the annual
+        fee pending. Tick <strong>Promote anyway</strong> to move one of them up, for
+        example to exempt the fee in a particular case.
       </p>
       {notice ? (
         <p role="alert" className="text-sm font-medium text-secondary">

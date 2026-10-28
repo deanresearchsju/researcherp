@@ -4,17 +4,17 @@ What personal data the ERP holds, who can see it, and what to do when a person a
 
 ## What is held
 
-| Group                         | Examples                                                                                  | Where                                   | Who sees it                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| Application                   | Name, date of birth, contact, address, education, experience, photograph, signature      | Database (applications)                 | Research Office, Dean; the applicant with the number and date of birth |
-| Documents                     | Certificates, fee receipts, ID proofs                                                     | File storage (S3)                       | Signed-in members who need them                        |
-| Scholar information           | Parents, community, blood group, degrees, NET/SET/GATE                                     | Database (scholar records)              | Research Office, Dean, the scholar, the supervisor     |
-| Academic record               | Course work, results, committees, reports, publications, synopsis, thesis, viva           | Database and file storage               | Research Office, Dean, supervisor, scholar; COE for marks |
-| Money                         | Fee payments and receipts                                                                 | Database and file storage               | Accounts, Research Office, the scholar                 |
-| Sign-in                       | E-mail or username, name, scrambled password, menus                                       | Database (`portal_users`)               | The administrator (not the password)                   |
-| Messages                      | Helpdesk messages                                                                         | Database                                | Research Office                                        |
-| Supervisors                   | Profile, photograph, biography, Vidwan link, contact                                      | Database; part is public                | Public (profile page); office (contact)                |
-| Audit trail                   | Who did what and when                                                                     | Database                                | Administrator                                          |
+| Group               | Examples                                                                            | Where                      | Who sees it                                                            |
+| ------------------- | ----------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------- |
+| Application         | Name, date of birth, contact, address, education, experience, photograph, signature | Database (applications)    | Research Office, Dean; the applicant with the number and date of birth |
+| Documents           | Certificates, fee receipts, ID proofs                                               | File storage (S3)          | Signed-in members who need them                                        |
+| Scholar information | Parents, community, blood group, degrees, NET/SET/GATE                              | Database (scholar records) | Research Office, Dean, the scholar, the supervisor                     |
+| Academic record     | Course work, results, committees, reports, publications, synopsis, thesis, viva     | Database and file storage  | Research Office, Dean, supervisor, scholar; COE for marks              |
+| Money               | Fee payments and receipts                                                           | Database and file storage  | Accounts, Research Office, the scholar                                 |
+| Sign-in             | E-mail or username, name, scrambled password, menus                                 | Database (`portal_users`)  | The administrator (not the password)                                   |
+| Messages            | Helpdesk messages                                                                   | Database                   | Research Office                                                        |
+| Supervisors         | Profile, photograph, biography, Vidwan link, contact                                | Database; part is public   | Public (profile page); office (contact)                                |
+| Audit trail         | Who did what and when                                                               | Database                   | Administrator                                                          |
 
 The thesis **evaluators** proposed for a scholar are confidential: the scholar never sees them.
 

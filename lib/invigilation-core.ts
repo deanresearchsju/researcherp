@@ -49,6 +49,19 @@ export type ReservedDuty = {
 
 export type PlanStatus = "Draft" | "Final";
 
+/** A Chief Superintendent of an examination (one or two are appointed). */
+export type Chief = { name: string; designation: string; department: string };
+
+export const maxChiefs = 2;
+
+/** "Dr. A and Dr. B" for the letters. */
+export function chiefNames(chiefs: readonly Chief[]) {
+  return chiefs
+    .map((chief) => chief.name.trim())
+    .filter(Boolean)
+    .join(" and ");
+}
+
 export type InvigilationPlan = {
   scope: InvigilationScope;
   /** A room with at least this many candidates gets two invigilators. */
@@ -57,7 +70,9 @@ export type InvigilationPlan = {
   reservedPerSitting: number;
   /** "Semester Examination, April 2026" style heading of the letter. */
   examination: string;
+  /** The names of the Chief Superintendent(s), for the letters. */
   chiefSuperintendent: string;
+  chiefs: Chief[];
   duties: Duty[];
   reserved: ReservedDuty[];
   status: PlanStatus;
@@ -75,6 +90,7 @@ export function emptyPlan(scope: InvigilationScope): InvigilationPlan {
     reservedPerSitting: defaultReserved,
     examination: "",
     chiefSuperintendent: "",
+    chiefs: [],
     duties: [],
     reserved: [],
     status: "Draft",
@@ -502,4 +518,137 @@ export function entranceSittings(
 export function shortDate(iso: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : iso;
+}
+
+export type ConsolidatedRow = {
+  serial: number;
+  invigilatorId: string;
+  name: string;
+  designation: string;
+  department: string;
+  phone: string;
+  roomDuties: number;
+  reservedDuties: number;
+  total: number;
+  /** "07-04-2026 10:00 Hall 1; 08-04-2026 10:00 RESERVED" in date order. */
+  duties: string;
+};
+
+/** One row for each invigilator with every duty gathered: the consolidated list. */
+export function consolidatedList(
+  plan: Pick<InvigilationPlan, "duties" | "reserved">,
+  pool: readonly Invigilator[],
+): ConsolidatedRow[] {
+  return lettersFor(plan, pool).map((letter, index) => {
+    const reservedDuties = letter.lines.filter((line) => line.reserved).length;
+    return {
+      serial: index + 1,
+      invigilatorId: letter.invigilator.id,
+      name: letter.invigilator.name,
+      designation: letter.invigilator.designation,
+      department: letter.invigilator.department,
+      phone: letter.invigilator.phone,
+      roomDuties: letter.lines.length - reservedDuties,
+      reservedDuties,
+      total: letter.lines.length,
+      duties: letter.lines
+        .map((line) =>
+          `${shortDate(line.date)} ${line.time} ${line.hall}`.replace(/\s+/g, " "),
+        )
+        .join("; "),
+    };
+  });
+}
+
+/* ------------------------------------ the name list uploaded each session ---------------- */
+
+const headerKey = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+
+const columnNames: Record<keyof Omit<Invigilator, "unavailable">, string[]> = {
+  id: ["id", "staffid", "employeeid", "empid", "facultyid", "code", "staffcode", "sno"],
+  name: [
+    "name",
+    "staffname",
+    "facultyname",
+    "employeename",
+    "invigilator",
+    "invigilatorname",
+  ],
+  designation: ["designation", "post", "position"],
+  department: ["department", "dept", "subject"],
+  phone: ["mobile", "phone", "mobileno", "phoneno", "contact", "contactno"],
+};
+
+/**
+ * Reads the name list from a sheet (first row = headings) into invigilators. The ID is taken
+ * from an ID column, or made from the row number when the sheet has none. Rows without a name
+ * are skipped and counted; repeated IDs are skipped and counted.
+ */
+export function invigilatorsFromTable(table: {
+  headers: string[];
+  rows: Record<string, string>[];
+}) {
+  const find = (field: keyof typeof columnNames) =>
+    table.headers.find((header) => columnNames[field].includes(headerKey(header))) ?? "";
+  const columns = {
+    id: find("id"),
+    name: find("name"),
+    designation: find("designation"),
+    department: find("department"),
+    phone: find("phone"),
+  };
+  const people: Invigilator[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  table.rows.forEach((row, index) => {
+    const name = (row[columns.name] ?? "").trim();
+    if (!name) {
+      skipped += 1;
+      return;
+    }
+    const id =
+      (columns.id ? (row[columns.id] ?? "").trim() : "") ||
+      `INV${String(index + 1).padStart(3, "0")}`;
+    if (seen.has(id.toLowerCase())) {
+      skipped += 1;
+      return;
+    }
+    seen.add(id.toLowerCase());
+    people.push({
+      id,
+      name,
+      designation: (row[columns.designation] ?? "").trim(),
+      department: (row[columns.department] ?? "").trim(),
+      phone: (row[columns.phone] ?? "").replace(/\D/g, "").slice(0, 12),
+      unavailable: [],
+    });
+  });
+  return { people, skipped, missingName: columns.name === "" };
+}
+
+/** The same reading for text pasted from Excel or typed: one person a line, comma or tab apart. */
+export function invigilatorsFromText(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.split(/\t|,/).map((part) => part.trim()))
+    .filter((parts) => parts.some(Boolean));
+  const people: Invigilator[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  for (const parts of lines) {
+    if (!parts[0] || !parts[1] || seen.has(parts[0].toLowerCase())) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(parts[0].toLowerCase());
+    people.push({
+      id: parts[0],
+      name: parts[1],
+      designation: parts[2] ?? "",
+      department: parts[3] ?? "",
+      phone: (parts[4] ?? "").replace(/\D/g, "").slice(0, 12),
+      unavailable: [],
+    });
+  }
+  return { people, skipped };
 }

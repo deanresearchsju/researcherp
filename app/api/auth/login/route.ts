@@ -11,8 +11,14 @@ import {
   scholarMayUsePortal,
   supervisorMayUsePortal,
 } from "@/lib/portal-access";
-import { applyRegisterPayload, scholarBySignIn, supervisorBySignIn } from "@/lib/register";
+import {
+  applyRegisterPayload,
+  scholarBySignIn,
+  supervisorBySignIn,
+} from "@/lib/register";
+import { loginBlocked, loginFailed, loginSucceeded } from "@/lib/login-guard";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
+import { startSignIn } from "@/lib/single-session";
 import { portalAuthClient } from "@/lib/supabase/admin";
 import { isRetiredSignIn } from "@/lib/users";
 import type { Json } from "@/types/database";
@@ -31,8 +37,16 @@ async function portalGate(
 ) {
   if (role === "scholar") {
     const [{ data }, { data: register }] = await Promise.all([
-      supabase.from("admission_office").select("payload").eq("id", "office").maybeSingle(),
-      supabase.from("research_register").select("payload").eq("id", "register").maybeSingle(),
+      supabase
+        .from("admission_office")
+        .select("payload")
+        .eq("id", "office")
+        .maybeSingle(),
+      supabase
+        .from("research_register")
+        .select("payload")
+        .eq("id", "register")
+        .maybeSingle(),
     ]);
     applyRegisterPayload(register?.payload ?? null);
     const cases = parseLetterCases((data?.payload ?? null) as Json);
@@ -116,6 +130,20 @@ export async function POST(request: Request) {
 
   const identifier = input.identifier.trim();
   const remember = input.remember === true;
+  const address =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown";
+  const wait = loginBlocked(address, identifier);
+  if (wait > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Too many wrong attempts. Try again in ${wait} minute(s), or ask the research office to reset the password.`,
+      },
+      { status: 429 },
+    );
+  }
   const supabase = portalAuthClient();
   if (!supabase) {
     return NextResponse.json(
@@ -158,6 +186,7 @@ export async function POST(request: Request) {
     );
   }
   if (!data || !isRole(data.role) || typeof data.password !== "string") {
+    loginFailed(address, identifier);
     return NextResponse.json(
       {
         ok: false,
@@ -184,6 +213,7 @@ export async function POST(request: Request) {
     );
   }
   if (!verifySecret(input.password, data.password)) {
+    loginFailed(address, identifier);
     return NextResponse.json(
       {
         ok: false,
@@ -221,7 +251,10 @@ export async function POST(request: Request) {
         : parseMenuRights("menu_rights" in data ? data.menu_rights : null),
     }),
   };
-  const token = await encodeSessionCookie(session, remember);
+  loginSucceeded(address, identifier);
+  // A new sign-in replaces any earlier one of the same user (one sign-in at a time).
+  const sid = await startSignIn(data.id);
+  const token = await encodeSessionCookie(sid ? { ...session, sid } : session, remember);
   if (!token) {
     return NextResponse.json(
       {

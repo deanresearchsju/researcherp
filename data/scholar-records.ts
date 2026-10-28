@@ -80,7 +80,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: true,
     fileLabel: "ABC ID card",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       { name: "abcId", label: "ABC ID", kind: "text", required: true, minLength: 6 },
@@ -101,7 +101,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Hall ticket",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: false,
     fields: [
       { name: "examName", label: "Exam", kind: "text", required: true, minLength: 2 },
@@ -116,7 +116,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: true,
     fileLabel: null,
     fileRequired: false,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: false,
     fields: [
       {
@@ -279,7 +279,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Payment receipt",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: false,
     fields: [
       { name: "paidOn", label: "Date of payment", kind: "date", required: true },
@@ -316,7 +316,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Request letter",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
@@ -338,7 +338,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Request letter",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       {
@@ -373,7 +373,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "No-objection certificate",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       { name: "effectiveDate", label: "Requested date", kind: "date", required: true },
@@ -402,7 +402,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Request letter",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       { name: "fromDate", label: "From", kind: "date", required: true },
@@ -424,7 +424,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Request letter",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       { name: "currentEnd", label: "Present end date", kind: "date", required: true },
@@ -451,7 +451,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Request letter",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       {
@@ -486,7 +486,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "First page of the paper",
     fileRequired: false,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       {
@@ -591,7 +591,7 @@ export const scholarRecordMenus: readonly ScholarRecordMenu[] = [
     single: false,
     fileLabel: "Report",
     fileRequired: true,
-    fileRule: "document",
+    fileRule: "pdfDocument",
     needsSupervisor: true,
     fields: [
       {

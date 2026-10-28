@@ -120,7 +120,9 @@ export function LetterComposer({
         <div className="space-y-5 text-sm">
           <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
             <p className="font-semibold text-primary">{draft.recipientName}</p>
-            <p className="text-xs text-muted-foreground capitalize">{draft.recipientRole}</p>
+            <p className="text-xs text-muted-foreground capitalize">
+              {draft.recipientRole}
+            </p>
           </div>
 
           <Section title="Reference">

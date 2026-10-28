@@ -69,11 +69,13 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     );
   });
 
-  const bands = [...(exam?.settings.grades ?? [])].sort((left, right) => right.min - left.min);
+  const bands = [...(exam?.settings.grades ?? [])].sort(
+    (left, right) => right.min - left.min,
+  );
   const gradeRows = [
     ...bands.map((band, index) => ({
       grade: band.grade,
-      range: `${band.min}${index === 0 ? ` – ${exam?.settings.maxMarks ?? 100}` : ` – below ${bands[index - 1].min}`}`,
+      range: `${band.min} – ${band.max}`,
       result: "PASS",
     })),
     {

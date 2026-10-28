@@ -30,7 +30,7 @@ export const scholarFormCopy = {
   noVacancy:
     "There is no vacancy in the current session. Kindly apply in the upcoming sessions.",
   noVacancyDepartment:
-    "There is no vacancy in this department in the current session. Kindly apply in the upcoming sessions.",
+    "There is no vacancy for the department you selected in the current session. Kindly apply in the coming sessions.",
   track: "Track application",
   trackResultPending:
     "Your application is under process. The result will be published here once the selection list is approved.",

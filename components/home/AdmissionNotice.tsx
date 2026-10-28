@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
-import { currentSiteSettings, defaultSiteSettings, subscribeSiteSettings } from "@/lib/office";
+import {
+  currentSiteSettings,
+  defaultSiteSettings,
+  subscribeSiteSettings,
+} from "@/lib/office";
 
 /** One line on the public pages: the admission window is coming, or a link to apply. */
 export function AdmissionNotice() {
@@ -23,7 +27,10 @@ export function AdmissionNotice() {
   return (
     <p className="text-sm text-muted-foreground sm:text-base">
       Admission window is open.{" "}
-      <Link href="/apply" className="font-semibold text-primary underline-offset-4 hover:underline">
+      <Link
+        href="/apply"
+        className="font-semibold text-primary underline-offset-4 hover:underline"
+      >
         Click here to apply for Ph.D.
       </Link>
     </p>

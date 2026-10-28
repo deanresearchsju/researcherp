@@ -49,7 +49,13 @@ import {
   scholarsStillGuidedBy,
   subscribeOffice,
 } from "@/lib/office";
-import { batchOf, isPassedOut, scholarBySignIn, scholarSignInId, registerScholarsInOrder } from "@/lib/register";
+import {
+  batchOf,
+  isPassedOut,
+  scholarBySignIn,
+  scholarSignInId,
+  registerScholarsInOrder,
+} from "@/lib/register";
 import { loadRecordFile } from "@/lib/scholar-records";
 import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 import { usePortalSession } from "@/lib/use-preview-session";
@@ -119,7 +125,7 @@ function ScholarCommittee({
       setError("Enter the date of the meeting.");
       return;
     }
-    const problem = fileError(file?.file ?? null, "document", true);
+    const problem = fileError(file?.file ?? null, "pdfDocument", true);
     if (problem || !file?.file) {
       setError(problem ?? "Attach the committee report (PDF).");
       return;
@@ -267,7 +273,7 @@ function ScholarCommittee({
           <FormField label="Committee report (PDF)" htmlFor={`${kind}-report`} required>
             <FileUpload
               id={`${kind}-report`}
-              acceptRule="document"
+              acceptRule="pdfDocument"
               value={file}
               onChange={setFile}
             />
@@ -370,7 +376,10 @@ export function SupervisorCommitteeScreen() {
                         <ViewFilesButton
                           fileName={report.fileName}
                           data={report.fileData}
-                          stamp={chainViewStamp(`${dcCopy[report.kind].title} report`, report)}
+                          stamp={chainViewStamp(
+                            `${dcCopy[report.kind].title} report`,
+                            report,
+                          )}
                           onMissing={setNotice}
                         />
                         {approved ? (
@@ -694,7 +703,10 @@ function OfficeCommittee({
                             <ViewFilesButton
                               fileName={report.fileName}
                               data={report.fileData}
-                              stamp={chainViewStamp(`${dcCopy[report.kind].title} report`, report)}
+                              stamp={chainViewStamp(
+                                `${dcCopy[report.kind].title} report`,
+                                report,
+                              )}
                               onMissing={setNotice}
                             />
                             {approved ? (

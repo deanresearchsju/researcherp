@@ -142,7 +142,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
       setNotice(feeBlocked);
       return;
     }
-    const problem = fileError(file?.file ?? null, "document", true);
+    const problem = fileError(file?.file ?? null, "pdfDocument", true);
     if (problem || !file?.file) {
       setNotice(problem ?? "Attach the synopsis.");
       return;
@@ -191,7 +191,6 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
       textMatches(query, [item.scholarName, item.fileName, item.status, item.remarks])
     );
   });
-
 
   return (
     <DeskPage title="Synopsis">
@@ -341,7 +340,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                 <FormField label="Synopsis" htmlFor="synopsis-file" required>
                   <FileUpload
                     id="synopsis-file"
-                    acceptRule="document"
+                    acceptRule="pdfDocument"
                     value={file}
                     onChange={setFile}
                   />

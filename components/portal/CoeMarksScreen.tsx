@@ -112,7 +112,9 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
     const ids = [
       ...new Map(
         examRegistrations(doctoral, activeBatch, semester)
-          .filter((row) => exam.tickets.some((ticket) => ticket.registrationIds.includes(row.id)))
+          .filter((row) =>
+            exam.tickets.some((ticket) => ticket.registrationIds.includes(row.id)),
+          )
           .map((row) => [row.subjectId, `${row.code} ${row.name}`] as const),
       ).entries(),
     ];
@@ -162,11 +164,22 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
         else reappear += 1;
       }
     }
-    return { total, entered, absent, missing: total - entered, passed, reappear, forwarded };
+    return {
+      total,
+      entered,
+      absent,
+      missing: total - entered,
+      passed,
+      reappear,
+      forwarded,
+    };
   }
 
   async function saveDrafts() {
-    const bySubject = new Map<string, { registrationId: string; marks: number | null }[]>();
+    const bySubject = new Map<
+      string,
+      { registrationId: string; marks: number | null }[]
+    >();
     for (const paper of shownPapers) {
       for (const { registration } of paper.candidates) {
         const draft = drafts[registration.id];
@@ -207,7 +220,8 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
     setNotice(
       result.ok
         ? done
-        : ((result as unknown as { message?: string }).message ?? "That could not be done."),
+        : ((result as unknown as { message?: string }).message ??
+            "That could not be done."),
     );
     return result.ok;
   }
@@ -233,7 +247,15 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
               `Entered by: ${sheet?.enteredBy.join(", ") || "—"}`,
               `Status: ${sheet?.status === "Frozen" ? `Frozen on ${formatIsoDate(sheet.frozenOn)}` : (sheet?.status ?? "—")}`,
             ]}
-            headers={["Hall ticket No.", "Registration No.", "Name", "Campus", "Marks", "Grade", "Result"]}
+            headers={[
+              "Hall ticket No.",
+              "Registration No.",
+              "Name",
+              "Campus",
+              "Marks",
+              "Grade",
+              "Result",
+            ]}
             widths={["w-28", "w-32", "", "w-24", "w-16", "w-14", "w-16"]}
             bold={[2, 4]}
             rows={(paper?.candidates ?? []).map(({ registration, ticket }) => {
@@ -246,10 +268,21 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                 centreOf(settings, ticket.centreId)?.name ?? "",
                 result.absent ? "AAA" : marks === null ? "" : String(marks),
                 result.grade,
-                result.absent ? "AAA" : marks === null ? "" : result.outcome === "Pass" ? "PASS" : "RA",
+                result.absent
+                  ? "AAA"
+                  : marks === null
+                    ? ""
+                    : result.outcome === "Pass"
+                      ? "PASS"
+                      : "RA",
               ];
             })}
-            signatures={["Marks entered by", "Verified by", "Controller of Examinations", "Dean, Research and Development"]}
+            signatures={[
+              "Marks entered by",
+              "Verified by",
+              "Controller of Examinations",
+              "Dean, Research and Development",
+            ]}
             perPage={22}
           />
         </PrintFrame>
@@ -268,7 +301,13 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
               registration.code,
               result.absent ? "AAA" : marks === null ? "" : String(marks),
               result.grade,
-              result.absent ? "AAA" : marks === null ? "" : result.outcome === "Pass" ? "PASS" : "RA",
+              result.absent
+                ? "AAA"
+                : marks === null
+                  ? ""
+                  : result.outcome === "Pass"
+                    ? "PASS"
+                    : "RA",
             ],
           };
         }),
@@ -288,13 +327,19 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
             `Semester: ${semester}`,
             `Session: ${session || "—"}`,
             `Papers: ${papers.length}`,
-            file?.afterBoard ? "Version: Final, after the passing board" : "Version: For the passing board",
+            file?.afterBoard
+              ? "Version: Final, after the passing board"
+              : "Version: For the passing board",
           ]}
           headers={["Registration No.", "Name", "Code", "Marks", "Grade", "Result"]}
           widths={["w-36", "", "w-24", "w-16", "w-14", "w-16"]}
           bold={[1]}
           rows={rows.map((row) => row.cells)}
-          signatures={["Verified by", "Controller of Examinations", "Dean, Research and Development"]}
+          signatures={[
+            "Verified by",
+            "Controller of Examinations",
+            "Dean, Research and Development",
+          ]}
           perPage={24}
         />
       </PrintFrame>
@@ -310,7 +355,9 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
   );
   const dirty = Object.keys(drafts).length;
   const submitReady = readyToSubmit(doctoral, exam, activeBatch, semester);
-  const filesWithNote = file?.log.filter((entry) => /Sent back|asked for changes/i.test(entry.action));
+  const filesWithNote = file?.log.filter((entry) =>
+    /Sent back|asked for changes/i.test(entry.action),
+  );
   const lastNote = filesWithNote?.[filesWithNote.length - 1];
 
   return (
@@ -396,7 +443,11 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 text-sm">
           <Badge
             variant={
-              file.status === "Published" ? "gold" : file.status === "Open" ? "outline" : "purple"
+              file.status === "Published"
+                ? "gold"
+                : file.status === "Open"
+                  ? "outline"
+                  : "purple"
             }
           >
             {file.status === "Open"
@@ -451,8 +502,13 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                   const status = sheet?.status ?? "Entry";
                   const counts = countsOf(paper);
                   return (
-                    <tr key={paper.subjectId} className="border-t border-border align-top">
-                      <td className="px-3 py-2 font-medium text-primary">{paper.label}</td>
+                    <tr
+                      key={paper.subjectId}
+                      className="border-t border-border align-top"
+                    >
+                      <td className="px-3 py-2 font-medium text-primary">
+                        {paper.label}
+                      </td>
                       <td className="px-3 py-2">{counts.total}</td>
                       <td className="px-3 py-2">
                         {counts.forwarded === counts.total ? (
@@ -477,9 +533,14 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                       <td className="px-3 py-2">{counts.absent}</td>
                       <td className="px-3 py-2">
                         {counts.passed} · {counts.reappear}
-                        {counts.total - counts.absent > 0 && counts.entered === counts.total ? (
+                        {counts.total - counts.absent > 0 &&
+                        counts.entered === counts.total ? (
                           <span className="ml-1 text-xs text-muted-foreground">
-                            ({Math.round((counts.passed / (counts.total - counts.absent)) * 100)}% pass)
+                            (
+                            {Math.round(
+                              (counts.passed / (counts.total - counts.absent)) * 100,
+                            )}
+                            % pass)
                           </span>
                         ) : null}
                       </td>
@@ -520,7 +581,11 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                               }
                               onClick={() =>
                                 void act(
-                                  sendMarksForVerification(activeBatch, semester, paper.subjectId),
+                                  sendMarksForVerification(
+                                    activeBatch,
+                                    semester,
+                                    paper.subjectId,
+                                  ),
                                   "The marks were sent for verification.",
                                 )
                               }
@@ -570,7 +635,11 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                             size="sm"
                             variant="outline"
                             data-readonly-allow
-                            onClick={() => setViewing(viewing === paper.subjectId ? null : paper.subjectId)}
+                            onClick={() =>
+                              setViewing(
+                                viewing === paper.subjectId ? null : paper.subjectId,
+                              )
+                            }
                           >
                             {viewing === paper.subjectId ? "Hide marks" : "View marks"}
                           </Button>
@@ -580,7 +649,9 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                               size="sm"
                               variant="outline"
                               data-readonly-allow
-                              onClick={() => setPrinting({ kind: "marks", subjectId: paper.subjectId })}
+                              onClick={() =>
+                                setPrinting({ kind: "marks", subjectId: paper.subjectId })
+                              }
                             >
                               Print marks sheet
                             </Button>
@@ -618,10 +689,15 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                   ) {
                     return;
                   }
-                  void act(submitToOffice(activeBatch, semester), "The file was submitted to the research office.");
+                  void act(
+                    submitToOffice(activeBatch, semester),
+                    "The file was submitted to the research office.",
+                  );
                 }}
               >
-                {file?.afterBoard ? "Submit the final file" : "Submit to the research office"}
+                {file?.afterBoard
+                  ? "Submit the final file"
+                  : "Submit to the research office"}
               </Button>
               <Button
                 type="button"
@@ -645,7 +721,13 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
           title={mode === "entry" ? "Marks" : "Marks entered"}
           action={
             mode === "entry" ? (
-              <Button type="button" size="sm" variant="gold" disabled={busy || dirty === 0} onClick={() => void saveDrafts()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="gold"
+                disabled={busy || dirty === 0}
+                onClick={() => void saveDrafts()}
+              >
                 Save marks{dirty > 0 ? ` (${dirty})` : ""}
               </Button>
             ) : null
@@ -655,18 +737,24 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
             <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
               <thead className="bg-muted text-primary">
                 <tr>
-                  {paperId === "" ? <th className="px-3 py-2 font-semibold">Paper</th> : null}
+                  {paperId === "" ? (
+                    <th className="px-3 py-2 font-semibold">Paper</th>
+                  ) : null}
                   <th className="px-3 py-2 font-semibold">Hall ticket No.</th>
                   <th className="px-3 py-2 font-semibold">Registration No.</th>
                   <th className="px-3 py-2 font-semibold">Name</th>
                   <th className="px-3 py-2 font-semibold">Campus</th>
                   <th className="px-3 py-2 font-semibold">Attendance</th>
-                  <th className="px-3 py-2 font-semibold">Marks (out of {settings.maxMarks})</th>
+                  <th className="px-3 py-2 font-semibold">
+                    Marks (out of {settings.maxMarks})
+                  </th>
                   <th className="px-3 py-2 font-semibold">Grade · result</th>
                 </tr>
               </thead>
               <tbody>
-                {gridRows.filter((row) => mode === "entry" || row.paper.subjectId === viewing).length === 0 ? (
+                {gridRows.filter(
+                  (row) => mode === "entry" || row.paper.subjectId === viewing,
+                ).length === 0 ? (
                   <tr>
                     <td className="px-3 py-6 text-muted-foreground" colSpan={8}>
                       No scholar matches.
@@ -693,8 +781,12 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                           {paperId === "" ? (
                             <td className="px-3 py-2 text-xs">{paper.label}</td>
                           ) : null}
-                          <td className="px-3 py-2 font-mono text-xs">{ticket.ticketNo}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{ticket.registration}</td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {ticket.ticketNo}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {ticket.registration}
+                          </td>
                           <td className="px-3 py-2 font-medium text-primary">
                             {registration.scholarName}
                           </td>
@@ -722,7 +814,13 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                               inputMode="decimal"
                               className={cn("w-24", locked && "bg-muted")}
                               disabled={locked || result.absent || !forwarded}
-                              placeholder={result.absent ? "AAA" : !forwarded ? "Attendance awaited" : ""}
+                              placeholder={
+                                result.absent
+                                  ? "AAA"
+                                  : !forwarded
+                                    ? "Attendance awaited"
+                                    : ""
+                              }
                               aria-label={`Marks for ${registration.scholarName}`}
                               data-marks=""
                               onKeyDown={(event) => {
@@ -733,14 +831,18 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                                     "input[data-marks]:not(:disabled)",
                                   ),
                                 ];
-                                const next = boxes[boxes.indexOf(event.currentTarget) + 1];
+                                const next =
+                                  boxes[boxes.indexOf(event.currentTarget) + 1];
                                 next?.focus();
                                 next?.select();
                               }}
                               onChange={(event) =>
                                 setDrafts((current) => ({
                                   ...current,
-                                  [registration.id]: event.target.value.replace(/[^0-9.]/g, ""),
+                                  [registration.id]: event.target.value.replace(
+                                    /[^0-9.]/g,
+                                    "",
+                                  ),
                                 }))
                               }
                             />
@@ -753,7 +855,9 @@ export function CoeMarksScreen({ mode }: { mode: "entry" | "verify" }) {
                             ) : (
                               <span>
                                 {result.grade} ·{" "}
-                                <Badge variant={result.outcome === "Pass" ? "gold" : "maroon"}>
+                                <Badge
+                                  variant={result.outcome === "Pass" ? "gold" : "maroon"}
+                                >
                                   {result.outcome === "Pass" ? "PASS" : "RA"}
                                 </Badge>
                               </span>

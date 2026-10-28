@@ -20,10 +20,13 @@ export default function ForgotPasswordPage() {
         </p>
         <h2 className="mt-2 font-heading text-3xl text-primary">{resetCopy.title}</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Password recovery by email is not connected yet. Write to {university.email} with
-          your sign-in id. The office will reset the password.
+          Password recovery by email is not connected yet. Write to {university.email}{" "}
+          with your sign-in id. The office will reset the password.
         </p>
-        <Link href="/login/scholar" className={buttonVariants({ className: "mt-6 w-full" })}>
+        <Link
+          href="/login/scholar"
+          className={buttonVariants({ className: "mt-6 w-full" })}
+        >
           Back to scholar sign in
         </Link>
       </div>

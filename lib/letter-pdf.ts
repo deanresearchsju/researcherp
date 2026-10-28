@@ -76,7 +76,7 @@ function letterhead(doc: jsPDF, logo: string | null) {
   doc.rect(margin, 35.8, innerW, 1.2, "F");
 }
 
-function footer(doc: jsPDF, refNo: string) {
+function footer(doc: jsPDF, refNo: string, systemGenerated = false) {
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page);
@@ -86,7 +86,13 @@ function footer(doc: jsPDF, refNo: string) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(...muted);
-    doc.text(`${university.researchOffice}, ${university.name}`, margin, pageH - 8);
+    doc.text(
+      systemGenerated
+        ? "System-generated letter. It does not need a signature."
+        : `${university.researchOffice}, ${university.name}`,
+      margin,
+      pageH - 8,
+    );
     doc.text(
       `${refNo}${pages > 1 ? `  ·  Page ${page} of ${pages}` : ""}`,
       pageW - margin,
@@ -124,7 +130,7 @@ function printable(letter: LetterDraft): LetterDraft {
 function renderLetter(
   jsPDFClass: typeof import("jspdf").jsPDF,
   letter: LetterDraft,
-  signer: LetterSigner,
+  signer: LetterSigner | null,
   logo: string | null,
   k: number,
 ) {
@@ -236,29 +242,31 @@ function renderLetter(
     y += 2.4 * k;
   }
 
-  // The closing, signature, name and designation sit in one block on the right, all centred
-  // on the same line so the signature lines up with the name beneath it.
-  room(36 * k);
-  y += 2 * k;
-  const blockW = 70;
-  const centre = pageW - margin - blockW / 2;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(size);
-  doc.setTextColor(...ink);
-  doc.text(letter.closing || "Best wishes,", centre, y, { align: "center" });
-  const signY = y + 2 * k;
-  if (signer.signature) fit(doc, signer.signature, centre - 25, signY, 50, 16 * k);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(size);
-  doc.text(signer.name || "Dean Research", centre, signY + 21 * k, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9 * k);
-  const titleRows = doc.splitTextToSize(
-    signer.title || "Dean Research",
-    blockW,
-  ) as string[];
-  doc.text(titleRows, centre, signY + 25.5 * k, { align: "center" });
-  y = signY + (25.5 + titleRows.length * 4) * k + 4 * k;
+  if (signer) {
+    // The closing, signature, name and designation sit in one block on the right, all centred
+    // on the same line so the signature lines up with the name beneath it.
+    room(36 * k);
+    y += 2 * k;
+    const blockW = 70;
+    const centre = pageW - margin - blockW / 2;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...ink);
+    doc.text(letter.closing || "Best wishes,", centre, y, { align: "center" });
+    const signY = y + 2 * k;
+    if (signer.signature) fit(doc, signer.signature, centre - 25, signY, 50, 16 * k);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(size);
+    doc.text(signer.name || "Dean Research", centre, signY + 21 * k, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9 * k);
+    const titleRows = doc.splitTextToSize(
+      signer.title || "Dean Research",
+      blockW,
+    ) as string[];
+    doc.text(titleRows, centre, signY + 25.5 * k, { align: "center" });
+    y = signY + (25.5 + titleRows.length * 4) * k + 4 * k;
+  }
 
   const copies = letter.copyTo.filter((row) => row.trim());
   if (copies.length > 0) {
@@ -269,11 +277,15 @@ function renderLetter(
     );
   }
 
-  footer(doc, letter.refNo);
+  footer(doc, letter.refNo, signer === null);
   return doc;
 }
 
-export async function buildLetter(source: LetterDraft, signer: LetterSigner) {
+/**
+ * Builds the letter. With no signer (a system-generated letter) there is no closing or
+ * signature block, and the footer says the letter needs no signature.
+ */
+export async function buildLetter(source: LetterDraft, signer: LetterSigner | null) {
   const letter = printable(source);
   const { jsPDF } = await import("jspdf");
   const logo = await fetchAsDataUrl("/assets/logo-sju.jpg");

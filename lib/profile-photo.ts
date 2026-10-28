@@ -80,7 +80,11 @@ export function subscribeProfilePhoto(
 
 /** Photos for many people at once, by profile-photo key; missing people are absent. */
 export async function fetchProfilePhotos(role: Role, identifiers: readonly string[]) {
-  const keys = [...new Set(identifiers.filter((id) => id.trim()).map((id) => profilePhotoKey(role, id)))];
+  const keys = [
+    ...new Set(
+      identifiers.filter((id) => id.trim()).map((id) => profilePhotoKey(role, id)),
+    ),
+  ];
   const found = new Map<string, string>();
   const supabase = createSupabase();
   if (supabase) {

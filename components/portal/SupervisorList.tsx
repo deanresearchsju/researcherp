@@ -2,13 +2,15 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useState, useSyncExternalStore } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supervisorOfficeCopy } from "@/data/application-review";
 import type { ResearchSupervisor } from "@/data/research-register";
 import { keyAreasOf } from "@/lib/department-areas";
+import { currentResearchAreas, subscribeResearchAreas } from "@/lib/research-areas";
+import { schoolOfDepartment } from "@/lib/schools";
 import { standingKind } from "@/lib/portal-access";
 import {
   guideFigures,
@@ -74,6 +76,11 @@ export function SupervisorList({
   onRestore: (supervisor: ResearchSupervisor) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const schoolCatalogue = useSyncExternalStore(
+    subscribeResearchAreas,
+    currentResearchAreas,
+    currentResearchAreas,
+  );
 
   return (
     <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -146,6 +153,11 @@ export function SupervisorList({
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium">{supervisor.department.trim() || "—"}</p>
+                    {schoolOfDepartment(supervisor.department, schoolCatalogue) ? (
+                      <p className="text-xs text-muted-foreground">
+                        {schoolOfDepartment(supervisor.department, schoolCatalogue)}
+                      </p>
+                    ) : null}
                     {supervisor.campus.trim() ? (
                       <p className="text-xs text-muted-foreground">
                         {supervisor.campus.trim()}
@@ -275,6 +287,13 @@ export function SupervisorList({
                         <Detail
                           label="Supervisor ID"
                           value={supervisor.supervisorId.trim()}
+                        />
+                        <Detail
+                          label="Name of the school"
+                          value={schoolOfDepartment(
+                            supervisor.department,
+                            schoolCatalogue,
+                          )}
                         />
                         <Detail label="Phone" value={supervisor.phone.trim()} />
                         <Detail label="Mail ID" value={supervisor.email.trim()} />
