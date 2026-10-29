@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -15,6 +15,7 @@ import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
 import { researchTitleOf } from "@/lib/research-title";
 import { scholarIdentity } from "@/lib/scholar-identity";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
+import { submenuSections } from "@/data/menu-sections";
 import { canOpenSection, matchMenuHref, resolvedMenus } from "@/lib/access";
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { cn } from "@/lib/utils";
@@ -375,10 +376,24 @@ export function DeskTabs({
   const allowed = tabs.filter((tab) => canOpenSection(menus, href, tab.id));
   const firstAllowed = allowed[0]?.id;
   const blocked = allowed.length > 0 && !allowed.some((tab) => tab.id === value);
+  const params = useSearchParams();
+  // The sections of most menus are sub-menus in the side bar: the tab bar is not drawn and the
+  // chosen sub-menu (?tab=) decides what is shown. Menus that follow a process keep their tabs.
+  const catalog = href ? submenuSections(href) : [];
+  const asMenu =
+    catalog.length > 0 &&
+    tabs.length > 0 &&
+    tabs.every((tab) => catalog.some((item) => item.id === tab.id));
+  const asked = params.get("tab");
+  const wanted =
+    asMenu && allowed.length > 0
+      ? (allowed.find((tab) => tab.id === asked)?.id ?? firstAllowed ?? value)
+      : value;
   useEffect(() => {
     if (blocked && firstAllowed) onChange(firstAllowed);
-  }, [blocked, firstAllowed, onChange]);
-  if (allowed.length === tabs.length && allowed.length === 0) return null;
+    else if (asMenu && wanted !== value) onChange(wanted);
+  }, [blocked, firstAllowed, onChange, asMenu, wanted, value]);
+  if (asMenu) return null;
   return (
     <div className="flex flex-wrap gap-1 border-b border-border">
       {allowed.map((tab) => (

@@ -1,5 +1,6 @@
 import {
   researchRegister,
+  type ResearchBatch,
   type ResearchScholar,
   type ResearchSupervisor,
 } from "@/data/research-register";
@@ -507,6 +508,97 @@ const originalSupervisors = researchRegister.supervisors.map((supervisor) => ({
   ...supervisor,
 }));
 
+let seeded = false;
+let seedLoading: Promise<void> | null = null;
+
+/**
+ * Puts the register that came with the ERP into place: the scholars and supervisors, which are
+ * kept in the database (research_register, id "seed") and not in the code, because the code is
+ * downloaded by every visitor of the website. Records added by an upload are kept beside them.
+ */
+export function applyRegisterSeed(seed: unknown) {
+  const row = payloadOf(seed);
+  if (!row) return;
+  const scholars = Array.isArray(row.scholars) ? (row.scholars as ResearchScholar[]) : [];
+  const supervisors = Array.isArray(row.supervisors)
+    ? (row.supervisors as ResearchSupervisor[])
+    : [];
+  const batches = Array.isArray(row.batches) ? (row.batches as ResearchBatch[]) : [];
+  const scholarIds = new Set(scholars.map((item) => item.id));
+  const extraScholars = originalScholars.filter((item) => !scholarIds.has(item.id));
+  const extraSupervisors = originalSupervisors.filter(
+    (item) =>
+      !supervisors.some(
+        (known) => known.serialNo === item.serialNo && known.name === item.name,
+      ),
+  );
+  originalScholars.splice(0, originalScholars.length, ...scholars, ...extraScholars);
+  originalSupervisors.splice(
+    0,
+    originalSupervisors.length,
+    ...supervisors,
+    ...extraSupervisors,
+  );
+  researchRegister.scholars.splice(
+    0,
+    researchRegister.scholars.length,
+    ...originalScholars.map((item) => ({ ...item })),
+  );
+  researchRegister.supervisors.splice(
+    0,
+    researchRegister.supervisors.length,
+    ...originalSupervisors.map((item) => ({ ...item })),
+  );
+  if (batches.length > 0) {
+    researchRegister.batches.splice(0, researchRegister.batches.length, ...batches);
+  }
+  seeded = true;
+}
+
+let seedSettled = false;
+const seedListeners = new Set<() => void>();
+
+/** True once the register has been read (or cannot be): screens that need it can then show. */
+export function registerSeedSettled() {
+  return seedSettled;
+}
+
+export function subscribeRegisterSeed(onChange: () => void) {
+  seedListeners.add(onChange);
+  if (!seedSettled && !seeded) {
+    void ensureRegisterSeed().finally(() => {
+      seedSettled = true;
+      seedListeners.forEach((listener) => listener());
+    });
+  } else if (!seedSettled) {
+    seedSettled = true;
+  }
+  return () => seedListeners.delete(onChange);
+}
+
+/** Reads the stored register once (in the browser through /api/db, on the server with the server's key). */
+export async function ensureRegisterSeed() {
+  if (seeded) return;
+  seedLoading ??= (async () => {
+    const supabase = createSupabase();
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("research_register")
+      .select("payload")
+      .eq("id", "seed")
+      .maybeSingle();
+    if (data?.payload) {
+      applyRegisterSeed(data.payload);
+      applyRegisterEdits(memory?.scholarEdits ?? [], memory?.supervisorEdits ?? []);
+      applyPersonalOverlay();
+      listeners.forEach((listener) => listener());
+    }
+  })().finally(() => {
+    seedLoading = null;
+  });
+  await seedLoading;
+}
+
 /**
  * Puts the scholars and supervisors added by an upload into the register in place, beside the
  * ones that came with it. An added record that is already there is brought up to date.
@@ -662,6 +754,7 @@ function payloadOf(value: unknown) {
 }
 
 export async function loadRegister(): Promise<RegisterLoad> {
+  await ensureRegisterSeed();
   const supabase = createSupabase();
   if (!supabase)
     return { ...readStored(), source: "browser", updatedAt: null, detail: null };

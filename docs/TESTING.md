@@ -14,6 +14,14 @@ Use this while the ERP is being tested, and again before the real start. Work th
 
 A programmer runs `npm test` before each release (no server needed) and `npm run test:live` with the app running. Together they check: passwords (strong, changing needs the current one), PDF-only uploads, every menu of every role opening, the Examination module, the approval chains (scholar, supervisor, Dean, then Vice Chancellor for the evaluators), supervisor quotas, merit list and waiting list, seat release, seating, hall tickets, fee-gated exam lists, linked changes in the register, the approval stamps and record page, invigilation, who may open which page, the password-change API, and the Ph.D. and supervisor application submission. All lines must say `ok`. The live tests create temporary records and remove them; the Ph.D. window is opened for the test and put back.
 
+## Database gate tests
+
+`tests/menu-context.test.mjs` and `tests/table-pdf.test.mjs` (part of `npm test`) check the header of every printed report: the title, the module › menu › sub-menu line, the filters applied and the multi-line cells, by making a real PDF and reading its text. `tests/browser.test.mjs` also opens twelve scholar lists as the administrator and checks that the filter box offers Department, Campus, Guide and Mode, and that the Publications list exports a CSV with every publication column.
+
+`tests/db-policy.test.mjs` (part of `npm test`) asks the rules of `/api/db` about every kind of request: what a visitor, a scholar, a supervisor, staff and the administrator may read, add, change or delete, and that nothing outside the list is allowed. `npm run test:live` repeats the important ones against the running site and also checks that the public key of the database opens nothing (it prints a WARN until the close-public-access SQL has been run).
+
+The tests that need the register of scholars and supervisors read `data/research-register.seed.json`, which is kept only on the Research Office computer (it is not in Git).
+
 ## Browser test
 
 With the app running (`npm run build`, then `npm start`), `npm run test:browser` opens every menu page of every role in a real Chrome and fails when a page never loads its data, shows an error, logs a script error, or takes more than 8 seconds. Test the built app, not `npm run dev`: the development server compiles each page the first time it is opened and is much slower.
@@ -105,7 +113,7 @@ Selection's **Manage, Discard this session** still removes a test admission sess
 
 ### 8. RAC and thesis evaluators
 
-- A supervisor nominates the RAC (1 to 3 internal and 2 to 3 external, with five publications each, nothing uploaded); the Dean selects one external member and sends it to the Vice Chancellor; the Vice Chancellor approves; only then it shows to the supervisor and the scholar. The research office can enter the RAC of a scholar with **Enter RAC details**.
+- A supervisor nominates the RAC (1 to 3 internal and 2 to 3 external, with their area of research, no publication details, nothing uploaded); the Dean selects one external member and sends it to the Vice Chancellor; the Vice Chancellor approves; only then it shows to the supervisor and the scholar. The research office can enter the RAC of a scholar with **Enter RAC details**.
 - A supervisor proposes nine evaluators; the Dean forwards; the Vice Chancellor selects first, second and third choices. The scholar never sees them. The evaluator sheet shows the three steps with date and time.
 
 ### 9. Guides and vacancies

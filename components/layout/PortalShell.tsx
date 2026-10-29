@@ -15,12 +15,13 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type SyntheticEvent } from "react";
 
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { Logo } from "@/components/brand/Logo";
 import { useClientReady } from "@/components/forms/ClientGate";
+import { registerSeedSettled, subscribeRegisterSeed } from "@/lib/register";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,10 +30,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { portalShellCopy } from "@/data/portal";
+import { submenuSections } from "@/data/menu-sections";
 import { roleProfiles } from "@/data/roles";
 import {
   actionForLabel,
   canMenuAction,
+  canOpenSection,
   canOpenMenu,
   isOfficeRole,
   matchMenuHref,
@@ -47,7 +50,7 @@ import {
   subscribeInbox,
   type InboxNotice,
 } from "@/lib/audit";
-import { clearPreviewSession, loginHref, type PreviewSession } from "@/lib/auth";
+import { signOutTo, loginHref, portalHome, type PreviewSession } from "@/lib/auth";
 import { university } from "@/lib/constants";
 import { closeOfficeView } from "@/lib/office-view";
 import { useSignInWatch } from "@/lib/use-sign-in-watch";
@@ -134,6 +137,47 @@ function itemClass(pathname: string, href: string, dotted = false) {
   );
 }
 
+/** The sub-menus of a menu: its sections, those this sign-in may open. */
+function useSubmenus(href: string) {
+  const session = usePreviewSession();
+  const menus = session ? resolvedMenus(session) : null;
+  return submenuSections(href).filter((section) =>
+    canOpenSection(menus, href, section.id),
+  );
+}
+
+function SubmenuList({ href, onNavigate }: { href: string; onNavigate?: () => void }) {
+  const sections = useSubmenus(href);
+  const params = useSearchParams();
+  if (sections.length === 0) return null;
+  const chosen =
+    sections.find((section) => section.id === params.get("tab"))?.id ?? sections[0].id;
+  return (
+    <ul className="mt-1 mb-1 ml-5 space-y-0.5 border-l border-border pl-3">
+      {sections.map((section) => {
+        const on = section.id === chosen;
+        return (
+          <li key={section.id}>
+            <Link
+              href={`${href}?tab=${section.id}`}
+              onClick={onNavigate}
+              aria-current={on ? "page" : undefined}
+              className={cn(
+                "flex min-h-8 items-center rounded-lg px-3 text-[0.82rem] transition",
+                on
+                  ? "bg-muted font-semibold text-primary"
+                  : "text-muted-foreground hover:bg-muted hover:text-primary",
+              )}
+            >
+              {section.label}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function ItemList({
   items,
   pathname,
@@ -179,6 +223,7 @@ function ItemList({
                 <UnreadBadge count={unreadFor(notices, item.href)} className="ml-auto" />
               )}
             </Link>
+            {current ? <SubmenuList href={item.href} onNavigate={onNavigate} /> : null}
           </li>
         );
       })}
@@ -317,6 +362,13 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const ready = useClientReady();
+  // The register of scholars and supervisors is read from the database after sign-in; what the
+  // shell decides from it (is the scholar admitted?) waits until it is there.
+  const registerReady = useSyncExternalStore(
+    subscribeRegisterSeed,
+    registerSeedSettled,
+    () => false,
+  );
   const stored = usePreviewSession();
   const session = stored ?? signedIn;
   const pathRole = roleFromPath(pathname, session?.role);
@@ -392,8 +444,7 @@ export function PortalShell({
 
   function signOut() {
     closeOfficeView();
-    clearPreviewSession();
-    router.push(loginHref(session?.role ?? pathRole));
+    void signOutTo(loginHref(session?.role ?? pathRole));
   }
 
   function leaveView() {
@@ -514,7 +565,7 @@ export function PortalShell({
         )}
       >
         <div className="flex h-20 items-center justify-between border-b border-border px-5">
-          <Link href={`/${role}/dashboard`} className="rounded-lg" onClick={closeSidebar}>
+          <Link href={portalHome(role)} className="rounded-lg" onClick={closeSidebar}>
             <Logo className="h-11 w-auto" alt="St. Joseph University, dashboard" />
           </Link>
           <button
@@ -700,7 +751,9 @@ export function PortalShell({
               {viewNotice}
             </p>
           ) : null}
-          {allowed ? (
+          {!registerReady ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : allowed ? (
             children
           ) : (
             <div className="max-w-xl">

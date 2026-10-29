@@ -255,6 +255,8 @@ export const defaultLetter = {
   partTimeFee: "50000",
   synopsisFee: "0",
   thesisFee: "0",
+  /** Charged once with every course-work registration, besides the fee of each paper. */
+  markSheetFee: "500",
   accountName: "St. Joseph University Tuition Fee",
   accountNumber: "5594831736",
   bankName: "Central Bank of India",

@@ -16,6 +16,8 @@ import { toJson } from "@/lib/records";
 import type { Json } from "@/types/database";
 import { z } from "zod";
 import { isOfficeRole } from "@/lib/access";
+import { mayAct, nextStage, stageNames, type ApprovalStage } from "@/lib/approval-rules";
+import { recordStages } from "@/lib/approval-flow";
 import { readPreviewSession } from "@/lib/auth";
 import { currentDoctoral, latestCommittee, synopsisSubmitted } from "@/lib/doctoral";
 import { reloadPersonalDetails } from "@/lib/register";
@@ -532,33 +534,72 @@ function decisionStamp(
 }
 
 /**
- * A document that needs the guide goes to the Supervisor first and then to the Dean: the guide
- * approves or rejects it, and only then can the Dean (or the administrator) give the final
- * decision. Returns why a decision is not allowed, or null.
+ * What a decision on a request that goes through approval steps does. The steps are the ones
+ * stored with the request (see Approval rules): the guide's, the Dean's, the Vice Chancellor's.
+ * The step it waits at is the first not yet done; only that step's role may decide. The last
+ * step approves the request; a step before it only recommends (the request moves on); a
+ * return, at any step, sends it back to the scholar.
  */
-function decisionBlock(record: ScholarRecord, status: RecordStatus | undefined) {
-  if (!status || status === record.status) return null;
+function decisionPlan(
+  record: ScholarRecord,
+  requested: RecordStatus | undefined,
+): {
+  block: string | null;
+  status: RecordStatus | undefined;
+  stamp: Record<string, string>;
+} {
+  const plain = {
+    block: null,
+    status: requested,
+    stamp: decisionStamp(requested, record.status),
+  };
+  if (!requested || requested === record.status) return { ...plain, stamp: {} };
   const menu = scholarRecordMenus.find((item) => item.kind === record.kind);
-  if (!menu?.needsSupervisor) return null;
+  if (!menu?.needsSupervisor) return plain;
   const role = readPreviewSession()?.role;
   const withGuide = Boolean(record.supervisorIdentifier?.trim());
-  if (status === "Supervisor approved") {
-    return role === "supervisor" || role === "admin"
-      ? null
-      : "Only the supervisor can approve this first.";
+  const stages = recordStages(record, withGuide);
+  const isDone = (stage: ApprovalStage) =>
+    Boolean(record.payload[stage === "supervisor" ? "supervisorOn" : `${stage}On`]);
+  const pointer = nextStage(
+    stages,
+    stages.filter((stage) => isDone(stage)),
+  );
+  const fail = (block: string) => ({ block, status: requested, stamp: {} });
+  if (requested === "Supervisor approved") {
+    return pointer === "supervisor" && mayAct(role, "supervisor")
+      ? plain
+      : fail("Only the supervisor can approve this first.");
   }
-  if (role === "supervisor") {
-    return status === "Returned" && record.status === "Submitted"
-      ? null
-      : "Only a request waiting for the supervisor can be decided here.";
+  if (!pointer) return fail("This request is not waiting for a decision.");
+  if (requested === "Returned") {
+    if (!mayAct(role, pointer)) {
+      return fail(
+        pointer === "supervisor"
+          ? "Only a request waiting for the supervisor can be decided here."
+          : `This is waiting for the ${stageNames[pointer]}.`,
+      );
+    }
+    return { ...plain, stamp: { ...plain.stamp, returnedByRole: pointer } };
   }
-  if (role !== "dean" && role !== "admin") {
-    return "Only the Dean can give the final decision.";
-  }
-  if (role === "dean" && withGuide && record.status !== "Supervisor approved") {
-    return "The supervisor has to approve first.";
-  }
-  return null;
+  // Approved.
+  if (role === "admin" && pointer === "supervisor") return plain;
+  if (pointer === "supervisor") return fail("The supervisor has to approve first.");
+  if (!mayAct(role, pointer))
+    return fail(`This is waiting for the ${stageNames[pointer]}.`);
+  if (pointer === stages[stages.length - 1] || role === "admin") return plain;
+  // A step before the last one: it recommends, and the request stays where it is.
+  const signer = readPreviewSession();
+  const at = new Date().toISOString();
+  return {
+    block: null,
+    status: record.status,
+    stamp: {
+      [`${pointer}On`]: at.slice(0, 10),
+      [`${pointer}At`]: at,
+      [`${pointer}By`]: signer ? signer.name.trim() || signer.identifier : "",
+    },
+  };
 }
 
 export async function annotateScholarRecord(
@@ -567,17 +608,18 @@ export async function annotateScholarRecord(
 ) {
   if (officeViewWriteBlock()) return false;
   if (record.status === "Approved") return false;
-  if (decisionBlock(record, patch.status)) return false;
+  const plan = decisionPlan(record, patch.status);
+  if (plan.block) return false;
   if (patch.status === "Returned" && (patch.extra?.remarks ?? "").trim().length < 2) {
     return false;
   }
   const next: ScholarRecord = {
     ...record,
-    status: patch.status ?? record.status,
+    status: plan.status ?? record.status,
     payload: {
       ...record.payload,
       ...patch.extra,
-      ...decisionStamp(patch.status, record.status),
+      ...plan.stamp,
     },
   };
   const cached = caches.get(record.kind);
@@ -602,12 +644,13 @@ export async function annotateScholarRecord(
     });
   }
   if (patch.status && patch.status !== record.status) {
+    const settled = next.status !== record.status;
     await recordAudit({
-      action: `record:${patch.status}`,
+      action: settled ? `record:${patch.status}` : "record:recommended",
       subject: `${record.kind}:${record.id}`,
       detail: `${record.scholarName} · ${record.kind}`,
     });
-    await announceStatus(record, patch.status, patch.extra?.remarks ?? "");
+    if (settled) await announceStatus(record, patch.status, patch.extra?.remarks ?? "");
   }
   return true;
 }
@@ -619,7 +662,8 @@ export async function setScholarRecordStatus(
 ) {
   if (officeViewWriteBlock()) return false;
   if (record.status === "Approved") return false;
-  if (decisionBlock(record, status)) return false;
+  const plan = decisionPlan(record, status);
+  if (plan.block) return false;
   if (status === "Returned" && remarks.trim().length < 2) return false;
   if (record.kind === "title_change" && status !== "Returned") {
     // The title is locked once the synopsis is submitted.
@@ -630,16 +674,18 @@ export async function setScholarRecordStatus(
     ...(remarks.trim().length > 0
       ? { ...record.payload, remarks: remarks.trim() }
       : record.payload),
-    ...decisionStamp(status, record.status),
+    ...plan.stamp,
   };
-  const next = { ...record, status, payload };
+  // A step before the last only recommends: the status stays as it was.
+  const newStatus = plan.status ?? status;
+  const next = { ...record, status: newStatus, payload };
   const cached = caches.get(record.kind);
   if (cached?.source === "database" && !record.id.startsWith("local-")) {
     const supabase = createSupabase();
     if (!supabase) return false;
     const { error } = await supabase
       .from("scholar_records")
-      .update({ status, payload: toJson(payload) })
+      .update({ status: newStatus, payload: toJson(payload) })
       .eq("id", record.id);
     if (error) return false;
   } else {
@@ -655,11 +701,11 @@ export async function setScholarRecordStatus(
     });
   }
   await recordAudit({
-    action: `record:${status}`,
+    action: newStatus === record.status ? "record:recommended" : `record:${status}`,
     subject: `${record.kind}:${record.id}`,
     detail: `${record.scholarName} · ${record.kind}`,
   });
-  await announceStatus(record, status, remarks);
+  if (newStatus !== record.status) await announceStatus(record, status, remarks);
   return true;
 }
 

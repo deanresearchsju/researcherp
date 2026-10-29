@@ -34,8 +34,13 @@ export function subjectSchoolLabel(school: string) {
 
 export const colloquiumSittings = ["May", "November"] as const;
 
+/** The checklist item that reads the colloquium minimum for the scholar's mode of study. */
+export const colloquiumCheck =
+  "Colloquium attendance meets the minimum for the mode of study";
+
 export const synopsisChecklist = [
   "Progress reports are complete",
+  colloquiumCheck,
   "Fees are paid",
   "Publications meet the school rule",
   "Title and domain are final",
@@ -43,6 +48,7 @@ export const synopsisChecklist = [
 
 export const thesisChecklist = [
   "Payment",
+  colloquiumCheck,
   "Alignment",
   "Formatting",
   "References",
@@ -110,3 +116,25 @@ export const dcOfficeEntryBatchIds: readonly string[] = [
 
 /** Six-month reports due before this date were received on paper; the office records them. */
 export const sixMonthOnlineFrom = "2026-07-01";
+
+/**
+ * NPTEL courses. A scholar may take up to two of the four course-work papers (first and second
+ * semester, two papers each) as NPTEL courses, with the approval of the RAC; the Dean approves
+ * the proof of passing, and the scholar is then exempt from appearing for that paper.
+ */
+export const nptelKinds = [
+  "NPTEL RM",
+  "NPTEL Research ethics",
+  "NPTEL major",
+  "NPTEL elective",
+] as const;
+export type NptelKind = (typeof nptelKinds)[number];
+export const nptelMax = 2;
+
+export const nptelCopy = {
+  rules:
+    "You may take up to two of your four course-work papers (semester 1 and semester 2, two papers each) as NPTEL courses. Before you enrol, the RAC has to approve the course. Once you have passed, attach the proof; the Dean approves it, and you are then exempt from appearing for that paper.",
+  racQuestion: "Is this NPTEL course approved in your RAC?",
+  racNo:
+    "Get the approval of the RAC before you enrol in the NPTEL course. Add the course here after the RAC has approved it, and attach the RAC minutes.",
+} as const;

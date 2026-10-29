@@ -52,6 +52,8 @@ import {
   type SupervisorEvaluationView,
 } from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell } from "@/components/portal/ProfileCell";
 
 const fields: readonly [keyof Evaluator, string][] = [
   ["name", "Name"],
@@ -209,8 +211,8 @@ function NominationDialog({
               </div>
               <div className="mt-3 space-y-2">
                 <p className="text-sm font-medium">
-                  Latest {publicationsRequired} publications (type each one; no file is
-                  uploaded)
+                  {publicationsRequired} publications of the evaluator (type each one; no
+                  file is uploaded)
                 </p>
                 {person.publications.map((item, at) => (
                   <Input
@@ -764,6 +766,7 @@ function OfficeView() {
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [guideFilter, setGuideFilter] = useState("");
+  const profile = useScholarProfiles();
 
   if (!load) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (!load.ok) return <GateBanner tone="danger">{load.message}</GateBanner>;
@@ -780,6 +783,7 @@ function OfficeView() {
     (record) =>
       filterMatches(stageFilter, stageOf(record)) &&
       filterMatches(guideFilter, record.supervisorName) &&
+      profile.matches(record.scholarKey) &&
       textMatches(query, [
         record.scholarName,
         record.title,
@@ -840,6 +844,7 @@ function OfficeView() {
               .map((value) => ({ value, label: value })),
             onChange: setGuideFilter,
           },
+          ...profile.filters,
         ]}
         shown={records.length}
         total={allRecords.length}
@@ -854,6 +859,7 @@ function OfficeView() {
           "Indian",
           "Foreign",
           "Local",
+          ...profile.headers,
         ]}
         rows={records.map((record) => [
           record.scholarName,
@@ -864,6 +870,7 @@ function OfficeView() {
           currentName(record, "indian"),
           currentName(record, "foreign"),
           currentName(record, "local"),
+          ...profile.cells(record.scholarKey),
         ])}
       />
       {records.length === 0 ? (
@@ -904,6 +911,9 @@ function OfficeView() {
                       <p className="text-muted-foreground">
                         Guide {record.supervisorName}
                       </p>
+                      <div className="text-xs">
+                        <ProfileCell profile={profile.profileOf(record.scholarKey)} />
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <p>{record.title}</p>

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { menuRightsCopy, officeWorkHrefs, portalGroups } from "@/data/portal";
+import { grantableGroups, menuRightsCopy, officeWorkHrefs } from "@/data/portal";
 import { roleNames } from "@/data/roles";
 import {
   actionsForMenu,
@@ -828,7 +828,7 @@ function MenuPicker({
               ))}
             </tr>
           </thead>
-          {portalGroups[role].map((group) => {
+          {grantableGroups[role].map((group) => {
             const extra = group.items.filter((item) => !item.href.endsWith("/dashboard"));
             const hrefs = extra.map((item) => item.href);
             const groupOn =

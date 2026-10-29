@@ -1,4 +1,4 @@
-import { portalGroups } from "@/data/portal";
+import { grantableGroups, portalGroups } from "@/data/portal";
 import { menuSections } from "@/data/menu-sections";
 import { readPreviewSession } from "@/lib/auth";
 import { officeViewWriteBlock } from "@/lib/office-view";
@@ -113,12 +113,19 @@ export function isPrincipalAdmin(user: { role: Role; identifier: string }) {
 
 export function parseMenuRights(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  return value.filter(
-    (item): item is string => typeof item === "string" && item.startsWith("/"),
+  return moveLegacyMenus(
+    value.filter(
+      (item): item is string => typeof item === "string" && item.startsWith("/"),
+    ),
   );
 }
 
 export function menuHrefs(role: Role) {
+  return grantableGroups[role].flatMap((group) => group.items.map((item) => item.href));
+}
+
+/** The menus a role starts with (what grantableGroups narrows to for a fixed role). */
+function ownHrefs(role: Role) {
   return portalGroups[role].flatMap((group) => group.items.map((item) => item.href));
 }
 
@@ -169,7 +176,7 @@ export function fixedMenuRole(role: Role) {
 }
 
 function fixedMenus(role: Role) {
-  const hrefs = menuHrefs(role);
+  const hrefs = ownHrefs(role);
   const pages = hrefs.filter((href) => !href.endsWith("/dashboard"));
   const actions =
     role === "accounts" || role === "coe" || role === "coeverify"
@@ -182,10 +189,20 @@ function fixedMenus(role: Role) {
   return [...hrefs, ...actions, rightsMarker];
 }
 
+/** The fee screens of Accounts were merged into Fee approvals; rights given before still work. */
+function moveLegacyMenus(menus: string[]) {
+  const moved = menus.map((item) =>
+    item.startsWith("/admin/accounts/")
+      ? item.replace(/^\/admin\/accounts\/[^#]+/, "/admin/payments")
+      : item,
+  );
+  return [...new Set(moved)];
+}
+
 export function resolvedMenus(user: MenuHolder | null | undefined): string[] | null {
   if (!user) return [];
   if (isPrincipalAdmin(user)) return null;
-  if (Array.isArray(user.menus)) return user.menus;
+  if (Array.isArray(user.menus)) return moveLegacyMenus(user.menus);
   if (user.role === "scholar" || user.role === "supervisor") return menuHrefs(user.role);
   if (fixedMenuRole(user.role)) return fixedMenus(user.role);
   return dashboardHrefs(user.role);
@@ -222,6 +239,7 @@ export function canMenuAction(
 export const scholarPreAdmissionHrefs = [
   "/scholar/dashboard",
   "/scholar/admission",
+  "/scholar/helpdesk",
 ] as const;
 
 function scholarMenuOpen(pathname: string, admitted: boolean) {
@@ -236,7 +254,7 @@ export function visibleGroups(
   menus: string[] | null,
   admitted = true,
 ): PortalNavGroup[] {
-  return portalGroups[role]
+  return grantableGroups[role]
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
@@ -292,7 +310,7 @@ export function defaultMenuHrefs(role: Role) {
 
 export function menuLabels(role: Role, menus: string[] | null) {
   if (menus === null) return null;
-  const catalog = portalGroups[role].flatMap((group) => group.items);
+  const catalog = grantableGroups[role].flatMap((group) => group.items);
   return menus.flatMap((item) => {
     if (item.endsWith("/dashboard") || item === rightsMarker || item === sectionsMarker)
       return [];

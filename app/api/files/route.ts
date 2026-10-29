@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
 import { sniffFileType, storeFolders, type StoreFolder } from "@/lib/file-ref";
+import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { putS3, s3Enabled } from "@/lib/s3";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
@@ -14,21 +15,10 @@ const publicBucket = "portal-public";
 const anonymousFolders: readonly StoreFolder[] = ["applications"];
 const windowMs = 10 * 60 * 1000;
 const anonymousLimit = 40;
-const visits = new Map<string, { count: number; resetAt: number }>();
 
 function tooMany(request: NextRequest) {
-  const address =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
-  const now = Date.now();
-  const seen = visits.get(address);
-  if (!seen || seen.resetAt < now) {
-    visits.set(address, { count: 1, resetAt: now + windowMs });
-    return false;
-  }
-  seen.count += 1;
-  return seen.count > anonymousLimit;
+  return !rateLimit(`upload:${clientAddress(request.headers)}`, anonymousLimit, windowMs)
+    .allowed;
 }
 
 const fail = (message: string, status: number) =>

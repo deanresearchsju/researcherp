@@ -378,6 +378,7 @@ export async function trackPhdApplication(
 
 export async function findPhdByMobile(
   mobile: string,
+  email: string,
 ): Promise<
   | { kind: "submitted"; receipt: PhdReceipt }
   | { kind: "draft"; step: number; values: ScholarFormValues }
@@ -391,6 +392,8 @@ export async function findPhdByMobile(
       .from("phd_applications")
       .select("id, application_no, status, payload, created_at")
       .filter("payload->>mobile", "eq", mobile)
+      // The mobile number alone would show an application to anyone who knows the number.
+      .ilike("email", email.trim().replace(/[\\%_]/g, "\\$&"))
       .order("created_at", { ascending: false })
       .limit(20);
     const row = (submitted.data ?? []).find((item) =>

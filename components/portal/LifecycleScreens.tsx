@@ -44,6 +44,7 @@ import { fileError, type StoredFile } from "@/lib/files";
 import { acceptedEvaluators, useEvaluationPanels } from "@/lib/thesis-evaluation";
 import { evaluatorGroupLabel } from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { storeFile } from "@/lib/file-store";
 
 export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
@@ -62,6 +63,7 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
     Record<string, { outcome: ExaminerOutcome; remarks: string }>
   >({});
   const [query, setQuery] = useState("");
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading examiner reports…</p>;
@@ -133,7 +135,10 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
   const queue = doctoral.theses.filter((thesis) => {
     if (thesis.status !== "Approved") return false;
     if (mode !== "admin") return thesis.scholarIdentifier === identifier;
-    return textMatches(query, [thesis.scholarName, thesis.title, thesis.fileName]);
+    return (
+      profile.matches(thesis.scholarIdentifier) &&
+      textMatches(query, [thesis.scholarName, thesis.title, thesis.fileName])
+    );
   });
 
   return (
@@ -216,15 +221,16 @@ export function ExaminerReportScreen({ mode }: { mode: "admin" | "scholar" }) {
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
+            filters={profile.filters}
             shown={queue.length}
             total={doctoral.theses.length}
             filename="examiner-reports.csv"
-            headers={["scholar", "title", "version"]}
+            headers={["scholar", "title", "version", ...profile.headers]}
             rows={queue.map((item) => [
               item.scholarName,
               item.title,
               String(item.version),
+              ...profile.cells(item.scholarIdentifier),
             ])}
           />
           <ul className="space-y-4">
@@ -390,6 +396,7 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [query, setQuery] = useState("");
   const [scheduling, setScheduling] = useState<ThesisSubmission | null>(null);
   const [recording, setRecording] = useState<string | null>(null);
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading viva…</p>;
@@ -434,8 +441,14 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (saved.ok) setRecording(null);
   }
 
+  const vivasShown = doctoral.vivas.filter(
+    (item) =>
+      profile.matches(item.scholarIdentifier) &&
+      textMatches(query, [item.scholarName, item.venue, item.status]),
+  );
   const readyTheses = doctoral.theses.filter((item) => {
     if (item.status !== "Approved") return false;
+    if (!profile.matches(item.scholarIdentifier)) return false;
     if (latestViva(doctoral, item.scholarIdentifier)?.status === "Passed") return false;
     return reportsReady(doctoral, item);
   });
@@ -503,16 +516,17 @@ export function VivaScreen({ mode }: { mode: "admin" | "scholar" }) {
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
-            shown={doctoral.vivas.length}
+            filters={profile.filters}
+            shown={vivasShown.length}
             total={doctoral.vivas.length}
             filename="vivas.csv"
-            headers={["scholar", "date", "venue", "status"]}
-            rows={doctoral.vivas.map((item) => [
+            headers={["scholar", "date", "venue", "status", ...profile.headers]}
+            rows={vivasShown.map((item) => [
               item.scholarName,
               item.scheduledOn,
               item.venue,
               item.status,
+              ...profile.cells(item.scholarIdentifier),
             ])}
           />
           <ul className="space-y-3">
@@ -652,6 +666,7 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [issuing, setIssuing] = useState<{ identifier: string; name: string } | null>(
     null,
   );
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading completion…</p>;
@@ -687,8 +702,10 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
     }
   }
 
-  const shown = doctoral.completions.filter((item) =>
-    textMatches(query, [item.scholarName, item.kind, item.issuedOn]),
+  const shown = doctoral.completions.filter(
+    (item) =>
+      profile.matches(item.scholarIdentifier) &&
+      textMatches(query, [item.scholarName, item.kind, item.issuedOn]),
   );
 
   return (
@@ -772,12 +789,17 @@ export function CompletionScreen({ mode }: { mode: "admin" | "scholar" }) {
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
+            filters={profile.filters}
             shown={shown.length}
             total={doctoral.completions.length}
             filename="completion.csv"
-            headers={["scholar", "kind", "issued"]}
-            rows={shown.map((item) => [item.scholarName, item.kind, item.issuedOn])}
+            headers={["scholar", "kind", "issued", ...profile.headers]}
+            rows={shown.map((item) => [
+              item.scholarName,
+              item.kind,
+              item.issuedOn,
+              ...profile.cells(item.scholarIdentifier),
+            ])}
           />
           <ul className="space-y-3">
             {readyScholars.map((viva) => (

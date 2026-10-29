@@ -15,7 +15,7 @@ export const racCopy = {
   officeTitle: "RAC decisions",
   scholarTitle: "RAC members",
   supervisorIntro:
-    "Every scholar allotted to you needs a RAC. Name 1 to 3 internal members and 2 to 3 external members, each with designation, institution, address, email, contact number, area of research and the latest five publications (typed; no document is uploaded). The Dean selects one internal and one external member and the Vice Chancellor gives the final approval; the RAC is then shown to you and to the scholar.",
+    "Every scholar allotted to you needs a RAC. Name 1 to 3 internal members and 2 to 3 external members, each with designation, institution, address, email, contact number, area of research (no publication details are asked). The Dean selects one internal and one external member and the Vice Chancellor gives the final approval; the RAC is then shown to you and to the scholar.",
   changeRule:
     "Once the Dean constitutes the RAC, a change can be requested after six months. Give the reason for the change.",
   notConstituted: "RAC not constituted",
@@ -29,6 +29,6 @@ export const racCopy = {
   internalLabel: (index: number) => `Internal member ${index}`,
   externalLabel: (index: number) => `External panel candidate ${index}`,
   deanOnly:
-    "Only the Dean (or the administrator) selects the members. You can read the nominations here.",
+    "Only the person who selects the members (the Dean, or the Vice Chancellor when the Dean's step is switched off in Approval rules) decides here. You can read the nominations.",
   noScholars: "No scholar is allotted to you yet. RAC follows allotment.",
 } as const;

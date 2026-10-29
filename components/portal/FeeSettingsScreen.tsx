@@ -40,6 +40,17 @@ const groups: readonly {
     ],
   },
   {
+    title: "Course work",
+    hint: "The fee of each paper is ₹1,000. The mark sheet fee is added once to every registration.",
+    fields: [
+      {
+        key: "markSheet",
+        label: "Mark sheet fee",
+        hint: "Charged once with each course-work registration, besides the fee of each paper.",
+      },
+    ],
+  },
+  {
     title: "Submission fees",
     hint: "Paid before the upload opens; 0 means no fee.",
     fields: [

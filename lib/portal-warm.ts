@@ -1,4 +1,5 @@
 import { isOfficeRole } from "@/lib/access";
+import { subscribeApprovalRules } from "@/lib/approval-rules";
 import { subscribeDoctoral } from "@/lib/doctoral";
 import { subscribeOffice } from "@/lib/office";
 import { subscribeApplications } from "@/lib/records";
@@ -20,6 +21,7 @@ export function warmPortalData(role: Role) {
     subscribeOffice,
     subscribeDoctoral,
     subscribeRegister,
+    subscribeApprovalRules,
   ];
   if (isOfficeRole(role)) stores.push(subscribeApplications);
   stores.forEach((subscribe) => subscribe(noop)());

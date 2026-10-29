@@ -29,6 +29,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { processFlows } from "@/data/portal-desk";
 import { portalModules } from "@/data/portal";
 import type { ScholarRecordKind, ScholarRecordMenu } from "@/data/scholar-records";
+import {
+  approvalChain,
+  currentApprovalRules,
+  mayAct,
+  nextStage,
+  stageApplies,
+  stageNames,
+  subscribeApprovalRules,
+} from "@/lib/approval-rules";
 import { formatIsoDate } from "@/lib/dates";
 import { fileError, type StoredFile } from "@/lib/files";
 import {
@@ -57,11 +66,13 @@ import {
 import { guideOptions } from "@/lib/supervision";
 import { currentPortalUsers } from "@/lib/users";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
-import { recordSummary } from "@/lib/approval-flow";
+import { recordStages, recordSummary } from "@/lib/approval-flow";
 import { recordViewStamp } from "@/lib/approved-documents";
 import { inputRules, masked, type InputRule } from "@/lib/input-rules";
 
@@ -199,7 +210,23 @@ export function RecordForm({
         kind: menu.kind,
         scholarIdentifier,
         scholarName: values.fullName?.trim() || values.nameOnCard?.trim() || scholarName,
-        payload: values,
+        // The steps this request goes through are fixed now (Approval rules).
+        payload:
+          menu.needsSupervisor && !officeEntry
+            ? {
+                ...values,
+                chain: (approvalChain(`record:${menu.kind}`).filter(
+                  (stage) =>
+                    stage !== "supervisor" || Boolean(supervisorIdentifier.trim()),
+                ).length > 0
+                  ? approvalChain(`record:${menu.kind}`).filter(
+                      (stage) =>
+                        stage !== "supervisor" || Boolean(supervisorIdentifier.trim()),
+                    )
+                  : ["dean"]
+                ).join(","),
+              }
+            : values,
         fileName: file?.file.name ?? existing?.fileName ?? null,
         fileData: fileData || existing?.fileData || null,
         supervisorIdentifier,
@@ -330,6 +357,14 @@ function recordModule(kind: ScholarRecordKind) {
   return portalModules.scholarRecords;
 }
 
+/** A request has the supervisor's step when its menu has one and a supervisor's name is on it. */
+function hasSupervisorStep(
+  menu: ScholarRecordMenu,
+  record: { supervisorIdentifier?: string | null },
+) {
+  return menu.needsSupervisor && Boolean(record.supervisorIdentifier?.trim());
+}
+
 export function ScholarRecordScreen({
   menu,
   mode,
@@ -339,9 +374,18 @@ export function ScholarRecordScreen({
 }) {
   const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  const rules = useSyncExternalStore(
+    subscribeApprovalRules,
+    currentApprovalRules,
+    () => null,
+  );
   const [scholarFilter, setScholarFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [indexFilter, setIndexFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [query, setQuery] = useState("");
+  const profile = useScholarProfiles();
   const load = useSyncExternalStore(
     (onChange) => subscribeScholarRecords(menu.kind, onChange),
     () => currentScholarRecords(menu.kind),
@@ -370,6 +414,11 @@ export function ScholarRecordScreen({
     session && signedIn
       ? allocationFor(office?.allocations ?? [], session.identifier)
       : null;
+  // The supervisor's step is part of the Approval rules: a request made while it is switched off
+  // goes straight to the Dean, without the supervisor's name on it.
+  const viaSupervisor =
+    menu.needsSupervisor &&
+    stageApplies(rules?.rules ?? {}, `record:${menu.kind}`, "supervisor");
   const guide =
     allotment ??
     (registerGuide || registerScholar?.guideName
@@ -389,6 +438,10 @@ export function ScholarRecordScreen({
           (record) =>
             filterMatches(scholarFilter, record.scholarIdentifier) &&
             filterMatches(statusFilter, record.status) &&
+            filterMatches(typeFilter, record.payload.kind ?? "") &&
+            filterMatches(indexFilter, record.payload.indexing ?? "") &&
+            filterMatches(yearFilter, record.payload.year ?? "") &&
+            profile.matches(record.scholarIdentifier) &&
             textMatches(query, [
               record.scholarName,
               record.scholarIdentifier,
@@ -402,11 +455,50 @@ export function ScholarRecordScreen({
     (sum, record) => sum + (Number(record.payload.amount) || 0),
     0,
   );
+  const isPublication = menu.kind === "publication";
+  const choice = (name: string) =>
+    [...new Set(owned.map((record) => record.payload[name] ?? "").filter(Boolean))]
+      .sort()
+      .map((value) => ({ value, label: value }));
+  const paperRow = (record: ScholarRecord) => {
+    const p = record.payload;
+    const person = profile.profileOf(record.scholarIdentifier);
+    const pages = [p.pageFrom, p.pageTo].filter(Boolean).join("–");
+    return {
+      p,
+      person,
+      pages,
+      when: [p.month, p.year].filter(Boolean).join(" "),
+    };
+  };
   const scholarOptions = Array.from(
     new Map(
       owned.map((record) => [record.scholarIdentifier, record.scholarName]),
     ).entries(),
   );
+
+  /** The step a request waits at, and whether it is the last one. */
+  function waitingStep(record: ScholarRecord) {
+    const stages = recordStages(record, hasSupervisorStep(menu, record));
+    const done = stages.filter((stage) =>
+      Boolean(record.payload[stage === "supervisor" ? "supervisorOn" : `${stage}On`]),
+    );
+    return { stage: nextStage(stages, done), last: stages[stages.length - 1] };
+  }
+  function canApproveNow(record: ScholarRecord) {
+    const { stage } = waitingStep(record);
+    if (!stage) return false;
+    if (stage === "supervisor") return session?.role === "admin";
+    return mayAct(session?.role, stage);
+  }
+  function approveLabel(record: ScholarRecord) {
+    const { stage, last } = waitingStep(record);
+    if (stage === "supervisor") return "With supervisor";
+    if (stage && !mayAct(session?.role, stage)) {
+      return `With the ${stageNames[stage]}`;
+    }
+    return stage === last ? "Approve" : "Recommend";
+  }
 
   async function decide(record: ScholarRecord, status: "Approved" | "Returned") {
     const note = (remarks[record.id] ?? "").trim();
@@ -474,7 +566,7 @@ export function ScholarRecordScreen({
     mode === "scholar" &&
     signedIn &&
     session &&
-    (!menu.needsSupervisor || Boolean(guide)) &&
+    (!viaSupervisor || Boolean(guide)) &&
     existing?.status !== "Approved";
 
   return (
@@ -507,12 +599,7 @@ export function ScholarRecordScreen({
         </GateBanner>
       ) : null}
 
-      {mode === "scholar" &&
-      signedIn &&
-      session &&
-      menu.needsSupervisor &&
-      office &&
-      !guide ? (
+      {mode === "scholar" && signedIn && session && viaSupervisor && office && !guide ? (
         <GateBanner>
           A supervisor has to be allotted before you can submit this.
         </GateBanner>
@@ -625,7 +712,7 @@ export function ScholarRecordScreen({
                   </td>
                   <td className="px-4 py-3">
                     <ApprovalBadge
-                      summary={recordSummary(record, menu.needsSupervisor)}
+                      summary={recordSummary(record, hasSupervisorStep(menu, record))}
                       showDetail
                     />
                   </td>
@@ -744,8 +831,10 @@ export function ScholarRecordScreen({
                 menu={menu}
                 scholarIdentifier={session.identifier}
                 scholarName={session.name.trim() || session.identifier}
-                supervisorIdentifier={guide?.supervisorIdentifier ?? ""}
-                supervisorName={guide?.supervisorName ?? ""}
+                supervisorIdentifier={
+                  viaSupervisor ? (guide?.supervisorIdentifier ?? "") : ""
+                }
+                supervisorName={viaSupervisor ? (guide?.supervisorName ?? "") : ""}
                 existing={existing}
                 prefill={
                   menu.kind === "title_change" && doctoral
@@ -775,6 +864,32 @@ export function ScholarRecordScreen({
             query={query}
             onQuery={setQuery}
             filters={[
+              ...(isPublication
+                ? [
+                    {
+                      id: "type",
+                      label: "Publication type",
+                      value: typeFilter,
+                      options: choice("kind"),
+                      onChange: setTypeFilter,
+                    },
+                    {
+                      id: "indexing",
+                      label: "Indexed in",
+                      value: indexFilter,
+                      options: choice("indexing"),
+                      onChange: setIndexFilter,
+                    },
+                    {
+                      id: "year",
+                      label: "Year",
+                      value: yearFilter,
+                      options: choice("year").reverse(),
+                      onChange: setYearFilter,
+                    },
+                  ]
+                : []),
+              ...profile.filters,
               {
                 id: "scholar",
                 label: "Scholar",
@@ -798,26 +913,151 @@ export function ScholarRecordScreen({
             shown={mine.length}
             total={owned.length}
             filename={`${menu.slug}.csv`}
-            headers={[
-              "scholar_name",
-              "scholar_identifier",
-              "status",
-              "submitted",
-              ...menu.fields.map((field) => field.name),
-              "file_name",
-            ]}
-            rows={mine.map((record) => [
-              record.scholarName,
-              record.scholarIdentifier,
-              record.status,
-              record.createdAt.slice(0, 10),
-              ...menu.fields.map((field) => record.payload[field.name] ?? ""),
-              record.fileName ?? "",
-            ])}
+            csv={isPublication}
+            title={isPublication ? "Publications of scholars" : undefined}
+            headers={
+              isPublication
+                ? [
+                    "Scholar",
+                    "Registration No.",
+                    "Sign-in",
+                    ...profile.headers,
+                    "Publication type",
+                    "Title of paper",
+                    "Authors",
+                    "Corresponding author",
+                    "Position of the scholar",
+                    "Journal / book / conference",
+                    "Volume",
+                    "Issue",
+                    "Pages",
+                    "ISSN",
+                    "eISSN",
+                    "Indexed in",
+                    "Quality panel",
+                    "Impact factor",
+                    "DOI",
+                    "Web URL",
+                    "Month",
+                    "Year",
+                    "Status",
+                    "Submitted on",
+                    "Approved on",
+                    "Remarks",
+                  ]
+                : [
+                    "scholar_name",
+                    "scholar_identifier",
+                    "status",
+                    "submitted",
+                    ...profile.headers,
+                    ...menu.fields.map((field) => field.name),
+                    "file_name",
+                  ]
+            }
+            rows={mine.map((record) => {
+              if (!isPublication) {
+                return [
+                  record.scholarName,
+                  record.scholarIdentifier,
+                  record.status,
+                  record.createdAt.slice(0, 10),
+                  ...profile.cells(record.scholarIdentifier),
+                  ...menu.fields.map((field) => record.payload[field.name] ?? ""),
+                  record.fileName ?? "",
+                ];
+              }
+              const { p, person, pages } = paperRow(record);
+              return [
+                record.scholarName,
+                person.registration,
+                record.scholarIdentifier,
+                ...profile.cells(record.scholarIdentifier),
+                p.kind ?? "",
+                p.title ?? "",
+                p.authors ?? "",
+                p.correspondingAuthor ?? "",
+                p.position ?? "",
+                p.journal ?? "",
+                p.volume ?? "",
+                p.issue ?? "",
+                pages,
+                p.issn ?? "",
+                p.eissn ?? "",
+                p.indexing ?? "",
+                p.qualityPanel ?? "",
+                p.impactFactor ?? "",
+                p.doi ?? "",
+                p.webUrl ?? "",
+                p.month ?? "",
+                p.year ?? "",
+                record.status,
+                record.createdAt.slice(0, 10),
+                p.approvedOn ?? "",
+                p.remarks ?? "",
+              ];
+            })}
+            pdfHeaders={
+              isPublication
+                ? [
+                    "Scholar",
+                    "Department · Campus",
+                    "Guide · Mode",
+                    "Type",
+                    "Title · Authors",
+                    "Journal / book / conference",
+                    "Indexed in",
+                    "DOI",
+                    "Month · Year",
+                    "Status",
+                  ]
+                : undefined
+            }
+            pdfRows={
+              isPublication
+                ? mine.map((record) => {
+                    const { p, person, pages, when } = paperRow(record);
+                    return [
+                      [record.scholarName, person.registration]
+                        .filter(Boolean)
+                        .join("\n"),
+                      [person.department, person.campus].filter(Boolean).join("\n"),
+                      [person.guide, person.mode].filter(Boolean).join("\n"),
+                      p.kind ?? "",
+                      [p.title, p.authors ? `Authors: ${p.authors}` : ""]
+                        .filter(Boolean)
+                        .join("\n"),
+                      [
+                        p.journal,
+                        [
+                          p.volume ? `Vol. ${p.volume}` : "",
+                          p.issue ? `Issue ${p.issue}` : "",
+                          pages ? `pp. ${pages}` : "",
+                        ]
+                          .filter(Boolean)
+                          .join(", "),
+                      ]
+                        .filter(Boolean)
+                        .join("\n"),
+                      [
+                        p.indexing,
+                        p.qualityPanel,
+                        p.issn ? `ISSN ${p.issn}` : "",
+                        p.impactFactor ? `IF ${p.impactFactor}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n"),
+                      p.doi ?? "",
+                      when,
+                      record.status,
+                    ];
+                  })
+                : undefined
+            }
           />
           <DeskSection title={menu.label}>
             <DeskTable
-              headers={["Scholar", "Details", "Submitted", "Status", ""]}
+              headers={["Scholar", profileColumnHeading, "Details", "Submitted", "Status", ""]}
               empty={mine.length === 0}
             >
               {mine.map((record) => (
@@ -825,6 +1065,9 @@ export function ScholarRecordScreen({
                   <td className="px-4 py-3">
                     <p className="font-semibold text-primary">{record.scholarName}</p>
                     <p className="text-muted-foreground">{record.scholarIdentifier}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <ProfileCell profile={profile.profileOf(record.scholarIdentifier)} />
                   </td>
                   <td className="px-4 py-3">
                     {menu.fields.slice(0, 4).map((field) => (
@@ -866,16 +1109,10 @@ export function ScholarRecordScreen({
                         type="button"
                         variant="gold"
                         size="sm"
-                        disabled={
-                          busyId === record.id ||
-                          (menu.needsSupervisor &&
-                            record.status !== "Supervisor approved")
-                        }
+                        disabled={busyId === record.id || !canApproveNow(record)}
                         onClick={() => void decide(record, "Approved")}
                       >
-                        {menu.needsSupervisor && record.status === "Submitted"
-                          ? "With supervisor"
-                          : "Approve"}
+                        {approveLabel(record)}
                       </Button>
                       <Button
                         type="button"
@@ -915,10 +1152,12 @@ export function ScholarRecordScreen({
                 <dt className="text-muted-foreground">Status</dt>
                 <dd className="space-y-2">
                   <ApprovalBadge
-                    summary={recordSummary(opened, menu.needsSupervisor)}
+                    summary={recordSummary(opened, hasSupervisorStep(menu, opened))}
                     showDetail
                   />
-                  <ApprovalTrail summary={recordSummary(opened, menu.needsSupervisor)} />
+                  <ApprovalTrail
+                    summary={recordSummary(opened, hasSupervisorStep(menu, opened))}
+                  />
                 </dd>
               </div>
               {opened.fileName ? (

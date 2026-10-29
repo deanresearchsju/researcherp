@@ -35,11 +35,6 @@ export const pageHeroes = {
     summary:
       "Every milestone from admission and course work to synopsis, thesis and viva.",
   },
-  contact: {
-    eyebrow: "Helpdesk",
-    title: "Contact",
-    summary: "Write to or visit the Center for Research. We reply on working days.",
-  },
   apply: {
     eyebrow: "Admissions",
     title: "PhD Application",

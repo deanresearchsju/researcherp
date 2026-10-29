@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { researchRegister } from "@/data/research-register";
 import { parseSupervisorStandings, supervisorIsActive } from "@/lib/portal-access";
 import {
+  ensureRegisterSeed,
   parseProfiles,
   parseSupervisorEdits,
   supervisorEditKey,
@@ -152,6 +153,7 @@ export async function registerSupervisorAreas(): Promise<
   "use cache";
   cacheLife("minutes");
   cacheTag("supervisors");
+  await ensureRegisterSeed();
   const supabase = client();
   const { data } = supabase
     ? await supabase

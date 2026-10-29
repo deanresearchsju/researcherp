@@ -160,12 +160,17 @@ await test("Examination is its own module: windows, registrations, registration 
   }
 });
 
-await test("Accounts has a desk for every kind of fee; entrance invigilation sits under Admissions", () => {
+await test("Accounts checks every kind of fee on the Fee approvals screen (the office's own); entrance invigilation sits under Admissions", () => {
   const accounts = portal.portalGroups.accounts.flatMap((g) =>
     g.items.map((i) => i.href),
   );
+  assert.ok(accounts.includes("/admin/payments"));
+  assert.ok(!accounts.some((href) => href.startsWith("/admin/accounts/")));
+  const sections = load("@/data/menu-sections.ts").menuSections["/admin/payments"].map(
+    (s) => s.id,
+  );
   for (const slug of ["registration", "course-work", "annual", "synopsis", "thesis"]) {
-    assert.ok(accounts.includes(`/admin/accounts/${slug}`), slug);
+    assert.ok(sections.includes(slug), slug);
   }
   const admissions = portal.portalGroups.admin.find((g) => g.heading === "Admissions");
   assert.ok(admissions.items.some((i) => i.href === "/admin/entrance-invigilation"));

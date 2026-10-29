@@ -304,6 +304,11 @@ The documents for the website and the ERP are listed in [README.md](README.md): 
 - **First sign-in.** After the new password a scholar is taken to **My details** (the Scholar information form; the office confirms what is sent) and a supervisor to **My details** (phone, campus, area of research, Vidwan ID, biography up to 200 words; saved at once; the office decides what the public sees).
 - **Typed boxes.** Dates are date boxes, numbers take digits, names take letters; masks are in `lib/input-rules.ts`. The old register's loose dates ("27.5.25") are read as dates when edited.
 
+### Menus and sub-menus (October 2026)
+
+- Module > menu > sub-menu. The sub-menus of a menu are its sections; they show under the menu when it is open and are chosen with `?tab=` in the address, so a sub-menu can be bookmarked.
+- Sections that follow a process stay as tabs inside the page (`sequentialMenus` in `data/menu-sections.ts`). To move a menu between the two ways, add or remove it there.
+
 ### Research areas and the application form (October 2026)
 
 - Website > Research areas: research area (school) > departments > key areas, each added, edited and removed in the ERP. This is the one list the home page, the Ph.D. application form and the school shown for a supervisor use.
@@ -312,7 +317,7 @@ The documents for the website and the ERP are listed in [README.md](README.md): 
 
 ### RAC, grades, access levels (October 2026)
 
-- **RAC.** The supervisor sends 1 to 3 internal and 2 to 3 external nominees (each with designation, institution, address, e-mail, contact number, area of research and five latest publications, typed). Dean: selects one external member (the internal member is the one named), writes the minutes and **sends to the Vice Chancellor**, or returns with remarks. Vice Chancellor: **approves** (the RAC is in force from that day) or returns with remarks. A returned nomination can be sent again. A change of RAC is possible six months after the last approval, as before.
+- **RAC.** The supervisor sends 1 to 3 internal and 2 to 3 external nominees (each with designation, institution, address, e-mail, contact number, area of research; no publication details are asked). Dean: selects one external member (the internal member is the one named), writes the minutes and **sends to the Vice Chancellor**, or returns with remarks. Vice Chancellor: **approves** (the RAC is in force from that day) or returns with remarks. A returned nomination can be sent again. A change of RAC is possible six months after the last approval, as before.
 - **Office entry.** Admin, staff or Dean can enter a RAC for a scholar (the guide is taken from the allotment or the register). It goes the same way. The administrator can tick "approved earlier" to record the one internal and one external member directly.
 - **Grades.** Each grade has marks from and to. Together the grades must cover every mark from the pass mark to the maximum marks, with no gap and no overlap. Marks below the pass mark are RA.
 - **Access levels.** Menu (module and menu) > Add / edit, Approve, Export, Upload > Sections (tabs) of a menu. A sign-in whose rights name sections sees only those tabs; rights saved earlier keep every section.

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { FormDialog } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -46,6 +47,7 @@ export function SixMonthOfficeEntry({
   const [batchFilter, setBatchFilter] = useState("");
   const [periodFilter, setPeriodFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const profile = useScholarProfiles();
   const [selected, setSelected] = useState<string[]>([]);
   const [marking, setMarking] = useState(false);
   const [receivedOn, setReceivedOn] = useState("");
@@ -101,6 +103,7 @@ export function SixMonthOfficeEntry({
       filterMatches(batchFilter, row.batchName) &&
       filterMatches(periodFilter, row.period) &&
       filterMatches(statusFilter, statusOf(row)) &&
+      profile.matches(row.identifier) &&
       textMatches(query, [row.name, row.identifier, row.batchName, row.period]),
   );
   const open = shown.filter((row) => !row.report);
@@ -196,18 +199,20 @@ export function SixMonthOfficeEntry({
             })),
             onChange: setStatusFilter,
           },
+          ...profile.filters,
         ]}
         shown={shown.length}
         total={rows.length}
         filename="six-month-reports-before-online.csv"
         title="Six-month reports received before online submission"
-        headers={["Scholar", "Batch", "Period", "Status", "Received on"]}
+        headers={["Scholar", "Batch", "Period", "Status", "Received on", ...profile.headers]}
         rows={shown.map((row) => [
           row.name,
           row.batchName,
           row.period,
           statusOf(row),
           row.report?.payload.receivedOn ?? row.report?.payload.approvedOn ?? "",
+          ...profile.cells(row.identifier),
         ])}
       />
       <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">

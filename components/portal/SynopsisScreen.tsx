@@ -18,6 +18,7 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell } from "@/components/portal/ProfileCell";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,9 +40,12 @@ import {
   reportTarget,
   saveSynopsis,
   subscribeDoctoral,
+  waitingStageOf,
 } from "@/lib/doctoral";
+import { mayAct, stageNames, type ApprovalStage } from "@/lib/approval-rules";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { researchTitleOf } from "@/lib/research-title";
 import Link from "next/link";
 import { useFees } from "@/lib/fee-settings";
@@ -86,6 +90,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [tab, setTab] = useState("new");
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral || !reports || !papers) {
     return <p className="text-sm text-muted-foreground">Loading synopsis…</p>;
@@ -188,6 +193,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (mode !== "admin") return item.scholarIdentifier === identifier;
     return (
       filterMatches(statusFilter, item.status) &&
+      profile.matches(item.scholarIdentifier) &&
       textMatches(query, [item.scholarName, item.fileName, item.status, item.remarks])
     );
   });
@@ -264,11 +270,8 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
               session?.identifier ?? "",
               payments?.records ?? [],
             )}{" "}
-            <Link
-              href="/scholar/records/payment-history"
-              className="font-semibold underline"
-            >
-              Go to Payment history
+            <Link href="/scholar/fee?tab=synopsis" className="font-semibold underline">
+              Pay the fee
             </Link>
           </GateBanner>
         ) : (
@@ -365,16 +368,18 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
               })),
               onChange: setStatusFilter,
             },
+            ...profile.filters,
           ]}
           shown={queue.length}
           total={doctoral.synopses.length}
           filename="synopsis.csv"
-          headers={["scholar", "file", "status", "remarks"]}
+          headers={["scholar", "file", "status", "remarks", ...profile.headers]}
           rows={queue.map((item) => [
             item.scholarName,
             item.fileName,
             item.status,
             item.remarks,
+            ...profile.cells(item.scholarIdentifier),
           ])}
         />
       ) : null}
@@ -387,9 +392,16 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
               className="space-y-3 rounded-xl border border-border bg-card p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="font-semibold text-primary">
-                  {item.scholarName} · {item.fileName}
-                </p>
+                <div>
+                  <p className="font-semibold text-primary">
+                    {item.scholarName} · {item.fileName}
+                  </p>
+                  {mode === "admin" ? (
+                    <div className="text-xs">
+                      <ProfileCell profile={profile.profileOf(item.scholarIdentifier)} />
+                    </div>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <ViewFilesButton
                     fileName={item.fileName}
@@ -402,16 +414,17 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
               </div>
               <ApprovalTrail summary={submissionSummary(item)} />
               {mode === "admin" &&
-              item.status === "Submitted" &&
-              item.needsSupervisor &&
-              item.supervisorStatus !== "Recommended" ? (
+              waitingStageOf(item) &&
+              !mayAct(session?.role, waitingStageOf(item)) ? (
                 <p className="text-sm text-muted-foreground">
-                  Waiting for the supervisor&apos;s approval.
+                  Waiting for the {stageNames[waitingStageOf(item) as ApprovalStage]}
+                  &apos;s approval.
                 </p>
               ) : null}
               {mode === "admin" &&
-              item.status === "Submitted" &&
-              (!item.needsSupervisor || item.supervisorStatus === "Recommended") ? (
+              waitingStageOf(item) &&
+              waitingStageOf(item) !== "supervisor" &&
+              mayAct(session?.role, waitingStageOf(item)) ? (
                 <div className="space-y-2">
                   <Textarea
                     aria-label="Remarks"
@@ -430,7 +443,9 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
                       variant="gold"
                       onClick={() => void decide(item.id, "Approved")}
                     >
-                      Approve
+                      {waitingStageOf(item) === item.chain.at(-1)
+                        ? "Approve"
+                        : "Recommend"}
                     </Button>
                     <Button
                       type="button"

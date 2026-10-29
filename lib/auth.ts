@@ -125,9 +125,22 @@ export function replacePreviewSession(session: PreviewSession) {
 }
 
 export function clearPreviewSession() {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return Promise.resolve();
   window.localStorage.removeItem(sessionStorageKey);
   window.sessionStorage.removeItem(sessionStorageKey);
   notifySessionChange();
-  void fetch("/api/auth/logout", { method: "POST" });
+  return fetch("/api/auth/logout", { method: "POST" }).then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/**
+ * Signs out, then opens the page with a fresh start. A full page load (not a client-side move)
+ * drops everything the previous sign-in left in the browser's memory, and a later sign-in does
+ * not meet a stale, cached redirect.
+ */
+export async function signOutTo(href: string) {
+  await clearPreviewSession();
+  window.location.assign(href);
 }

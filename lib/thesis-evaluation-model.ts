@@ -24,11 +24,11 @@ export type Evaluator = {
   phone: string;
   /** Area of research. */
   specialization: string;
-  /** The latest publications (five), named in words: no document is uploaded. */
+  /** Two publications of the evaluator, named in words: no document is uploaded. */
   publications: string[];
 };
 
-export const publicationsRequired = 5;
+export const publicationsRequired = 2;
 
 export const inviteStatuses = [
   "Not contacted",
@@ -104,12 +104,15 @@ export function blankEvaluator(): Evaluator {
   };
 }
 
-/** Exactly five entries, whatever was saved (older records had none). */
+/** At least the two asked for, whatever was saved (records saved earlier may hold more, or none). */
 export function publicationList(value: unknown) {
   const list = Array.isArray(value)
     ? value.map((item) => (typeof item === "string" ? item : ""))
     : [];
-  return Array.from({ length: publicationsRequired }, (_, index) => list[index] ?? "");
+  return Array.from(
+    { length: Math.max(publicationsRequired, list.length) },
+    (_, index) => list[index] ?? "",
+  );
 }
 
 function text(value: unknown) {
@@ -308,8 +311,12 @@ export function nominationProblem(
         return `Enter the contact number of ${who}.`;
       if (person.specialization.trim().length < 2)
         return `Enter the area of research of ${who}.`;
-      if (publicationList(person.publications).some((item) => item.trim().length < 5)) {
-        return `Name the latest ${publicationsRequired} publications of ${who}.`;
+      if (
+        publicationList(person.publications)
+          .slice(0, publicationsRequired)
+          .some((item) => item.trim().length < 5)
+      ) {
+        return `Name ${publicationsRequired} publications of ${who}.`;
       }
     }
   }

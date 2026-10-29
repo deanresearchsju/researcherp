@@ -8,7 +8,6 @@ export const primaryNav: NavLink[] = [
   { label: "Admission", href: "/admission" },
   { label: "Supervisors", href: "/supervisors" },
   { label: "Our Team", href: "/our-team" },
-  { label: "Contact", href: "/contact" },
 ];
 
 export const footerExplore: NavLink[] = [

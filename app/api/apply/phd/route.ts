@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { phdSessionCode } from "@/lib/applications";
 import { parsePhdSession } from "@/lib/office";
 import { insertOfficeNotice } from "@/lib/notices-server";
+import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { assertPhdUploads } from "@/lib/upload-guard";
 import type { Json } from "@/types/database";
@@ -45,6 +46,16 @@ function textField(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const flood = rateLimit(`apply:${clientAddress(request.headers)}`, 10, 60 * 60_000);
+  if (!flood.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Too many submissions from this network. Please try again later.",
+      },
+      { status: 429, headers: { "Retry-After": String(flood.retryAfterSeconds) } },
+    );
+  }
   let body: unknown;
   try {
     body = await request.json();
@@ -63,6 +74,20 @@ export async function POST(request: Request) {
   const session = textField(record.session);
   const year = textField(record.year);
   const payload = payloadOf(record.payload);
+  // Shape and size checks, so a hostile or broken request is turned away before it is stored.
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) ||
+    !applicantName ||
+    applicantName.length > 200 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+    email.length > 254 ||
+    studyMode.length > 40 ||
+    session.length > 20 ||
+    year.length > 8 ||
+    JSON.stringify(payload).length > 1_500_000
+  ) {
+    return NextResponse.json({ ok: false, message: saveError }, { status: 400 });
+  }
   const uploads = assertPhdUploads(payload);
   if (!uploads.ok) {
     return NextResponse.json({ ok: false, message: uploads.message }, { status: 400 });

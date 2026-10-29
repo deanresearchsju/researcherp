@@ -12,7 +12,6 @@ For the Research Office: what the public sees, and how to change it without a pr
 | `/announcements`                                      | Notices and events                                                                                                                      |
 | `/our-team`                                           | The Dean and the Research Office                                                                                                        |
 | `/downloads`                                          | Forms and regulations                                                                                                                   |
-| `/contact`                                            | The helpdesk form and the contact details                                                                                               |
 | `/apply`, `/apply/status`                             | The online Ph.D. application and the status look-up (application number and date of birth)                                              |
 | `/supervisor-recognition/apply`, `/status`            | The supervisor recognition application and its status                                                                                   |
 | `/terms`, `/privacy`                                  | Terms and the privacy statement                                                                                                         |

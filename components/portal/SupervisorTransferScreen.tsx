@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { FormDialog, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -54,6 +55,7 @@ export function SupervisorTransferScreen() {
   );
   const [fromSupervisor, setFromSupervisor] = useState("");
   const [query, setQuery] = useState("");
+  const profile = useScholarProfiles(undefined, { omitGuide: true });
   const [transferOpen, setTransferOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,6 +97,7 @@ export function SupervisorTransferScreen() {
       sameGuide(row.currentName, fromSupervisor);
     return (
       fromMatch &&
+      profile.matches(row.identifier) &&
       textMatches(query, [row.name, row.identifier, row.registration, row.currentName])
     );
   });
@@ -268,16 +271,23 @@ export function SupervisorTransferScreen() {
       <ListToolbar
         query={query}
         onQuery={setQuery}
-        filters={[]}
+        filters={profile.filters}
         shown={listed.length}
         total={rows.length}
         filename="supervisor-transfers.csv"
-        headers={["scholar_name", "identifier", "batch", "present_supervisor"]}
+        headers={[
+          "scholar_name",
+          "identifier",
+          "batch",
+          "present_supervisor",
+          ...profile.headers,
+        ]}
         rows={listed.map((row) => [
           row.name,
           row.identifier,
           row.batchName,
           row.currentName,
+          ...profile.cells(row.identifier),
         ])}
       />
       {listed.length === 0 ? (

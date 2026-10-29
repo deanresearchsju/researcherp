@@ -11,6 +11,7 @@ import { DeskModal, FormDialog, PageTitle } from "@/components/portal/Desk";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { ApplicationViewer } from "@/components/portal/ApplicationViewer";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { OfficeEntryDialog } from "@/components/portal/RacScreen";
 import { ScholarRegisterEditor } from "@/components/portal/RegisterEditors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
   registrationOf,
   scholarSignInId,
   subscribeRegister,
+  supervisorForGuide,
   type RegistrationAllotment,
 } from "@/lib/register";
 import {
@@ -181,6 +183,7 @@ export function ResearchRegister() {
   const [allotId, setAllotId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [racId, setRacId] = useState<string | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const savedText = useSyncExternalStore(subscribeExportIds, savedExportText, () => null);
   const exportIds = useMemo(() => parseExportIds(savedText), [savedText]);
@@ -298,6 +301,26 @@ export function ResearchRegister() {
     researchRegister.scholars.find((scholar) => scholar.id === editId) ?? null;
   const opened = entries.find((entry) => entry.scholar.id === openId) ?? null;
   const canAllotRole = session?.role === "admin" || session?.role === "staff";
+  // The research office enters the RAC members of a scholar here (one internal, one external and,
+  // if required, a co-guide; no publication details).
+  const canEnterRac =
+    session?.role === "admin" || session?.role === "staff" || session?.role === "dean";
+  const racScholar =
+    researchRegister.scholars.find((scholar) => scholar.id === racId) ?? null;
+  const racGuide = racScholar ? supervisorForGuide(racScholar.guideName) : null;
+  const racChoice = racScholar
+    ? [
+        {
+          identifier: scholarSignInId(racScholar),
+          name: racScholar.name,
+          supervisorIdentifier:
+            racGuide?.email.trim() ||
+            racGuide?.supervisorId.trim() ||
+            racScholar.guideName,
+          supervisorName: racScholar.guideName,
+        },
+      ]
+    : [];
   const tableColumns = tableColumnIds.map((id) =>
     registerColumns.find((column) => column.id === id)!,
   );
@@ -482,6 +505,26 @@ export function ResearchRegister() {
                     >
                       Details
                     </Button>
+                    {canEnterRac ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="ml-2"
+                        disabled={!scholar.guideName.trim()}
+                        title={
+                          scholar.guideName.trim()
+                            ? "Enter the RAC members of this scholar"
+                            : "Allot a guide first"
+                        }
+                        onClick={() => {
+                          setNotice(null);
+                          setRacId(scholar.id);
+                        }}
+                      >
+                        RAC members
+                      </Button>
+                    ) : null}
                   </td>
                 </tr>
               ))
@@ -569,6 +612,20 @@ export function ResearchRegister() {
         />
       ) : null}
 
+      {racScholar ? (
+        <OfficeEntryDialog
+          key={racScholar.id}
+          scholars={racChoice}
+          initialScholar={racChoice[0]?.identifier ?? ""}
+          defaultRecorded
+          canRecord={session?.role === "admin" || session?.role === "staff"}
+          onClose={() => setRacId(null)}
+          onDone={(message) => {
+            setNotice(message);
+            setRacId(null);
+          }}
+        />
+      ) : null}
       {editScholar ? (
         <ScholarRegisterEditor
           key={editScholar.id}

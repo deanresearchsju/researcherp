@@ -89,7 +89,8 @@ export function LoginForm({ role }: LoginFormProps) {
       setFormError(result.message);
       return;
     }
-    router.push(result.redirectTo);
+    // A full page load, so nothing of an earlier sign-in is left in the browser's memory.
+    window.location.assign(result.redirectTo);
   }
 
   const {

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { clearPreviewSession, loginHref } from "@/lib/auth";
+import { loginHref, signOutTo } from "@/lib/auth";
 import { usePreviewSession } from "@/lib/use-preview-session";
 
 const checkEvery = 60_000;
@@ -34,8 +34,7 @@ export function useSignInWatch() {
     const leave = (reason: string) => {
       if (!active) return;
       active = false;
-      clearPreviewSession();
-      router.replace(`${loginHref(role)}?reason=${reason}`);
+      void signOutTo(`${loginHref(role)}?reason=${reason}`);
     };
 
     const check = async () => {

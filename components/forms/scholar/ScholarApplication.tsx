@@ -231,7 +231,7 @@ export function ScholarApplication() {
     vacancies: Vacancy[];
   }) {
     setVacancies(start.vacancies);
-    const found = await findPhdByMobile(start.mobile);
+    const found = await findPhdByMobile(start.mobile, start.email);
     if (found.kind === "submitted") {
       setReceipt(found.receipt);
       return;

@@ -3,9 +3,12 @@
 import type { jsPDF } from "jspdf";
 
 import { university } from "@/lib/constants";
+import { currentMenuContext } from "@/lib/menu-context";
 
 export type TablePdfInput = {
   title: string;
+  /** Module › menu › sub-menu the report was made from. Read from the open page when omitted. */
+  context?: string;
   /** Filters and search applied, one line each. */
   criteria: readonly string[];
   headers: readonly string[];
@@ -18,7 +21,6 @@ const margin = 10;
 const fontSize = 7.5;
 const lineHeight = 3.2;
 const cellPadding = 1.1;
-const headerTop = 25;
 const footerHeight = 18;
 
 let logoCache: Promise<{ data: string; ratio: number } | null> | null = null;
@@ -103,6 +105,8 @@ function naturalWidths(
  */
 export async function downloadTablePdf(input: TablePdfInput) {
   const { jsPDF } = await import("jspdf");
+  const context = (input.context ?? currentMenuContext()).trim();
+  const headerTop = context ? 29 : 25;
   const named = input.headers.map(readableHeader);
   const hasSerial = named.length > 0 && isSerialHeader(named[0]);
   const headers = hasSerial ? ["S. No.", ...named.slice(1)] : ["S. No.", ...named];
@@ -180,6 +184,13 @@ export async function downloadTablePdf(input: TablePdfInput) {
     doc.setFontSize(10.5);
     doc.setTextColor(0, 0, 0);
     doc.text(input.title.toUpperCase(), pageWidth / 2, 22.5, { align: "center" });
+    if (context) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+      const line = doc.splitTextToSize(context, pageWidth - margin * 2) as string[];
+      doc.text(line[0], pageWidth / 2, 26.5, { align: "center" });
+    }
     doc.setTextColor(0, 0, 0);
   };
 

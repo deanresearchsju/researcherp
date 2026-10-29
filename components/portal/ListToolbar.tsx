@@ -21,6 +21,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { downloadSheet } from "@/lib/sheet";
 import { filterValues, joinFilterValues } from "@/lib/list-filter";
 import { downloadTablePdf } from "@/lib/table-pdf";
@@ -271,6 +272,11 @@ function useHiddenColumns(key: string) {
   return [hidden, save] as const;
 }
 
+/** A cell a spreadsheet would read as a formula is kept as text. */
+function csvSafe(value: string) {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 const normal = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 /** Hides or shows a column of an on-screen table, by the heading it carries. */
@@ -311,6 +317,9 @@ export function ListToolbar({
   rows,
   title,
   extra,
+  csv = false,
+  pdfHeaders,
+  pdfRows,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -326,6 +335,11 @@ export function ListToolbar({
   downloadLabel?: string;
   /** Shown beside the export buttons, for example a choice of the columns to export. */
   extra?: ReactNode;
+  /** Also offer the rows as a plain .csv file. */
+  csv?: boolean;
+  /** A shorter layout for the PDF (cells may hold several lines), when the sheet is wide. */
+  pdfHeaders?: readonly string[];
+  pdfRows?: readonly (readonly string[])[];
 }) {
   const pathname = usePathname();
   const session = usePreviewSession();
@@ -389,8 +403,8 @@ export function ListToolbar({
       await downloadTablePdf({
         title: title ?? (pageHeading() || "Report"),
         criteria: criteria(),
-        headers: outHeaders,
-        rows: outRows,
+        headers: pdfHeaders ?? outHeaders,
+        rows: pdfRows ?? outRows,
         filename,
         generatedBy: session ? session.name.trim() || session.identifier : undefined,
       });
@@ -514,6 +528,22 @@ export function ListToolbar({
                   </div>
                 ) : null}
               </>
+            ) : null}
+            {csv ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  downloadCsv(
+                    filename.replace(/\.[a-z]+$/i, "") + ".csv",
+                    toCsv(outHeaders, outRows.map((row) => row.map(csvSafe))),
+                  )
+                }
+              >
+                <FileDown className="size-4" aria-hidden="true" />
+                Export CSV
+              </Button>
             ) : null}
             <Button
               type="button"

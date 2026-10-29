@@ -1,10 +1,11 @@
 import type { ResearchScholar } from "@/data/research-register";
 import { batchById } from "@/lib/batches";
-import type { DoctoralState } from "@/lib/doctoral";
+import { vidwanOf, type DoctoralState } from "@/lib/doctoral";
 import { guideCampus } from "@/lib/registration-format";
 import {
   personalDetailsOf,
   registrationOf,
+  scholarSignInId,
   supervisorForGuide,
   type RegistrationAllotment,
 } from "@/lib/register";
@@ -149,6 +150,7 @@ export const registerColumns: readonly RegisterColumn[] = [
       ["state", "State", "state"],
       ["community", "Community", "community"],
       ["admissionDate", "Date of admission", "admissionDate"],
+      ["vidwanId", "Vidwan ID", "vidwanId"],
       ["ugDegree", "U.G. degree", "ugDegree"],
       ["ugUniversity", "U.G. university, year and %", "ugUniversity"],
       ["pgDegree", "P.G. degree", "pgDegree"],
@@ -302,7 +304,12 @@ export function registerContext(
     area:
       text(personalDetailsOf(scholar).researchArea) ||
       text(supervisorForGuide(scholar.guideName)?.researchArea),
-    personal: personalDetailsOf(scholar),
+    personal: {
+      ...personalDetailsOf(scholar),
+      ...(vidwanOf(doctoral, scholarSignInId(scholar))
+        ? { vidwanId: vidwanOf(doctoral, scholarSignInId(scholar)) }
+        : {}),
+    },
     milestones: doctoral ? liveMilestones(scholar, doctoral) : null,
   };
 }

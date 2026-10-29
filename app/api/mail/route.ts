@@ -14,6 +14,7 @@ import {
 } from "@/lib/mail-templates";
 import { mailConfigured, sendMail } from "@/lib/mailer";
 import { verifySecret } from "@/lib/passwords";
+import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
 
@@ -66,6 +67,11 @@ export async function POST(request: NextRequest) {
 
   /* ---- Acknowledgements: sent to the address on the application just submitted ---- */
   if (event === "ack") {
+    const flood = rateLimit(`ack:${clientAddress(request.headers)}`, 20, 10 * 60_000);
+    const number = text(body.applicationNo);
+    if (!flood.allowed || !/^[A-Za-z0-9/.\- ]{4,40}$/.test(number)) {
+      return NextResponse.json({ ok: false }, { status: flood.allowed ? 400 : 429 });
+    }
     const kind = body.kind === "supervisor" ? "supervisor" : "phd";
     const table = kind === "phd" ? "phd_applications" : "supervisor_applications";
     const { data } = await supabase

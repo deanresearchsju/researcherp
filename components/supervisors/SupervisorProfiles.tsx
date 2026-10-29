@@ -14,19 +14,14 @@ import type { PublicSupervisor } from "@/lib/public-supervisors";
  */
 export function SupervisorProfiles({ profiles }: { profiles: PublicSupervisor[] }) {
   const [query, setQuery] = useState("");
-  const [school, setSchool] = useState("");
   const needle = query.trim().toLowerCase();
-  const schoolNames = [
-    ...new Set(profiles.map((item) => item.school).filter(Boolean)),
-  ].sort();
   const shown = profiles.filter(
     (item) =>
-      (!school || item.school === school) &&
-      (!needle ||
-        [item.name, item.designation, item.department, item.school, item.researchArea]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle)),
+      !needle ||
+      [item.name, item.designation, item.department, item.school, item.researchArea]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
   );
 
   if (profiles.length === 0) {
@@ -48,25 +43,8 @@ export function SupervisorProfiles({ profiles }: { profiles: PublicSupervisor[] 
           <p className="text-sm text-muted-foreground">
             <span className="font-semibold text-primary">{profiles.length}</span>{" "}
             recognised {profiles.length === 1 ? "supervisor" : "supervisors"}
-            {needle || school ? ` · ${shown.length} shown` : ""}
+            {needle ? ` · ${shown.length} shown` : ""}
           </p>
-          {schoolNames.length > 1 ? (
-            <label className="block w-full sm:w-72">
-              <span className="sr-only">Name of the school</span>
-              <select
-                value={school}
-                onChange={(event) => setSchool(event.target.value)}
-                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
-              >
-                <option value="">All schools</option>
-                {schoolNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
           <label className="relative block w-full sm:w-80">
             <span className="sr-only">
               Search by name, department or area of research

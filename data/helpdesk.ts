@@ -8,7 +8,7 @@ export const helpdeskCopy = {
   menu: "Helpdesk",
   title: "Helpdesk",
   kicker: "Website",
-  hint: "Messages sent from the public Contact page. Newest first.",
+  hint: "Messages sent from the website before its Contact page was closed.",
   empty: "No helpdesk messages yet.",
   browserHint:
     "Messages from this browser are listed until the office table is connected.",

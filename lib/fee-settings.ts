@@ -24,11 +24,18 @@ export type FeeSettings = {
   partTime: number;
   synopsis: number;
   thesis: number;
+  /** Mark sheet fee, charged once with each course-work registration (besides the paper fees). */
+  markSheet: number;
 };
 
 type FeeLetter = Pick<
   LetterConfig,
-  "applicationFee" | "fullTimeFee" | "partTimeFee" | "synopsisFee" | "thesisFee"
+  | "applicationFee"
+  | "fullTimeFee"
+  | "partTimeFee"
+  | "synopsisFee"
+  | "thesisFee"
+  | "markSheetFee"
 >;
 
 function amount(value: string | undefined, fallback: string) {
@@ -43,6 +50,7 @@ export function feesFromLetter(letter: Partial<FeeLetter>): FeeSettings {
     partTime: amount(letter.partTimeFee, defaultLetter.partTimeFee),
     synopsis: amount(letter.synopsisFee, defaultLetter.synopsisFee),
     thesis: amount(letter.thesisFee, defaultLetter.thesisFee),
+    markSheet: amount(letter.markSheetFee, defaultLetter.markSheetFee),
   };
 }
 
@@ -78,6 +86,7 @@ export async function saveFeeSettings(fees: FeeSettings) {
       partTimeFee: String(Math.max(0, Math.round(fees.partTime))),
       synopsisFee: String(Math.max(0, Math.round(fees.synopsis))),
       thesisFee: String(Math.max(0, Math.round(fees.thesis))),
+      markSheetFee: String(Math.max(0, Math.round(fees.markSheet))),
     },
   });
 }

@@ -7,6 +7,7 @@ import { ApprovedCopyButton } from "@/components/portal/ApprovedCopyButton";
 import { MyLetters } from "@/components/portal/ConfirmationLetterPanel";
 import { GateBanner, PageTitle, ViewFilesButton } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell } from "@/components/portal/ProfileCell";
 import { scholarRecordKinds, type ScholarRecordKind } from "@/data/scholar-records";
 import { Download } from "lucide-react";
 
@@ -29,6 +30,7 @@ import {
   type ScholarRecord,
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 
 function useRecords(kind: ScholarRecordKind) {
   return useSyncExternalStore(
@@ -60,6 +62,7 @@ export function ApprovedDocumentsScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [batchFilter, setBatchFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
+  const profile = useScholarProfiles();
   const [selected, setSelected] = useState<string[]>([]);
   const [zipping, setZipping] = useState<string | null>(null);
 
@@ -94,6 +97,7 @@ export function ApprovedDocumentsScreen({
       filterMatches(scholarFilter, item.scholarName) &&
       filterMatches(batchFilter, batchName(item.scholarIdentifier)) &&
       filterMatches(monthFilter, monthOf(item.stamp.approvedOn || "")) &&
+      profile.matches(item.scholarIdentifier) &&
       textMatches(query, [item.title, item.scholarName, item.fileName ?? ""]),
   );
   const choices = (values: string[]) =>
@@ -212,16 +216,24 @@ export function ApprovedDocumentsScreen({
                 },
               ]
             : []),
+          ...(mode !== "scholar" ? profile.filters : []),
         ]}
         shown={shown.length}
         total={all.length}
         filename="approved-documents.csv"
-        headers={["Document", "Scholar", "Approved on", "Approved by"]}
+        headers={[
+          "Document",
+          "Scholar",
+          "Approved on",
+          "Approved by",
+          ...(mode !== "scholar" ? profile.headers : []),
+        ]}
         rows={shown.map((item) => [
           item.title,
           item.scholarName,
           item.stamp.approvedOn,
           item.stamp.approvedBy,
+          ...(mode !== "scholar" ? profile.cells(item.scholarIdentifier) : []),
         ])}
       />
       {all.length === 0 ? (
@@ -282,7 +294,12 @@ export function ApprovedDocumentsScreen({
                     </p>
                   </td>
                   {mode !== "scholar" ? (
-                    <td className="px-4 py-3">{item.scholarName}</td>
+                    <td className="px-4 py-3">
+                      <p>{item.scholarName}</p>
+                      <div className="text-xs">
+                        <ProfileCell profile={profile.profileOf(item.scholarIdentifier)} />
+                      </div>
+                    </td>
                   ) : null}
                   <td className="px-4 py-3">
                     {item.stamp.approvedOn

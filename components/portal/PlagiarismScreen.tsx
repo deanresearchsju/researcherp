@@ -14,11 +14,12 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { synopsisChecklist, thesisChecklist } from "@/data/doctoral";
-import { formatIsoDate } from "@/lib/dates";
+import { colloquiumCheck, synopsisChecklist, thesisChecklist } from "@/data/doctoral";
+import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
   currentDoctoral,
   issuePlagiarism,
@@ -31,7 +32,13 @@ import {
 } from "@/lib/doctoral";
 import { fileError, type StoredFile } from "@/lib/files";
 import { sameId } from "@/lib/office";
+import {
+  colloquiumMinimumText,
+  colloquiumStanding,
+  studyModeOf,
+} from "@/lib/scholar-report";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { storeFile } from "@/lib/file-store";
 import { inputRules } from "@/lib/input-rules";
 
@@ -78,6 +85,13 @@ function IssueDialog({
   onIssued: (message: string) => void;
 }) {
   const checklist = checklistFor(stage);
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  // The colloquium minimum is read here, at the checklist, and not on the colloquium pages.
+  const mode = doctoral ? studyModeOf(scholar.identifier, doctoral) : null;
+  const standing =
+    doctoral && mode
+      ? colloquiumStanding(doctoral.colloquia, scholar.identifier, mode, clientToday())
+      : null;
   const [checks, setChecks] = useState<string[]>([]);
   const [similarity, setSimilarity] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -137,8 +151,9 @@ function IssueDialog({
         </legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {checklist.map((item) => (
-            <label key={item} className="flex items-center gap-2 text-sm">
+            <label key={item} className="flex items-start gap-2 text-sm">
               <input
+                className="mt-1"
                 type="checkbox"
                 checked={checks.includes(item)}
                 onChange={(event) =>
@@ -149,7 +164,21 @@ function IssueDialog({
                   )
                 }
               />
-              {item}
+              <span>
+                {item}
+                {item === colloquiumCheck && standing && mode ? (
+                  <span
+                    className={
+                      standing.met
+                        ? "block text-xs font-semibold text-primary"
+                        : "block text-xs font-semibold text-secondary"
+                    }
+                  >
+                    {standing.attended} attended · {colloquiumMinimumText(mode)} ·{" "}
+                    {standing.met ? "met" : "not met"}
+                  </span>
+                ) : null}
+              </span>
             </label>
           ))}
         </div>
@@ -255,6 +284,7 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [issuing, setIssuing] = useState<{ identifier: string; name: string } | null>(
     null,
   );
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading plagiarism…</p>;
@@ -271,7 +301,10 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
 
   const canIssue = session?.role === "admin" || session?.role === "dean";
   const rows = candidates(doctoral, stage)
-    .filter((row) => textMatches(query, [row.name, row.identifier]))
+    .filter(
+      (row) =>
+        profile.matches(row.identifier) && textMatches(query, [row.name, row.identifier]),
+    )
     .map((row) => {
       const issued = plagiarismIssued(doctoral, row.identifier, stage);
       const blocked = issued ? null : plagiarismBlocked(doctoral, row.identifier, stage);
@@ -311,17 +344,25 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
       <ListToolbar
         query={query}
         onQuery={setQuery}
-        filters={[]}
+        filters={profile.filters}
         shown={rows.length}
         total={candidates(doctoral, stage).length}
         filename={`plagiarism-${stage}.csv`}
-        headers={["scholar", "status", "similarity", "issued on", "issued by"]}
+        headers={[
+          "scholar",
+          "status",
+          "similarity",
+          "issued on",
+          "issued by",
+          ...profile.headers,
+        ]}
         rows={rows.map((row) => [
           row.name,
           row.issued ? "Issued" : (row.blocked ?? "Ready for checking"),
           row.issued?.similarity ?? "",
           row.issued?.decidedOn ?? "",
           row.issued?.issuedBy ?? "",
+          ...profile.cells(row.identifier),
         ])}
       />
       <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -329,6 +370,7 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
           <thead className="bg-muted text-primary">
             <tr>
               <th className="px-4 py-3 font-semibold">Scholar</th>
+              <th className="px-4 py-3 font-semibold">{profileColumnHeading}</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">Certificate</th>
               <th className="px-4 py-3 font-semibold">
@@ -342,7 +384,7 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                   {stage === "synopsis"
                     ? "No scholar has an approved third doctoral committee yet."
                     : "No scholar has an approved synopsis yet."}
@@ -352,6 +394,9 @@ export function PlagiarismScreen({ mode }: { mode: "admin" | "scholar" }) {
               rows.map((row) => (
                 <tr key={row.identifier} className="border-t border-border align-top">
                   <td className="px-4 py-3 font-medium text-primary">{row.name}</td>
+                  <td className="px-4 py-3">
+                    <ProfileCell profile={profile.profileOf(row.identifier)} />
+                  </td>
                   <td className="px-4 py-3">
                     {row.issued ? (
                       <span className="font-semibold text-primary">Issued</span>

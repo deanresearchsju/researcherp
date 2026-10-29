@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
@@ -26,6 +27,8 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
+import { NptelApprovals, ScholarNptel } from "@/components/portal/NptelPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -43,6 +46,7 @@ import {
 import { schools } from "@/data/schools";
 import { researchRegister, type ResearchBatch } from "@/data/research-register";
 import { scholarSchoolName } from "@/lib/admission";
+import { useFees } from "@/lib/fee-settings";
 import { paymentModes } from "@/lib/constants";
 import { clientToday, formatIsoDate, isOnOrBefore, isValidIsoDate } from "@/lib/dates";
 import { fileError, type StoredFile } from "@/lib/files";
@@ -52,6 +56,8 @@ import {
   courseCatalogFor,
   currentDoctoral,
   forwardToCoe,
+  nptelOf,
+  nptelUsed,
   paperOf,
   paperStandings,
   registerCoursePapers,
@@ -67,6 +73,7 @@ import {
 } from "@/lib/doctoral";
 import { currentExam, subscribeExam } from "@/lib/exam-office";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { formatInr } from "@/lib/utils";
 import { allBatches } from "@/lib/batches";
 import { storeFile } from "@/lib/file-store";
@@ -284,7 +291,9 @@ function RegistrationForm({
   const [centreId, setCentreId] = useState("");
   const arrearCodes = new Set(arrears.map((paper) => paper.code));
   const freshPicked = picked.filter((code) => !arrearCodes.has(code));
-  const total = picked.length * courseWorkFee;
+  const markSheetFee = useFees().markSheet;
+  const papersFee = picked.length * courseWorkFee;
+  const total = picked.length > 0 ? papersFee + markSheetFee : 0;
   const matches = (paper: { code: string; name: string }) =>
     textMatches(query, [paper.code, paper.name]);
   const shownCatalog = catalog.filter(matches);
@@ -436,7 +445,10 @@ function RegistrationForm({
         ) : null}
       </div>
       <p className="rounded-lg bg-accent/15 px-3 py-2 text-sm font-semibold text-primary">
-        {picked.length} paper(s) × ₹{formatInr(courseWorkFee)} = ₹{formatInr(total)}
+        {picked.length} paper(s) × ₹{formatInr(courseWorkFee)} = ₹{formatInr(papersFee)}
+        {picked.length > 0
+          ? `, plus mark sheet fee ₹${formatInr(markSheetFee)} = ₹${formatInr(total)}`
+          : ""}
       </p>
       {centres.length > 0 ? (
         <div className="rounded-xl border border-border bg-card p-4">
@@ -518,6 +530,7 @@ const courseTabs = [
   { id: "papers", label: "My papers & results" },
   { id: "new", label: "New course-work enrolment" },
   { id: "history", label: "Enrolment submitted history" },
+  { id: "nptel", label: "NPTEL courses" },
   { id: "incharge", label: "Subject in-charge details" },
 ] as const;
 
@@ -571,7 +584,10 @@ function ScholarCourseWork({
   const window = doctoral.windows.find((item) => item.batchId === batch?.id);
   const [registering, setRegistering] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<(typeof courseTabs)[number]["id"]>("papers");
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<(typeof courseTabs)[number]["id"]>(
+    asked === "nptel" ? "nptel" : "papers",
+  );
   const [viewKey, setViewKey] = useState<string | null>(null);
   const groups = enrollmentGroups(doctoral, identifier);
   const viewing = groups.find((item) => item.key === viewKey) ?? null;
@@ -590,7 +606,12 @@ function ScholarCourseWork({
   const taken = mine.filter(
     (item) => item.semester === open && !item.arrear && item.paymentStatus !== "Returned",
   ).length;
-  const slots = open > 2 ? 0 : Math.max(0, 2 - taken);
+  // Each NPTEL course (not turned down) takes one of the semester's two papers.
+  const nptelHere = open > 0 ? nptelUsed(doctoral, identifier, open) : 0;
+  const nptelCleared = nptelOf(doctoral, identifier).filter(
+    (item) => item.approval === "Approved",
+  ).length;
+  const slots = open > 2 ? 0 : Math.max(0, 2 - taken - nptelHere);
   const closed = !window?.enabled || !window.lastDate || window.lastDate < clientToday();
   const blockedSemester = open > 2 && !arrear;
   const school = scholarSchoolName(identifier);
@@ -630,14 +651,16 @@ function ScholarCourseWork({
           <div className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm font-semibold text-primary">
-                {standings.filter((paper) => paper.status === "Passed").length} of 4
-                papers cleared
+                {standings.filter((paper) => paper.status === "Passed").length +
+                  nptelCleared}{" "}
+                of 4 papers cleared
+                {nptelCleared > 0 ? ` (${nptelCleared} by NPTEL)` : ""}
               </p>
               <div className="h-2 min-w-40 flex-1 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
                   style={{
-                    width: `${Math.min(standings.filter((paper) => paper.status === "Passed").length / 4, 1) * 100}%`,
+                    width: `${Math.min((standings.filter((paper) => paper.status === "Passed").length + nptelCleared) / 4, 1) * 100}%`,
                   }}
                 />
               </div>
@@ -691,6 +714,13 @@ function ScholarCourseWork({
             })}
           </DeskTable>
         </DeskSection>
+      ) : null}
+      {tab === "nptel" ? (
+        <ScholarNptel
+          doctoral={doctoral}
+          identifier={identifier}
+          scholarName={scholarName}
+        />
       ) : null}
       {tab === "new" ? (
         <DeskSection title="New course-work enrolment">
@@ -958,9 +988,9 @@ export function CourseWorkScreen({
   const [batchFilter, setBatchFilter] = useState("");
   const [syllabus, setSyllabus] = useState<StoredFile | null>(null);
   const [syllabusMessage, setSyllabusMessage] = useState<string | null>(null);
-  const [chosenTab, setTab] = useState<"registrations" | "arrears" | "subjects">(
-    "registrations",
-  );
+  const [chosenTab, setTab] = useState<
+    "registrations" | "arrears" | "subjects" | "nptel"
+  >("registrations");
   const tab = view === "windows" ? "windows" : chosenTab;
   const [coeFilter, setCoeFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
@@ -983,6 +1013,7 @@ export function CourseWorkScreen({
     },
   });
   const semester = useWatch({ control: subjectForm.control, name: "semester" });
+  const profile = useScholarProfiles();
 
   if (!ready || !doctoral) {
     return <p className="text-sm text-muted-foreground">Loading course work…</p>;
@@ -1007,6 +1038,7 @@ export function CourseWorkScreen({
   const registrations = doctoral.registrations.filter((row) => {
     const paper = paperOf(doctoral, row);
     return (
+      profile.matches(row.scholarIdentifier) &&
       filterMatches(batchFilter, row.batchId) &&
       filterMatches(semesterFilter, String(row.semester)) &&
       filterMatches(coeFilter, row.coeStatus || "Not forwarded") &&
@@ -1046,14 +1078,16 @@ export function CourseWorkScreen({
         attempts: paper.attempts,
       }));
   });
-  const shownArrears = arrearRows.filter((row) =>
-    textMatches(query, [
-      row.scholarName,
-      row.code,
-      row.paperName,
-      row.batch,
-      row.registration,
-    ]),
+  const shownArrears = arrearRows.filter(
+    (row) =>
+      profile.matches(row.identifier) &&
+      textMatches(query, [
+        row.scholarName,
+        row.code,
+        row.paperName,
+        row.batch,
+        row.registration,
+      ]),
   );
 
   async function forwardShown() {
@@ -1133,7 +1167,7 @@ export function CourseWorkScreen({
         kicker="Examination"
         title={view === "windows" ? "Registration windows" : "Course work registrations"}
         actions={
-          view === "work" ? (
+          view === "work" && tab === "subjects" ? (
             <Button
               type="button"
               variant="gold"
@@ -1162,6 +1196,7 @@ export function CourseWorkScreen({
             { id: "registrations", label: "Registrations & COE" },
             { id: "arrears", label: `Arrears (${arrearRows.length})` },
             { id: "subjects", label: "Subjects" },
+            { id: "nptel", label: "NPTEL courses" },
           ]}
           value={tab}
           onChange={(id) => setTab(id as typeof chosenTab)}
@@ -1277,6 +1312,7 @@ export function CourseWorkScreen({
                 })),
                 onChange: setCoeFilter,
               },
+              ...profile.filters,
             ]}
             shown={registrations.length}
             total={doctoral.registrations.length}
@@ -1295,6 +1331,7 @@ export function CourseWorkScreen({
               "COE",
               "Forwarded on",
               "Result",
+              ...profile.headers,
             ]}
             rows={registrations.map((row) => {
               const paper = paperOf(doctoral, row);
@@ -1315,6 +1352,7 @@ export function CourseWorkScreen({
                 row.coeStatus || "Not forwarded",
                 row.coeForwardedOn ? formatIsoDate(row.coeForwardedOn) : "",
                 result ? (result.outcome === "AAA" ? "Absent" : result.outcome) : "",
+                ...profile.cells(row.scholarIdentifier),
               ];
             })}
           />
@@ -1337,6 +1375,7 @@ export function CourseWorkScreen({
               <thead className="bg-muted text-primary">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Scholar</th>
+                  <th className="px-4 py-3 font-semibold">{profileColumnHeading}</th>
                   <th className="px-4 py-3 font-semibold">Batch</th>
                   <th className="px-4 py-3 font-semibold">Subject</th>
                   <th className="px-4 py-3 font-semibold">Amount</th>
@@ -1355,6 +1394,9 @@ export function CourseWorkScreen({
                       <td className="px-4 py-3">
                         <p className="font-medium text-primary">{row.scholarName}</p>
                         <p className="text-muted-foreground">Semester {row.semester}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProfileCell profile={profile.profileOf(row.scholarIdentifier)} />
                       </td>
                       <td className="px-4 py-3">{batchLabel(row.batchId)}</td>
                       <td className="px-4 py-3">
@@ -1421,12 +1463,14 @@ export function CourseWorkScreen({
         </div>
       ) : null}
 
+      {tab === "nptel" ? <NptelApprovals doctoral={doctoral} /> : null}
+
       {tab === "arrears" ? (
         <div className="space-y-3">
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
+            filters={profile.filters}
             shown={shownArrears.length}
             total={arrearRows.length}
             filename="course-work-arrears.csv"
@@ -1440,6 +1484,7 @@ export function CourseWorkScreen({
               "Semester",
               "Last result",
               "Attempts",
+              ...profile.headers,
             ]}
             rows={shownArrears.map((row) => [
               row.registration,
@@ -1450,6 +1495,7 @@ export function CourseWorkScreen({
               String(row.semester),
               row.outcome === "AAA" ? "Absent" : (row.outcome ?? ""),
               String(row.attempts),
+              ...profile.cells(row.identifier),
             ])}
           />
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -1458,6 +1504,7 @@ export function CourseWorkScreen({
                 <tr>
                   {[
                     "Scholar",
+                    profileColumnHeading,
                     "Batch",
                     "Paper",
                     "Semester",
@@ -1473,7 +1520,7 @@ export function CourseWorkScreen({
               <tbody>
                 {shownArrears.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-muted-foreground">
+                    <td colSpan={7} className="px-4 py-6 text-muted-foreground">
                       No scholar has an arrear paper.
                     </td>
                   </tr>
@@ -1488,6 +1535,9 @@ export function CourseWorkScreen({
                         <p className="font-mono text-xs text-muted-foreground">
                           {row.registration}
                         </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProfileCell profile={profile.profileOf(row.identifier)} />
                       </td>
                       <td className="px-4 py-3">{row.batch || "—"}</td>
                       <td className="px-4 py-3">

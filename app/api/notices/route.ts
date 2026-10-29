@@ -3,9 +3,10 @@ import type { NextRequest } from "next/server";
 
 import { isOfficeRole } from "@/lib/access";
 import { requestSession } from "@/lib/api-session";
-import { scholarBySignIn, supervisorForGuide } from "@/lib/register";
+import { ensureRegisterSeed, scholarBySignIn, supervisorForGuide } from "@/lib/register";
 import type { CookieSession } from "@/lib/session";
 import { insertOfficeNotice } from "@/lib/notices-server";
+import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 /** Notices for the research office as a whole (admin, Dean and staff). */
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminSupabase();
   if (!supabase) return NextResponse.json({ ok: true, notices: [] });
   const since = new Date(Date.now() - keepDays * 24 * 60 * 60 * 1000).toISOString();
+  await ensureRegisterSeed();
   const keys = recipientKeys(session);
   const own = supabase
     .from("portal_notices")
@@ -216,7 +218,15 @@ export async function POST(request: NextRequest) {
   }
   const record =
     body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  if (record.action === "application") return announceApplication(record);
+  if (record.action === "application") {
+    const flood = rateLimit(
+      `announce:${clientAddress(request.headers)}`,
+      20,
+      10 * 60_000,
+    );
+    if (!flood.allowed) return fail("Too many requests.", 429);
+    return announceApplication(record);
+  }
   const session = await requestSession(request);
   if (!session) return fail("Sign in first.", 401);
   if (record.action === "read") return markRead(session, record.ids);

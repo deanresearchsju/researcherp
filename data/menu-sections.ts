@@ -10,6 +10,7 @@ export const menuSections: Record<string, readonly MenuSection[]> = {
     { id: "registrations", label: "Registrations & COE" },
     { id: "arrears", label: "Arrears" },
     { id: "subjects", label: "Subjects" },
+    { id: "nptel", label: "NPTEL courses" },
   ],
   "/admin/exam-setup": [
     { id: "campuses", label: "Exam campuses" },
@@ -42,6 +43,11 @@ export const menuSections: Record<string, readonly MenuSection[]> = {
     { id: "synopsis", label: "Synopsis fee" },
     { id: "thesis", label: "Thesis fee" },
   ],
+  "/admin/helpdesk": [
+    { id: "open", label: "Open questions" },
+    { id: "closed", label: "Closed questions" },
+    { id: "website", label: "Website messages" },
+  ],
   "/admin/fee": [
     { id: "ledger", label: "Fee ledger" },
     { id: "verify", label: "Verify payments" },
@@ -69,10 +75,22 @@ export const menuSections: Record<string, readonly MenuSection[]> = {
     { id: "supervisors", label: "Supervisor-wise" },
     { id: "batches", label: "Batch-wise" },
   ],
-  "/admin/results": [
-    { id: "grades", label: "Grade / mark" },
-    { id: "failed", label: "RA courses" },
-    { id: "absent", label: "Absent details" },
-    { id: "history", label: "History" },
-  ],
 };
+
+/**
+ * Menus whose sections follow one another in a process (hall tickets, then seating, then
+ * attendance; the Viva-passed list, then Passed out). They stay as tabs inside the page. The
+ * sections of every other menu are shown as sub-menus under the menu in the side bar.
+ */
+export const sequentialMenus: ReadonlySet<string> = new Set([
+  "/admin/exam-tickets",
+  "/admin/invigilation",
+  "/admin/entrance-invigilation",
+  "/admin/passed-out",
+]);
+
+/** The sections shown as sub-menus in the side bar for a menu (none for a sequential menu). */
+export function submenuSections(href: string): readonly MenuSection[] {
+  if (sequentialMenus.has(href)) return [];
+  return menuSections[href] ?? [];
+}

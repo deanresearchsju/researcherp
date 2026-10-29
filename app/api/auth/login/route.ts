@@ -13,10 +13,12 @@ import {
 } from "@/lib/portal-access";
 import {
   applyRegisterPayload,
+  ensureRegisterSeed,
   scholarBySignIn,
   supervisorBySignIn,
 } from "@/lib/register";
 import { loginBlocked, loginFailed, loginSucceeded } from "@/lib/login-guard";
+import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { startSignIn } from "@/lib/single-session";
 import { portalAuthClient } from "@/lib/supabase/admin";
@@ -35,6 +37,7 @@ async function portalGate(
   role: "scholar" | "supervisor",
   identifier: string,
 ) {
+  await ensureRegisterSeed();
   if (role === "scholar") {
     const [{ data }, { data: register }] = await Promise.all([
       supabase
@@ -130,10 +133,18 @@ export async function POST(request: Request) {
 
   const identifier = input.identifier.trim();
   const remember = input.remember === true;
-  const address =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  const address = clientAddress(request.headers);
+  // Guessing across many sign-ins from one place is slowed as well (a campus shares one address).
+  const sweep = rateLimit(`login:${address}`, 300, 15 * 60_000);
+  if (!sweep.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Too many sign-in attempts from this network. Try again later.",
+      },
+      { status: 429, headers: { "Retry-After": String(sweep.retryAfterSeconds) } },
+    );
+  }
   const wait = loginBlocked(address, identifier);
   if (wait > 0) {
     return NextResponse.json(

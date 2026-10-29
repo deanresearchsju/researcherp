@@ -5,6 +5,7 @@ import { useState, useSyncExternalStore } from "react";
 
 import { DeskPage, FormDialog } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { Sheet, SheetHeading, pagesOf } from "@/components/portal/AdmissionPrint";
 import { MarkButtons } from "@/components/portal/AttendanceControls";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +65,7 @@ export function AttendanceSheets() {
 
   const [query, setQuery] = useState("");
   const [batch, setBatch] = useState("");
+  const profile = useScholarProfiles();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -123,6 +125,9 @@ export function AttendanceSheets() {
       "Name",
       "Registration / Application No.",
       "Department",
+      "Campus",
+      "Guide",
+      "Mode",
       withMarks ? "Attendance" : "Signature",
     ];
   }
@@ -133,6 +138,8 @@ export function AttendanceSheets() {
       entry.name,
       entry.reference,
       entry.department,
+      // The department is the one on the sheet; campus, guide and mode come from the profile.
+      ...profile.cells(entry.key).slice(1),
       withMarks ? entry.mark || "Not marked" : "",
     ]);
   }

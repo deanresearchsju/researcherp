@@ -2,8 +2,10 @@
 // Grades between marks, RAC through the Dean and the Vice Chancellor, section rights, schools,
 // and one count of scholars for a supervisor.
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 
-import { load, root, summary, test } from "./helpers.mjs";
+import { load, root, seedRegister, summary, test } from "./helpers.mjs";
 
 process.env.SESSION_SECRET ??= "test-only-secret-for-the-cookie-checks";
 
@@ -15,6 +17,7 @@ const portal = load("@/data/portal.ts");
 const sections = load("@/data/menu-sections.ts");
 const schools = load("@/lib/schools.ts");
 const register = load("@/lib/register.ts");
+seedRegister();
 const { researchRegister } = load("@/data/research-register");
 
 /* ------------------------------------------ grades ------------------------------------- */
@@ -141,7 +144,7 @@ const proposal = (status, extra = {}) => ({
   ...extra,
 });
 
-await test("a RAC nomination is 1 to 3 internal and 2 to 3 external members, each with full details and five publications, no document", () => {
+await test("a RAC nomination is 1 to 3 internal and 2 to 3 external members, each with the usual details but no publications, no document", () => {
   assert.deepEqual(
     [
       office.racInternalMin,
@@ -172,11 +175,10 @@ await test("a RAC nomination is 1 to 3 internal and 2 to 3 external members, eac
     office.nomineeProblem(nominee("x", "external", { specialization: "" })),
     /area of research/,
   );
-  assert.match(
-    office.nomineeProblem(
-      nominee("x", "external", { publications: ["a paper title", "", "", "", ""] }),
-    ),
-    /5 publications/,
+  assert.equal(
+    office.nomineeProblem(nominee("x", "external", { publications: [] })),
+    null,
+    "publication details are not asked",
   );
   assert.match(
     office.nomineeProblem(nominee("x", "external", { email: "nope" })),
@@ -337,6 +339,12 @@ await test("the section ids are the ids the screens use", async () => {
     "/admin/invigilation": "components/portal/InvigilationDesk.tsx",
     "/admin/supervisors": "components/portal/SupervisorRegister.tsx",
     "/admin/payments": "components/portal/PaymentDesk.tsx",
+    "/admin/fee": "components/portal/FeeCollectionScreen.tsx",
+    "/admin/supervisor-exit": "components/portal/SupervisorExitScreen.tsx",
+    "/admin/passed-out": "components/portal/PassedOutScreen.tsx",
+    "/admin/plagiarism": "components/portal/PlagiarismScreen.tsx",
+    "/admin/colloquium": "components/portal/ColloquiumScreen.tsx",
+    "/admin/entrance-invigilation": "components/portal/InvigilationDesk.tsx",
   };
   for (const [href, file] of Object.entries(screens)) {
     const text = fs.readFileSync(path.join(root, file), "utf8");
@@ -587,6 +595,223 @@ await test("the application form lists every department of a school; only a depa
   const copy = load("@/data/forms.ts").scholarFormCopy;
   assert.match(copy.noVacancyDepartment, /no vacancy for the department you selected/);
   assert.match(copy.noVacancyDepartment, /coming sessions/);
+});
+
+await test("the administrator can give any office sign-in any office menu; Accounts starts with Fee approvals only", () => {
+  const access = load("@/lib/access.ts");
+  for (const role of ["admin", "staff", "dean", "accounts", "vc", "coe", "coeverify"]) {
+    const catalog = access.menuHrefs(role);
+    for (const href of [
+      "/admin/rac",
+      "/admin/payments",
+      "/admin/coe/marks",
+      "/admin/coe/verify",
+      "/admin/register",
+      "/admin/users",
+    ]) {
+      assert.ok(catalog.includes(href), `${role} can be given ${href}`);
+    }
+    assert.equal(catalog.includes("/admin/test-data"), role === "admin", role);
+  }
+  const start = access.resolvedMenus({
+    role: "accounts",
+    identifier: "a@x.org",
+    menus: null,
+  });
+  assert.ok(start.includes("/admin/payments"));
+  assert.ok(
+    !start.includes("/admin/rac"),
+    "the starting menus of Accounts are unchanged",
+  );
+  const moved = access.resolvedMenus({
+    role: "accounts",
+    identifier: "a@x.org",
+    menus: ["/admin/accounts/thesis", "/admin/accounts/thesis#approve"],
+  });
+  assert.ok(
+    moved.includes("/admin/payments") && moved.includes("/admin/payments#approve"),
+  );
+});
+
+await test("a RAC can carry a co-guide, and one entered by hand needs only the name, designation and institution", () => {
+  const office = load("@/lib/office.ts");
+  const member = {
+    key: "coguide-1",
+    side: "coguide",
+    name: "Dr. Co Guide",
+    designation: "Professor",
+    department: "",
+    institution: "Another University",
+    email: "",
+    phone: "",
+    specialization: "Organic chemistry",
+    address: "",
+    publications: [],
+  };
+  assert.equal(office.racMemberProblem(member), null);
+  assert.match(office.racMemberProblem({ ...member, institution: "" }), /institution/);
+  assert.match(
+    office.racMemberProblem({ ...member, specialization: "" }),
+    /area of research/,
+  );
+  assert.match(office.racMemberProblem({ ...member, email: "bad" }), /email/);
+});
+
+await test("the colloquium minimum is read at the synopsis and thesis checklists, not on the colloquium pages", () => {
+  const doctoralData = load("@/data/doctoral.ts");
+  assert.ok(doctoralData.synopsisChecklist.includes(doctoralData.colloquiumCheck));
+  assert.ok(doctoralData.thesisChecklist.includes(doctoralData.colloquiumCheck));
+  const report = load("@/lib/scholar-report.ts");
+  assert.match(report.colloquiumMinimumText("Full time"), /3 of 6/);
+  assert.match(report.colloquiumMinimumText("Part time"), /4 of 8/);
+  for (const file of [
+    "components/portal/ColloquiumScreen.tsx",
+    "components/portal/MemberDashboard.tsx",
+  ]) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    assert.ok(!/minimum|At risk/i.test(text), `${file} shows no minimum`);
+  }
+});
+
+await test("a Vidwan ID is the number only; a pasted profile address is accepted too", () => {
+  const doctoral = load("@/lib/doctoral.ts");
+  assert.equal(doctoral.vidwanProblem("123456"), null);
+  assert.equal(doctoral.vidwanProblem("VN-2345_a"), null);
+  assert.equal(
+    doctoral.vidwanProblem("https://vidwan.inflibnet.ac.in/profile/123456"),
+    null,
+  );
+  assert.match(doctoral.vidwanProblem("12"), /Vidwan ID/);
+  assert.match(doctoral.vidwanProblem("12 34;"), /letters, numbers/);
+  const state = {
+    vidwanIds: [{ id: "a@x.org", identifier: "A@x.org", vidwanId: "9876", savedOn: "" }],
+  };
+  assert.equal(doctoral.vidwanOf(state, "a@X.org"), "9876");
+  assert.equal(doctoral.vidwanOf(state, "b@x.org"), "");
+  const register = load("@/lib/register.ts");
+  assert.equal(
+    register.vidwanLink("9876"),
+    "https://vidwan.inflibnet.ac.in/profile/9876",
+    "the home page link opens the Vidwan portal",
+  );
+});
+
+await test("NPTEL courses: at most two of the four papers, only with the RAC's approval and minutes, a pass needs its proof", () => {
+  const doctoral = load("@/lib/doctoral.ts");
+  const data = load("@/data/doctoral.ts");
+  assert.deepEqual(
+    [...data.nptelKinds],
+    ["NPTEL RM", "NPTEL Research ethics", "NPTEL major", "NPTEL elective"],
+  );
+  assert.equal(data.nptelMax, 2);
+  const ok = {
+    semester: 1,
+    kind: "NPTEL RM",
+    subjectName: "Research methodology",
+    credit: "2",
+    status: "In progress",
+    passMonth: "",
+    passYear: "",
+    racApproved: true,
+    hasRacMinutes: true,
+    hasProof: false,
+  };
+  const check = (change, existing = []) =>
+    doctoral.nptelProblem({ ...ok, ...change }, existing, "2026-10-29");
+  assert.equal(check({}), null, "in progress needs no proof yet");
+  assert.match(check({ racApproved: null }), /RAC/);
+  assert.match(check({ racApproved: false }), /Get the approval of the RAC/);
+  assert.match(check({ hasRacMinutes: false }), /minutes/);
+  assert.match(check({ subjectName: "ab" }), /subject/);
+  assert.match(check({ credit: "0" }), /credit/i);
+  assert.match(check({ semester: 3 }), /semester/i);
+  assert.match(check({ status: "Passed" }), /month/);
+  assert.match(
+    check({ status: "Passed", passMonth: "March", passYear: "2026" }),
+    /proof/,
+  );
+  assert.equal(
+    check({ status: "Passed", passMonth: "March", passYear: "2026", hasProof: true }),
+    null,
+  );
+  assert.match(
+    check({ status: "Passed", passMonth: "December", passYear: "2026", hasProof: true }),
+    /future/,
+  );
+  assert.match(
+    check({ passMonth: "March" }),
+    /year/,
+    "a month without a year is refused",
+  );
+  assert.match(check({}, [{ kind: "NPTEL RM" }]), /already taken/);
+  assert.match(
+    check({ kind: "NPTEL major" }, [{ kind: "NPTEL RM" }, { kind: "NPTEL elective" }]),
+    /At most 2/,
+  );
+  const state = {
+    nptel: [
+      { scholarIdentifier: "a@x.org", semester: 1, approval: "Approved" },
+      { scholarIdentifier: "a@x.org", semester: 2, approval: "Rejected" },
+      { scholarIdentifier: "a@x.org", semester: 1, approval: "Submitted" },
+      { scholarIdentifier: "b@x.org", semester: 1, approval: "Approved" },
+    ],
+  };
+  assert.equal(
+    doctoral.nptelUsed(state, "A@x.org", 1),
+    2,
+    "each takes one of the two papers",
+  );
+  assert.equal(
+    doctoral.nptelUsed(state, "a@x.org", 2),
+    0,
+    "a course turned down does not count",
+  );
+  assert.equal(doctoral.nptelOf(state, "a@x.org").length, 2);
+});
+
+await test("the Approval rules say who approves each request: the Dean always, the supervisor and (RAC) the Vice Chancellor by a tick", () => {
+  const rules = load("@/lib/approval-rules.ts");
+  const none = {};
+  // Until something is ticked, the steps are the usual ones.
+  assert.equal(
+    rules.chainText(none, "rac"),
+    "Supervisor names the members → Dean selects → Vice Chancellor",
+  );
+  assert.equal(rules.chainText(none, "synopsis"), "Supervisor → Dean");
+  assert.equal(rules.chainText(none, "committee"), "Supervisor → Dean");
+  assert.equal(rules.stageApplies(none, "record:abc_id", "supervisor"), true);
+  // The Dean decides alone for the RAC this semester; the Vice Chancellor joins later by a tick.
+  const deanOnly = { rac: { vc: false } };
+  assert.equal(
+    rules.chainText(deanOnly, "rac"),
+    "Supervisor names the members → Dean selects",
+  );
+  assert.equal(rules.stageApplies(deanOnly, "rac", "vc"), false);
+  assert.equal(rules.stageApplies({ rac: { vc: true } }, "rac", "vc"), true);
+  // Every step can be ticked for every request.
+  assert.equal(rules.stageApplies({ synopsis: { vc: true } }, "synopsis", "vc"), true);
+  assert.equal(
+    rules.chainText({ synopsis: { vc: true } }, "synopsis"),
+    "Supervisor → Dean → Vice Chancellor",
+  );
+  assert.equal(
+    rules.stageApplies({ rac: { supervisor: false } }, "rac", "supervisor"),
+    false,
+  );
+  assert.equal(rules.chainText({ thesis: { supervisor: false } }, "thesis"), "Dean");
+  // Every scholar request that goes to the supervisor is listed.
+  const ids = rules.approvalItems.map((item) => item.id);
+  for (const id of [
+    "rac",
+    "committee",
+    "synopsis",
+    "thesis",
+    "record:abc_id",
+    "record:leave",
+  ]) {
+    assert.ok(ids.includes(id), id);
+  }
+  assert.equal(new Set(ids).size, ids.length, "no request is listed twice");
 });
 
 summary("access-rac");

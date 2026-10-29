@@ -23,6 +23,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
 import { feeRoster } from "@/lib/fee-ledger";
+import { guideCampus } from "@/lib/registration-format";
+import { scholarBySignIn } from "@/lib/register";
+import { useScholarReports } from "@/lib/use-report-sources";
 import { useFees } from "@/lib/fee-settings";
 import { ordinal, type FeeYear } from "@/lib/fees";
 import {
@@ -49,6 +52,9 @@ type LedgerRow = {
   name: string;
   batchName: string;
   studyMode: string;
+  department: string;
+  campus: string;
+  guideName: string;
   year: FeeYear;
 };
 
@@ -171,6 +177,7 @@ export function FeeCollectionScreen() {
     currentReminders,
     currentReminders,
   );
+  const reportsLoad = useScholarReports();
   const [tab, setTab] = useState<"ledger" | "verify" | "reminders">("ledger");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -186,10 +193,23 @@ export function FeeCollectionScreen() {
   const [bulkDate, setBulkDate] = useState("");
   const [markInfo, setMarkInfo] = useState<string | null>(null);
   const [markRound, setMarkRound] = useState(0);
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [campusFilter, setCampusFilter] = useState("");
+  const [guideFilter, setGuideFilter] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const today = clientToday();
+  // The department, campus and guide of each scholar, as the reports show them.
+  const profiles = useMemo(
+    () =>
+      new Map(
+        reportsLoad.ready
+          ? reportsLoad.reports.map((report) => [report.identifier.toLowerCase(), report])
+          : [],
+      ),
+    [reportsLoad],
+  );
   const rows = useMemo<LedgerRow[]>(() => {
     if (!load) return [];
     return feeRoster(load.records, today).flatMap((ledger) =>
@@ -201,12 +221,23 @@ export function FeeCollectionScreen() {
           name: ledger.name,
           batchName: ledger.batchName,
           studyMode: ledger.studyMode,
+          department:
+            profiles.get(ledger.identifier.toLowerCase())?.department ||
+            scholarBySignIn(ledger.identifier)?.department ||
+            "",
+          campus:
+            profiles.get(ledger.identifier.toLowerCase())?.campus ||
+            guideCampus(scholarBySignIn(ledger.identifier)?.guideName ?? ""),
+          guideName:
+            profiles.get(ledger.identifier.toLowerCase())?.guideName ||
+            scholarBySignIn(ledger.identifier)?.guideName ||
+            "",
           year,
         })),
     );
     // feeRoster reads enrolments and passed-out scholars from their stores.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, today, doctoral, passedOut]);
+  }, [load, today, doctoral, passedOut, profiles]);
 
   if (!ready || !load)
     return <p className="text-sm text-muted-foreground">Loading fees…</p>;
@@ -215,9 +246,19 @@ export function FeeCollectionScreen() {
     (row) =>
       filterMatches(statusFilter, row.year.status) &&
       filterMatches(modeFilter, row.studyMode) &&
+      filterMatches(departmentFilter, row.department) &&
+      filterMatches(campusFilter, row.campus) &&
+      filterMatches(guideFilter, row.guideName) &&
       filterMatches(batchFilter, row.batchName) &&
       filterMatches(yearFilter, `Year ${row.year.index}`) &&
-      textMatches(query, [row.name, row.identifier, row.batchName]),
+      textMatches(query, [
+        row.name,
+        row.identifier,
+        row.batchName,
+        row.department,
+        row.campus,
+        row.guideName,
+      ]),
   );
   const totals = shown.reduce(
     (sum, row) => ({
@@ -264,7 +305,7 @@ export function FeeCollectionScreen() {
     <section className="space-y-6">
       <PageTitle
         kicker="Fee"
-        title="Fee collection"
+        title="Tuition fees"
         actions={
           canAct && tab === "ledger" ? (
             <>
@@ -364,6 +405,27 @@ export function FeeCollectionScreen() {
                 onChange: setBatchFilter,
               },
               {
+                id: "department",
+                label: "Department",
+                value: departmentFilter,
+                options: choices(rows.map((row) => row.department)),
+                onChange: setDepartmentFilter,
+              },
+              {
+                id: "campus",
+                label: "Campus",
+                value: campusFilter,
+                options: choices(rows.map((row) => row.campus)),
+                onChange: setCampusFilter,
+              },
+              {
+                id: "guide",
+                label: "Guide",
+                value: guideFilter,
+                options: choices(rows.map((row) => row.guideName)),
+                onChange: setGuideFilter,
+              },
+              {
                 id: "year",
                 label: "Fee year",
                 value: yearFilter,
@@ -373,12 +435,15 @@ export function FeeCollectionScreen() {
             ]}
             shown={shown.length}
             total={rows.length}
-            filename="fee-collection.csv"
+            filename="tuition-fees.csv"
             title="Annual research fee · paid / unpaid report"
             headers={[
               "Scholar",
               "Sign-in",
               "Batch",
+              "Department",
+              "Campus",
+              "Guide",
               "Study mode",
               "Fee year",
               "Annual fee",
@@ -392,6 +457,9 @@ export function FeeCollectionScreen() {
               row.name,
               row.identifier,
               row.batchName,
+              row.department,
+              row.campus,
+              row.guideName,
               row.studyMode,
               row.year.label,
               formatInr(row.year.amount),
@@ -428,6 +496,9 @@ export function FeeCollectionScreen() {
                     />
                   </th>
                   <th className="px-3 py-3">Scholar</th>
+                  <th className="px-3 py-3">Department</th>
+                  <th className="px-3 py-3">Campus</th>
+                  <th className="px-3 py-3">Guide</th>
                   <th className="px-3 py-3">Mode</th>
                   <th className="px-3 py-3">Fee year</th>
                   <th className="px-3 py-3 text-right">Annual fee</th>
@@ -443,7 +514,7 @@ export function FeeCollectionScreen() {
                 {shown.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={12}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No scholars match the filters.
@@ -479,6 +550,9 @@ export function FeeCollectionScreen() {
                             {row.batchName || row.identifier}
                           </p>
                         </td>
+                        <td className="px-3 py-3">{row.department || "—"}</td>
+                        <td className="px-3 py-3">{row.campus || "—"}</td>
+                        <td className="px-3 py-3">{row.guideName || "—"}</td>
                         <td className="px-3 py-3">{row.studyMode}</td>
                         <td className="px-3 py-3">
                           {row.year.label}

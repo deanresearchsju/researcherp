@@ -11,6 +11,7 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -37,6 +38,7 @@ import {
   subscribeScholarRecords,
 } from "@/lib/scholar-records";
 import { isSubmissionFeePurpose } from "@/lib/submission-fees";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { formatInr } from "@/lib/utils";
 import type { Json } from "@/types/database";
 import { fileAsDataUrl } from "@/lib/file-store";
@@ -124,8 +126,17 @@ function courseGroups(rows: readonly CourseRegistration[]): FeeRow[] {
       detail: `Semester ${first.semester} · ${papers
         .map((item) => item.code || item.name)
         .filter(Boolean)
-        .join(", ")}`,
-      amount: formatInr(papers.reduce((sum, item) => sum + (item.amount || 0), 0)),
+        .join(", ")}${
+        papers.some((item) => item.markSheetFee)
+          ? ` · incl. mark sheet fee ₹${formatInr(papers.reduce((sum, item) => sum + (item.markSheetFee || 0), 0))}`
+          : ""
+      }`,
+      amount: formatInr(
+        papers.reduce(
+          (sum, item) => sum + (item.amount || 0) + (item.markSheetFee || 0),
+          0,
+        ),
+      ),
       paidOn: first.paymentDate,
       mode: first.paymentMode,
       reference: first.paymentReference,
@@ -166,6 +177,9 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<FeeRow | null>(null);
+  const profile = useScholarProfiles();
+  // Registration fees are paid by applicants, who have no department or guide yet.
+  const byScholar = kind !== "registration";
 
   const rows: FeeRow[] = (() => {
     if (kind === "registration") {
@@ -233,6 +247,7 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
       (!year || yearOf(row.paidOn) === year) &&
       (!from || (row.paidOn && row.paidOn >= from)) &&
       (!to || (row.paidOn && row.paidOn <= to)) &&
+      (!byScholar || profile.matches(row.identifier)) &&
       textMatches(query, [row.name, row.identifier, row.detail, row.reference]),
   );
   const pending = inScope.filter((row) => row.status !== "Approved");
@@ -351,7 +366,7 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
       <ListToolbar
         query={query}
         onQuery={setQuery}
-        filters={[]}
+        filters={byScholar ? profile.filters : []}
         shown={shown.length}
         total={rows.length}
         filename={`${kind}-fee-${tab}${year ? `-${year}` : ""}.csv`}
@@ -365,6 +380,7 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
           "Mode",
           "Reference",
           "Status",
+          ...(byScholar ? profile.headers : []),
         ]}
         rows={shown.map((row) => [
           row.name,
@@ -375,10 +391,15 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
           row.mode,
           row.reference,
           row.status,
+          ...(byScholar ? profile.cells(row.identifier) : []),
         ])}
       />
       <DeskTable
-        headers={["Scholar", "Details", "Payment", "Receipt", "Status", ""]}
+        headers={
+          byScholar
+            ? ["Scholar", profileColumnHeading, "Details", "Payment", "Receipt", "Status", ""]
+            : ["Scholar", "Details", "Payment", "Receipt", "Status", ""]
+        }
         empty={shown.length === 0}
       >
         {shown.map((row) => (
@@ -387,6 +408,11 @@ export function AccountsFeeScreen({ kind }: { kind: FeeKind }) {
               <p className="font-semibold text-primary">{row.name}</p>
               <p className="text-muted-foreground">{row.identifier}</p>
             </td>
+            {byScholar ? (
+              <td className="px-4 py-3">
+                <ProfileCell profile={profile.profileOf(row.identifier)} />
+              </td>
+            ) : null}
             <td className="px-4 py-3">{row.detail || "—"}</td>
             <td className="px-4 py-3">
               <p>{row.amount || "—"}</p>

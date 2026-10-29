@@ -45,8 +45,8 @@ function milestonesOf(report: ScholarReport): Milestone[] {
     },
     {
       label: "Colloquium",
-      detail: `${report.colloquium.attended} of minimum ${report.colloquium.required}`,
-      done: report.colloquium.met,
+      detail: `${report.colloquium.attended} attended`,
+      done: report.colloquium.attended > 0,
     },
     { label: "Third DC", detail: report.thirdDc, done: done(report.thirdDc) },
     { label: "Synopsis", detail: report.synopsis, done: report.synopsis === "Approved" },
@@ -341,18 +341,7 @@ export function SupervisorDashboard({
                         {row.sixMonthApproved}/{row.sixMonthDue}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            row.colloquium.status === "Met"
-                              ? "gold"
-                              : row.colloquium.status === "At risk"
-                                ? "maroon"
-                                : "purple"
-                          }
-                        >
-                          {row.colloquium.attended}/{row.colloquium.required} ·{" "}
-                          {row.colloquium.status}
-                        </Badge>
+                        <Badge variant="purple">{row.colloquium.attended} attended</Badge>
                       </td>
                       <td className="px-4 py-3">
                         {alerts.length === 0 ? (

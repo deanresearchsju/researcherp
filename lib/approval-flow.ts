@@ -1,6 +1,8 @@
 import { formatIsoDate } from "@/lib/dates";
+import { stageNames, type ApprovalStage } from "@/lib/approval-rules";
 import type {
   CommitteeReport,
+  StepMark,
   SynopsisSubmission,
   ThesisSubmission,
 } from "@/lib/doctoral";
@@ -38,10 +40,10 @@ type Decision = {
 };
 
 type Chain = {
-  needsSupervisor: boolean;
+  /** The steps the request goes through, in order; the last one gives the final approval. */
+  stages: ApprovalStage[];
   submittedAt: string;
-  supervisor: Decision;
-  dean: Decision;
+  decisions: Partial<Record<ApprovalStage, Decision>>;
   /** Recorded by the office without a submission. */
   officeEntry?: boolean;
 };
@@ -64,191 +66,247 @@ export function formatMoment(value: string) {
   return `${date}, ${time}`;
 }
 
-export function summarise(chain: Chain): ApprovalSummary {
-  const { supervisor, dean } = chain;
+/** The older shape of a request's steps: the supervisor's (when needed) and the Dean's. */
+type LegacyChain = {
+  needsSupervisor: boolean;
+  submittedAt: string;
+  supervisor: Decision;
+  dean: Decision;
+  officeEntry?: boolean;
+};
+
+function stepsOf(chain: Chain | LegacyChain): Chain {
+  if ("stages" in chain) return chain;
+  return {
+    stages: chain.needsSupervisor ? ["supervisor", "dean"] : ["dean"],
+    submittedAt: chain.submittedAt,
+    decisions: { supervisor: chain.supervisor, dean: chain.dean },
+    officeEntry: chain.officeEntry,
+  };
+}
+
+export function summarise(given: Chain | LegacyChain): ApprovalSummary {
+  const chain = stepsOf(given);
+  const stages = chain.stages;
+  const decisionOf = (stage: ApprovalStage): Decision =>
+    chain.decisions[stage] ?? { status: "", by: "", at: "" };
+  const last = stages.at(-1);
+  const lastDecision = last ? decisionOf(last) : null;
   const steps: TrailStep[] = chain.officeEntry
     ? [
         {
           label: "Recorded by the research office",
-          by: dean.by,
-          at: dean.at,
+          by: lastDecision?.by ?? "",
+          at: lastDecision?.at ?? "",
           state: "done",
         },
       ]
     : [
         { label: "Submitted", by: "", at: chain.submittedAt, state: "done" },
-        ...(chain.needsSupervisor
-          ? [
-              {
-                label:
-                  supervisor.status === "returned"
-                    ? "Rejected by Supervisor"
-                    : "Approved by Supervisor",
-                by: supervisor.by,
-                at: supervisor.at,
-                state:
-                  supervisor.status === "approved"
-                    ? ("done" as const)
-                    : supervisor.status === "returned"
-                      ? ("returned" as const)
-                      : ("pending" as const),
-                note: supervisor.status === "returned" ? supervisor.remarks : undefined,
-              },
-            ]
-          : []),
-        {
-          label: dean.status === "returned" ? "Rejected by Dean" : "Approved by Dean",
-          by: dean.by,
-          at: dean.at,
-          state:
-            dean.status === "approved"
-              ? "done"
-              : dean.status === "returned"
-                ? "returned"
-                : "pending",
-          note: dean.status === "returned" ? dean.remarks : undefined,
-        },
+        ...stages.map((stage): TrailStep => {
+          const decision = decisionOf(stage);
+          return {
+            label:
+              decision.status === "returned"
+                ? `Rejected by ${stageNames[stage]}`
+                : `Approved by ${stageNames[stage]}`,
+            by: decision.by,
+            at: decision.at,
+            state:
+              decision.status === "approved"
+                ? "done"
+                : decision.status === "returned"
+                  ? "returned"
+                  : "pending",
+            note: decision.status === "returned" ? decision.remarks : undefined,
+          };
+        }),
       ];
-  if (chain.officeEntry || dean.status === "approved") {
+  if (chain.officeEntry || (last && lastDecision?.status === "approved")) {
     return {
-      label: chain.officeEntry ? "Recorded by the office" : "Approved by Dean",
+      label: chain.officeEntry
+        ? "Recorded by the office"
+        : `Approved by ${stageNames[last as ApprovalStage]}`,
       tone: "gold",
       detail: "",
       steps,
     };
   }
-  if (dean.status === "returned") {
+  const rejected = stages.find((stage) => decisionOf(stage).status === "returned");
+  if (rejected) {
     return {
-      label: "Rejected by Dean",
+      label: `Rejected by ${stageNames[rejected]}`,
       tone: "maroon",
-      detail: dean.remarks ?? "",
+      detail: decisionOf(rejected).remarks ?? "",
       steps,
     };
   }
-  if (supervisor.status === "returned") {
+  const pending = stages.find((stage) => decisionOf(stage).status !== "approved");
+  const passed = stages.filter((stage) => decisionOf(stage).status === "approved");
+  if (passed.length > 0) {
     return {
-      label: "Rejected by Supervisor",
-      tone: "maroon",
-      detail: supervisor.remarks ?? "",
-      steps,
-    };
-  }
-  if (supervisor.status === "approved") {
-    return {
-      label: "Approved by Supervisor",
+      label: `Approved by ${stageNames[passed[passed.length - 1]]}`,
       tone: "purple",
-      detail: "Submitted to Dean",
+      detail: pending ? `Submitted to ${stageNames[pending]}` : "",
       steps,
     };
   }
   return {
-    label: chain.needsSupervisor ? "Submitted to Supervisor" : "Submitted to Dean",
+    label: `Submitted to ${stageNames[pending ?? "dean"]}`,
     tone: "outline",
     detail: "",
     steps,
   };
 }
 
+/** The decisions of a document that carries its steps (committee reports, synopsis, thesis). */
+function submissionDecisions(item: {
+  status: "Submitted" | "Approved" | "Rejected";
+  chain: readonly ApprovalStage[];
+  steps: readonly StepMark[];
+  supervisorStatus: "" | "Recommended" | "Returned";
+  supervisorName: string;
+  supervisorAt: string;
+  supervisorOn: string;
+  supervisorRemarks: string;
+  decidedBy: string;
+  decidedAt: string;
+  decidedOn: string;
+  remarks: string;
+}) {
+  const chain: ApprovalStage[] = item.chain.length > 0 ? [...item.chain] : ["dean"];
+  const last = chain[chain.length - 1];
+  const decisions: Partial<Record<ApprovalStage, Decision>> = {};
+  for (const stage of chain) {
+    if (stage === "supervisor") {
+      decisions.supervisor = {
+        status:
+          item.supervisorStatus === "Recommended"
+            ? "approved"
+            : item.supervisorStatus === "Returned"
+              ? "returned"
+              : "",
+        by: item.supervisorName,
+        at: item.supervisorAt || item.supervisorOn,
+        remarks: item.supervisorRemarks,
+      };
+      continue;
+    }
+    const step = item.steps.find((entry) => entry.stage === stage);
+    if (step) {
+      decisions[stage] = {
+        status: step.status === "Returned" ? "returned" : "approved",
+        by: step.by,
+        at: step.at,
+        remarks: step.remarks,
+      };
+    } else if (stage === last && item.status === "Approved") {
+      decisions[stage] = {
+        status: "approved",
+        by: item.decidedBy,
+        at: item.decidedAt || item.decidedOn,
+      };
+    } else if (
+      stage === last &&
+      item.status === "Rejected" &&
+      item.supervisorStatus !== "Returned"
+    ) {
+      // A rejection saved before the steps were kept: it was the last step's.
+      decisions[stage] = {
+        status: "returned",
+        by: item.decidedBy,
+        at: item.decidedAt || item.decidedOn,
+        remarks: item.remarks,
+      };
+    } else if (item.status === "Approved") {
+      decisions[stage] = { status: "approved", by: "", at: "" };
+    }
+  }
+  return { chain, decisions };
+}
+
 export function committeeSummary(report: CommitteeReport) {
-  return summarise({
-    needsSupervisor: !report.officeEntry,
-    officeEntry: report.officeEntry,
-    submittedAt: report.createdAt,
-    supervisor: {
-      status:
-        report.supervisorStatus === "Recommended"
-          ? "approved"
-          : report.supervisorStatus === "Returned"
-            ? "returned"
-            : "",
-      by: report.supervisorName,
-      at: report.supervisorAt || report.supervisorOn,
-      remarks: report.supervisorRemarks,
-    },
-    dean: {
-      status:
-        report.status === "Approved"
-          ? "approved"
-          : report.status === "Rejected" && report.supervisorStatus !== "Returned"
-            ? "returned"
-            : "",
-      by: report.decidedBy,
-      at: report.decidedAt || report.decidedOn,
-      remarks: report.remarks,
-    },
-  });
+  if (report.officeEntry) {
+    return summarise({
+      stages: ["dean"],
+      officeEntry: true,
+      submittedAt: report.createdAt,
+      decisions: {
+        dean: {
+          status: "approved",
+          by: report.decidedBy,
+          at: report.decidedAt || report.decidedOn,
+        },
+      },
+    });
+  }
+  const { chain, decisions } = submissionDecisions(report);
+  return summarise({ stages: chain, submittedAt: report.createdAt, decisions });
 }
 
 export function submissionSummary(item: SynopsisSubmission | ThesisSubmission) {
-  return summarise({
-    needsSupervisor: item.needsSupervisor,
-    submittedAt: item.createdAt,
-    supervisor: {
-      status:
-        item.supervisorStatus === "Recommended"
-          ? "approved"
-          : item.supervisorStatus === "Returned"
-            ? "returned"
-            : "",
-      by: item.supervisorName,
-      at: item.supervisorAt || item.supervisorOn,
-      remarks: item.supervisorRemarks,
-    },
-    dean: {
-      status:
-        item.status === "Approved"
-          ? "approved"
-          : item.status === "Rejected" && item.supervisorStatus !== "Returned"
-            ? "returned"
-            : "",
-      by: item.decidedBy,
-      at: item.decidedAt || item.decidedOn,
-      remarks: item.remarks,
-    },
-  });
+  const { chain, decisions } = submissionDecisions(item);
+  return summarise({ stages: chain, submittedAt: item.createdAt, decisions });
+}
+
+/** The steps of a scholar request: the ones stored with it, or the supervisor's and the Dean's. */
+export function recordStages(
+  record: ScholarRecord,
+  needsSupervisor: boolean,
+): ApprovalStage[] {
+  const stored = String(record.payload.chain ?? "")
+    .split(",")
+    .filter(
+      (item): item is ApprovalStage =>
+        item === "supervisor" || item === "dean" || item === "vc",
+    );
+  if (stored.length > 0) return stored;
+  return needsSupervisor ? ["supervisor", "dean"] : ["dean"];
 }
 
 export function recordSummary(record: ScholarRecord, needsSupervisor: boolean) {
   const payload = record.payload;
-  const returnedBySupervisor =
-    payload.returnedByRole === "supervisor" ||
-    (!payload.returnedByRole && needsSupervisor && !payload.supervisorOn);
-  return summarise({
-    needsSupervisor,
-    submittedAt: record.createdAt,
-    supervisor: {
-      status:
-        record.status === "Returned" && returnedBySupervisor
-          ? "returned"
-          : payload.supervisorOn
-            ? "approved"
-            : "",
-      by:
-        record.status === "Returned" && returnedBySupervisor
-          ? (payload.returnedBy ?? record.supervisorName)
-          : (payload.supervisorBy ?? record.supervisorName),
-      at:
-        record.status === "Returned" && returnedBySupervisor
-          ? (payload.returnedAt ?? payload.returnedOn ?? "")
-          : (payload.supervisorAt ?? payload.supervisorOn ?? ""),
-      remarks: payload.remarks,
-    },
-    dean: {
-      status:
-        record.status === "Approved"
-          ? "approved"
-          : record.status === "Returned" && !returnedBySupervisor
-            ? "returned"
-            : "",
-      by:
-        record.status === "Returned" && !returnedBySupervisor
-          ? (payload.returnedBy ?? "")
-          : (payload.approvedBy ?? ""),
-      at:
-        record.status === "Returned" && !returnedBySupervisor
-          ? (payload.returnedAt ?? payload.returnedOn ?? "")
-          : (payload.approvedAt ?? payload.approvedOn ?? ""),
-      remarks: payload.remarks,
-    },
-  });
+  const stages = recordStages(record, needsSupervisor);
+  const last = stages[stages.length - 1];
+  const returnedByRole = payload.returnedByRole ?? "";
+  // Who turned it down: the role stored with it, or (for older records) the supervisor while
+  // the supervisor had not approved, otherwise the last step.
+  const supervisorPending = stages.includes("supervisor") && !payload.supervisorOn;
+  const returnedBy: ApprovalStage | null =
+    record.status !== "Returned"
+      ? null
+      : returnedByRole === "supervisor" ||
+          returnedByRole === "dean" ||
+          returnedByRole === "vc"
+        ? returnedByRole
+        : supervisorPending
+          ? "supervisor"
+          : last;
+  const decisions: Partial<Record<ApprovalStage, Decision>> = {};
+  for (const stage of stages) {
+    if (returnedBy === stage) {
+      decisions[stage] = {
+        status: "returned",
+        by: payload.returnedBy ?? (stage === "supervisor" ? record.supervisorName : ""),
+        at: payload.returnedAt ?? payload.returnedOn ?? "",
+        remarks: payload.remarks,
+      };
+    } else if (stage === last && record.status === "Approved") {
+      decisions[stage] = {
+        status: "approved",
+        by: payload.approvedBy ?? "",
+        at: payload.approvedAt ?? payload.approvedOn ?? "",
+        remarks: payload.remarks,
+      };
+    } else if (payload[`${stage}On`]) {
+      decisions[stage] = {
+        status: "approved",
+        by:
+          payload[`${stage}By`] ?? (stage === "supervisor" ? record.supervisorName : ""),
+        at: payload[`${stage}At`] ?? payload[`${stage}On`] ?? "",
+        remarks: payload.remarks,
+      };
+    }
+  }
+  return summarise({ stages, submittedAt: record.createdAt, decisions });
 }

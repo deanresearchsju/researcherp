@@ -260,7 +260,7 @@ const reports: ReportDefinition[] = [
         "Third DC",
         "RAC",
         "Six-month (approved/due)",
-        "Colloquium (attended/min)",
+        "Colloquia attended",
         "Publications",
         "Synopsis",
         "Thesis",
@@ -280,7 +280,7 @@ const reports: ReportDefinition[] = [
         row.thirdDc,
         row.rac,
         `${row.sixMonthApproved}/${row.sixMonthDue}`,
-        `${row.colloquium.attended}/${row.colloquium.required}`,
+        n(row.colloquium.attended),
         n(row.publications),
         row.synopsis,
         row.thesis,
@@ -302,7 +302,6 @@ const reports: ReportDefinition[] = [
         "First DC done",
         "Confirmed",
         "RAC constituted",
-        "Colloquium met",
         "Six-month up to date",
         "Synopsis",
         "Thesis",
@@ -320,7 +319,6 @@ const reports: ReportDefinition[] = [
             count(mine, (row) => done(row.firstDc)),
             count(mine, (row) => done(row.confirmation)),
             count(mine, (row) => row.rac === "Constituted"),
-            count(mine, (row) => row.colloquium.met),
             count(mine, (row) => row.sixMonthApproved >= row.sixMonthDue),
             count(mine, (row) => row.synopsis !== "Not started"),
             count(mine, (row) => row.thesis !== "Not started"),
@@ -346,7 +344,6 @@ const reports: ReportDefinition[] = [
           "Confirmed",
           "RAC constituted",
           "Six-month pending",
-          "Colloquium at risk",
           "Synopsis",
           "Thesis",
           "Viva passed",
@@ -360,7 +357,6 @@ const reports: ReportDefinition[] = [
             count(mine, (row) => done(row.confirmation)),
             count(mine, (row) => row.rac === "Constituted"),
             count(mine, (row) => row.sixMonthApproved < row.sixMonthDue),
-            count(mine, (row) => row.colloquium.status === "At risk"),
             count(mine, (row) => row.synopsis !== "Not started"),
             count(mine, (row) => row.thesis !== "Not started"),
             count(mine, (row) => row.viva.startsWith("Passed")),
@@ -458,16 +454,7 @@ const reports: ReportDefinition[] = [
     title: "Colloquium attendance",
     icon: Presentation,
     build: (rows) => ({
-      headers: [
-        "Scholar",
-        "Batch",
-        "Mode",
-        "Supervisor",
-        "Attended",
-        "Absent",
-        "Minimum",
-        "Status",
-      ],
+      headers: ["Scholar", "Batch", "Mode", "Supervisor", "Attended", "Absent"],
       rows: rows.map((row) => [
         row.name,
         row.batchName,
@@ -475,8 +462,6 @@ const reports: ReportDefinition[] = [
         row.guideName,
         n(row.colloquium.attended),
         n(row.colloquium.absent),
-        `${row.colloquium.required} of ${row.colloquium.total}`,
-        row.colloquium.status,
       ]),
     }),
   },
@@ -518,6 +503,9 @@ const reports: ReportDefinition[] = [
         "Scholar",
         "Registration No.",
         "Batch",
+        "Department",
+        "Campus",
+        "Guide",
         "Mode",
         "Paid (₹)",
         "Balance (₹)",
@@ -527,6 +515,9 @@ const reports: ReportDefinition[] = [
         row.name,
         row.registration,
         row.batchName,
+        row.department,
+        row.campus,
+        row.guideName,
         row.mode,
         row.feePaid.toLocaleString("en-IN"),
         row.feeBalance.toLocaleString("en-IN"),
@@ -582,6 +573,55 @@ const reports: ReportDefinition[] = [
 
 const groups = ["Scholars", "Supervisors", "Progress", "Compliance"] as const;
 
+/**
+ * A report that lists scholars also shows each scholar's department, campus, guide and mode.
+ * The columns the report already has are not repeated. A row is matched to its scholar by
+ * registration number, or by name when no other scholar of the list has it.
+ */
+function withProfile(
+  table: { headers: string[]; rows: string[][] },
+  scholars: readonly ScholarReport[],
+) {
+  const headers = table.headers;
+  const has = (...names: string[]) =>
+    headers.some((header) => names.includes(header.trim()));
+  if (headers[0] !== "Scholar") return table;
+  const wanted = [
+    { title: "Department", skip: has("Department"), pick: (r: ScholarReport) => r.department },
+    { title: "Campus", skip: has("Campus"), pick: (r: ScholarReport) => r.campus },
+    {
+      title: "Guide",
+      skip: has("Guide", "Supervisor", "Guide name"),
+      pick: (r: ScholarReport) => r.guideName,
+    },
+    { title: "Mode", skip: has("Mode"), pick: (r: ScholarReport) => r.mode },
+  ].filter((item) => !item.skip);
+  if (wanted.length === 0) return table;
+  const key = (value: string) => value.trim().toLowerCase();
+  const byRegistration = new Map(
+    scholars.filter((r) => r.registration).map((r) => [key(r.registration), r]),
+  );
+  const byName = new Map<string, ScholarReport | null>();
+  for (const r of scholars) {
+    byName.set(key(r.name), byName.has(key(r.name)) ? null : r);
+  }
+  const registrationAt = headers.indexOf("Registration No.");
+  // After the columns that identify the scholar.
+  let at = 1;
+  while (["Registration No.", "Batch"].includes(headers[at])) at += 1;
+  return {
+    headers: [...headers.slice(0, at), ...wanted.map((item) => item.title), ...headers.slice(at)],
+    rows: table.rows.map((row) => {
+      const found =
+        (registrationAt >= 0 ? byRegistration.get(key(row[registrationAt] ?? "")) : null) ??
+        byName.get(key(row[0] ?? "")) ??
+        null;
+      const added = wanted.map((item) => (found ? item.pick(found) : ""));
+      return [...row.slice(0, at), ...added, ...row.slice(at)];
+    }),
+  };
+}
+
 export function ReportsScreen() {
   const data = useScholarReports();
   const [active, setActive] = useState(reports[0].id);
@@ -590,6 +630,8 @@ export function ReportsScreen() {
   const [guide, setGuide] = useState("");
   const [mode, setMode] = useState("");
   const [subject, setSubject] = useState("");
+  const [department, setDepartment] = useState("");
+  const [campus, setCampus] = useState("");
   const [photoBusy, setPhotoBusy] = useState<string | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
 
@@ -602,13 +644,15 @@ export function ReportsScreen() {
       filterMatches(batch, row.batchName) &&
       filterMatches(guide, row.guideName) &&
       filterMatches(mode, row.mode) &&
-      filterMatches(subject, row.subject),
+      filterMatches(subject, row.subject) &&
+      filterMatches(department, row.department) &&
+      filterMatches(campus, row.campus),
   );
-  const table = definition.build(scoped, data.guides);
+  const table = withProfile(definition.build(scoped, data.guides), scoped);
   const visible = table.rows.filter((row) => textMatches(query, row));
   const option = (values: readonly string[]) =>
     [...new Set(values.filter(Boolean))].sort().map((value) => ({ value, label: value }));
-  const filterLabel = [batch, guide, mode, subject]
+  const filterLabel = [batch, department, campus, guide, mode, subject]
     .filter(Boolean)
     .map((value) => value.split("\u001f").join(", "))
     .join(" · ");
@@ -672,8 +716,8 @@ export function ReportsScreen() {
             n(new Set(data.reports.map((row) => row.guideName).filter(Boolean)).size),
           ],
           [
-            "Colloquium at risk",
-            count(data.reports, (row) => row.colloquium.status === "At risk"),
+            "Colloquia attended",
+            n(data.reports.reduce((sum, row) => sum + row.colloquium.attended, 0)),
           ],
           [
             "Scholars with alerts",
@@ -745,8 +789,22 @@ export function ReportsScreen() {
                 onChange: setBatch,
               },
               {
+                id: "department",
+                label: "Department",
+                value: department,
+                options: option(data.reports.map((row) => row.department)),
+                onChange: setDepartment,
+              },
+              {
+                id: "campus",
+                label: "Campus",
+                value: campus,
+                options: option(data.reports.map((row) => row.campus)),
+                onChange: setCampus,
+              },
+              {
                 id: "guide",
-                label: "Supervisor",
+                label: "Guide",
                 value: guide,
                 options: option(data.reports.map((row) => row.guideName)),
                 onChange: setGuide,

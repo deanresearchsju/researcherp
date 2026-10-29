@@ -15,6 +15,7 @@ import {
   StatusPill,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { Button } from "@/components/ui/button";
 import { examCopy, examOutcomes, examPageSize } from "@/data/exams";
 import {
@@ -29,6 +30,7 @@ import {
 import { pageCount, pageSlice } from "@/lib/paging";
 import { currentExam, subscribeExam } from "@/lib/exam-office";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 
 function outcomeLabel(
   row: CourseRegistration,
@@ -49,6 +51,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [gradeKey, setGradeKey] = useState(false);
   const [page, setPage] = useState(1);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const profile = useScholarProfiles(() => setPage(1));
 
   if (!ready || !doctoral)
     return <p className="text-sm text-muted-foreground">Loading results…</p>;
@@ -58,6 +61,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
     if (mode !== "admin") return true;
     const label = outcomeLabel(row, doctoral);
     return (
+      profile.matches(row.scholarIdentifier) &&
       filterMatches(outcome, label) &&
       filterMatches(semester, String(row.semester)) &&
       textMatches(query, [
@@ -150,6 +154,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                 setPage(1);
               },
             },
+            ...profile.filters,
           ]}
           shown={rows.length}
           total={doctoral.registrations.length}
@@ -162,6 +167,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
             "latest_result",
             "session",
             "attempts",
+            ...profile.headers,
           ]}
           rows={rows.map((row) => {
             const paper = paperOf(doctoral, row);
@@ -174,6 +180,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               result?.outcome ?? examCopy.pending,
               result ? examSessionLabel(result) : "",
               String(resultsFor(doctoral, row.id).length),
+              ...profile.cells(row.scholarIdentifier),
             ];
           })}
         />
@@ -306,6 +313,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               <thead className="bg-muted text-primary">
                 <tr>
                   <th className="px-3 py-3 font-semibold">Scholar</th>
+                  <th className="px-3 py-3 font-semibold">{profileColumnHeading}</th>
                   <th className="px-3 py-3 font-semibold">Paper</th>
                   <th className="px-3 py-3 font-semibold">Latest</th>
                   <th className="px-3 py-3 font-semibold">History</th>
@@ -314,7 +322,7 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
               <tbody>
                 {shown.rows.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-4 text-muted-foreground" colSpan={4}>
+                    <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
                       No course-work paper is registered yet.
                     </td>
                   </tr>
@@ -328,6 +336,9 @@ export function ResultScreen({ mode }: { mode: "admin" | "scholar" }) {
                         <td className="px-3 py-3">
                           <p className="font-medium text-primary">{row.scholarName}</p>
                           <p className="text-muted-foreground">Semester {row.semester}</p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <ProfileCell profile={profile.profileOf(row.scholarIdentifier)} />
                         </td>
                         <td className="px-3 py-3">
                           {paper.code} {paper.name}

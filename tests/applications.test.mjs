@@ -11,13 +11,15 @@ import { summary, test } from "./helpers.mjs";
 const base = process.env.TEST_BASE || "http://localhost:3000";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-if (!url || !service || !anon) {
+if (!url || !service) {
   console.log("FAIL the database keys are missing; run with --env-file=.env.local");
   process.exit(1);
 }
 const db = createClient(url, service, { auth: { persistSession: false } });
-const publicDb = createClient(url, anon, { auth: { persistSession: false } });
+// A visitor's browser reaches the database only through the site's own /api/db.
+const publicDb = createClient(`${base}/api/db`, "browser", {
+  auth: { persistSession: false },
+});
 
 const settingsBefore = (
   await db.from("site_settings").select("*").eq("id", "office").single()

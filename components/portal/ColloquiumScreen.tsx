@@ -45,12 +45,6 @@ import {
 
 type Tab = "events" | "scholars" | "supervisors" | "batches";
 
-const statusTone = {
-  Met: "gold",
-  "On track": "purple",
-  "At risk": "maroon",
-} as const;
-
 function eventState(item: Colloquium, today: string) {
   if (colloquiumMarked(item)) return { label: "Completed", tone: "gold" as const };
   if (item.date && item.date > today)
@@ -171,45 +165,18 @@ function ScholarColloquium({
       <PageTitle kicker="Doctoral progress" title="Colloquium" />
       <RuleBanner blink />
       {standing ? (
-        <div className="grid gap-4 rounded-2xl border border-border bg-card p-5 shadow-card sm:grid-cols-[1fr_auto]">
-          <div>
-            <p className="text-[0.65rem] font-bold tracking-[0.16em] text-muted-foreground uppercase">
-              Your attendance · {report.mode}
-            </p>
-            <p className="mt-1 text-3xl font-semibold text-primary">
-              {standing.attended}
-              <span className="text-base font-medium text-muted-foreground">
-                {" "}
-                attended · minimum {standing.required} of {standing.total}
-              </span>
-            </p>
-            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  "h-full rounded-full",
-                  standing.met
-                    ? "bg-accent"
-                    : standing.status === "At risk"
-                      ? "bg-secondary"
-                      : "bg-primary",
-                )}
-                style={{
-                  width: `${Math.min((standing.attended / standing.required) * 100, 100)}%`,
-                }}
-              />
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Absent {standing.absent} · Upcoming {standing.upcoming}
-              {standing.earlier > 0
-                ? ` · ${standing.earlier} recorded before the ERP`
-                : ""}
-            </p>
-          </div>
-          <div className="self-center">
-            <Badge variant={statusTone[standing.status]}>
-              {standing.status === "Met" ? "Requirement met" : standing.status}
-            </Badge>
-          </div>
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
+          <p className="text-[0.65rem] font-bold tracking-[0.16em] text-muted-foreground uppercase">
+            Your attendance · {report.mode}
+          </p>
+          <p className="mt-1 text-3xl font-semibold text-primary">
+            {standing.attended}
+            <span className="text-base font-medium text-muted-foreground"> attended</span>
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Absent {standing.absent} · Upcoming {standing.upcoming}
+            {standing.earlier > 0 ? ` · ${standing.earlier} recorded before the ERP` : ""}
+          </p>
         </div>
       ) : null}
       <ul className="space-y-3">
@@ -307,8 +274,8 @@ function SupervisorColloquium({
           ["Your attendance", `${own.present} of ${own.present + own.absent}`],
           ["Your scholars", String(scholars.length)],
           [
-            "Scholars meeting the minimum",
-            `${scholars.filter((row) => row.colloquium.met).length} of ${scholars.length}`,
+            "Colloquia attended by your scholars",
+            String(scholars.reduce((sum, row) => sum + row.colloquium.attended, 0)),
           ],
         ].map(([label, value]) => (
           <div
@@ -385,7 +352,8 @@ function ScholarAttendanceTable({
   const [batch, setBatch] = useState("");
   const [guide, setGuide] = useState("");
   const [modeFilter, setModeFilter] = useState("");
-  const [status, setStatus] = useState("");
+  const [department, setDepartment] = useState("");
+  const [campus, setCampus] = useState("");
   const held = colloquia.filter(colloquiumMarked);
   const visible = rows.filter(
     (row) =>
@@ -393,7 +361,8 @@ function ScholarAttendanceTable({
       filterMatches(batch, row.batchName) &&
       filterMatches(guide, row.guideName) &&
       filterMatches(modeFilter, row.mode) &&
-      filterMatches(status, row.colloquium.status),
+      filterMatches(department, row.department) &&
+      filterMatches(campus, row.campus),
   );
   const option = (values: readonly string[]) =>
     [...new Set(values.filter(Boolean))].map((value) => ({ value, label: value }));
@@ -424,18 +393,25 @@ function ScholarAttendanceTable({
               ]
             : []),
           {
+            id: "department",
+            label: "Department",
+            value: department,
+            options: option(rows.map((row) => row.department).sort()),
+            onChange: setDepartment,
+          },
+          {
+            id: "campus",
+            label: "Campus",
+            value: campus,
+            options: option(rows.map((row) => row.campus).sort()),
+            onChange: setCampus,
+          },
+          {
             id: "mode",
             label: "Mode",
             value: modeFilter,
             options: option(["Full time", "Part time"]),
             onChange: setModeFilter,
-          },
-          {
-            id: "status",
-            label: "Status",
-            value: status,
-            options: option(["Met", "On track", "At risk"]),
-            onChange: setStatus,
           },
         ]}
         shown={visible.length}
@@ -446,24 +422,24 @@ function ScholarAttendanceTable({
           "Scholar",
           "Registration No.",
           "Batch",
+          "Department",
+          "Campus",
           "Mode",
           "Supervisor",
           "Attended",
           "Absent",
-          "Minimum",
-          "Status",
           ...held.map((item) => item.name),
         ]}
         rows={visible.map((row) => [
           row.name,
           row.registration,
           row.batchName,
+          row.department,
+          row.campus,
           row.mode,
           row.guideName,
           String(row.colloquium.attended),
           String(row.colloquium.absent),
-          `${row.colloquium.required} of ${row.colloquium.total}`,
-          row.colloquium.status,
           ...held.map((item) => {
             const invited = item.scholars.some((person) =>
               sameId(person.identifier, row.identifier),
@@ -482,23 +458,24 @@ function ScholarAttendanceTable({
               {[
                 "Scholar",
                 "Batch",
+                "Department · campus",
                 "Mode",
                 "Supervisor",
                 "Attended",
                 "Absent",
-                "Minimum",
-                "Status",
-              ].map((header) => (
-                <th key={header} className="px-3 py-2.5 font-semibold">
-                  {header}
-                </th>
-              ))}
+              ].map(
+                (header) => (
+                  <th key={header} className="px-3 py-2.5 font-semibold">
+                    {header}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-4 text-muted-foreground">
+                <td colSpan={7} className="px-3 py-4 text-muted-foreground">
                   No scholar matches.
                 </td>
               </tr>
@@ -512,18 +489,13 @@ function ScholarAttendanceTable({
                     </p>
                   </td>
                   <td className="px-3 py-2">{row.batchName || "—"}</td>
+                  <td className="px-3 py-2">
+                    {[row.department, row.campus].filter(Boolean).join(" · ") || "—"}
+                  </td>
                   <td className="px-3 py-2">{row.mode}</td>
                   <td className="px-3 py-2">{row.guideName || "—"}</td>
                   <td className="px-3 py-2 font-semibold">{row.colloquium.attended}</td>
                   <td className="px-3 py-2">{row.colloquium.absent}</td>
-                  <td className="px-3 py-2">
-                    {row.colloquium.required} of {row.colloquium.total}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Badge variant={statusTone[row.colloquium.status]}>
-                      {row.colloquium.status}
-                    </Badge>
-                  </td>
                 </tr>
               ))
             )}
@@ -590,14 +562,8 @@ function OfficeColloquium({
         subject: guide?.subject ?? "",
         own,
         scholars: scholars.length,
-        met: scholars.filter((row) => row.colloquium.status === "Met").length,
-        track: scholars.filter((row) => row.colloquium.status === "On track").length,
-        risk: scholars.filter((row) => row.colloquium.status === "At risk").length,
         names: scholars
-          .map(
-            (row) =>
-              `${row.name} (${row.colloquium.attended}/${row.colloquium.required})`,
-          )
+          .map((row) => `${row.name} (${row.colloquium.attended})`)
           .join("; "),
       };
     });
@@ -611,9 +577,6 @@ function OfficeColloquium({
         scholars: rows.length,
         fullTime: rows.filter((row) => row.mode === "Full time").length,
         partTime: rows.filter((row) => row.mode === "Part time").length,
-        met: rows.filter((row) => row.colloquium.status === "Met").length,
-        track: rows.filter((row) => row.colloquium.status === "On track").length,
-        risk: rows.filter((row) => row.colloquium.status === "At risk").length,
         average: rows.length
           ? (
               rows.reduce((sum, row) => sum + row.colloquium.attended, 0) / rows.length
@@ -804,22 +767,16 @@ function OfficeColloquium({
             "Subject",
             "Own attendance",
             "Scholars",
-            "Met",
-            "On track",
-            "At risk",
-            "Scholars (attended/minimum)",
+            "Scholars (attended)",
           ]}
           rows={supervisorRows.map((row) => [
             row.name,
             row.subject,
             `${row.own.present} of ${row.own.present + row.own.absent}`,
             String(row.scholars),
-            String(row.met),
-            String(row.track),
-            String(row.risk),
             row.names,
           ])}
-          shownColumns={7}
+          shownColumns={5}
         />
       ) : null}
 
@@ -827,24 +784,12 @@ function OfficeColloquium({
         <SimpleReport
           title="Colloquium attendance · batch-wise"
           filename="colloquium-batch-wise.csv"
-          headers={[
-            "Batch",
-            "Scholars",
-            "Full time",
-            "Part time",
-            "Met",
-            "On track",
-            "At risk",
-            "Average attended",
-          ]}
+          headers={["Batch", "Scholars", "Full time", "Part time", "Average attended"]}
           rows={batchRows.map((row) => [
             row.name,
             String(row.scholars),
             String(row.fullTime),
             String(row.partTime),
-            String(row.met),
-            String(row.track),
-            String(row.risk),
             row.average,
           ])}
         />

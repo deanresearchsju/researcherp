@@ -54,6 +54,8 @@ import {
   type ScholarRecord,
 } from "@/lib/scholar-records";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell } from "@/components/portal/ProfileCell";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge } from "@/components/portal/ApprovalTrail";
 import { recordSummary } from "@/lib/approval-flow";
@@ -91,7 +93,6 @@ type PatentRow = {
   title: string;
   filedOn: string;
 };
-type ManuscriptRow = { title: string; authors: string; remarks: string };
 type ActivityRow = { type: string; details: string; date: string; remarks: string };
 
 const remarksSchema = z.string().trim().min(2, "Enter the remarks.");
@@ -115,6 +116,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const profile = useScholarProfiles();
   const [officeTab, setOfficeTab] = useState<"reports" | "paper">("reports");
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
@@ -123,7 +125,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
   const [papers, setPapers] = useState<PaperRow[]>([]);
   const [conferences, setConferences] = useState<ConferenceRow[]>([]);
   const [patents, setPatents] = useState<PatentRow[]>([]);
-  const [manuscripts, setManuscripts] = useState<ManuscriptRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [paperDraft, setPaperDraft] = useState<PaperRow>({
     title: "",
@@ -211,7 +212,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
           papers: JSON.stringify(papers),
           conferences: JSON.stringify(conferences),
           patents: JSON.stringify(patents),
-          manuscripts: JSON.stringify(manuscripts),
           activities: JSON.stringify(activities),
         },
         fileName: file.file.name,
@@ -235,7 +235,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
       setPapers([]);
       setConferences([]);
       setPatents([]);
-      setManuscripts([]);
       setActivities([]);
       setAddingPaper(false);
     }
@@ -279,6 +278,7 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
       ? load.records.filter(
           (record) =>
             filterMatches(statusFilter, record.status) &&
+            profile.matches(record.scholarIdentifier) &&
             textMatches(query, [
               record.scholarName,
               record.payload.period ?? "",
@@ -627,50 +627,6 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
                   </DeskTable>
                 </DeskSection>
                 <DeskSection
-                  title="Manuscript details"
-                  action={
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setManuscripts((current) => [
-                          ...current,
-                          { title: "", authors: "", remarks: "" },
-                        ])
-                      }
-                    >
-                      Add new
-                    </Button>
-                  }
-                >
-                  <DeskTable
-                    headers={["Title", "Name of the authors", "Remarks"]}
-                    empty={manuscripts.length === 0}
-                  >
-                    {manuscripts.map((row, index) => (
-                      <tr key={`ms-${index}`} className="border-t border-border">
-                        <td className="px-4 py-3">
-                          <Input
-                            value={row.title}
-                            onChange={(event) =>
-                              setManuscripts((current) =>
-                                current.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, title: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td className="px-4 py-3">{row.authors || "—"}</td>
-                        <td className="px-4 py-3">{row.remarks || "—"}</td>
-                      </tr>
-                    ))}
-                  </DeskTable>
-                </DeskSection>
-                <DeskSection
                   title="Other activities details"
                   action={
                     <Button
@@ -842,17 +798,19 @@ export function SixMonthScreen({ mode }: { mode: "admin" | "scholar" }) {
               })),
               onChange: setStatusFilter,
             },
+            ...profile.filters,
           ]}
           shown={rows.length}
           total={load.records.length}
           filename="six-month-reports.csv"
-          headers={["scholar", "period", "status", "approved_on", "remarks"]}
+          headers={["scholar", "period", "status", "approved_on", "remarks", ...profile.headers]}
           rows={rows.map((record) => [
             record.scholarName,
             record.payload.period ?? "",
             record.status,
             record.payload.approvedOn ?? "",
             record.payload.remarks ?? "",
+            ...profile.cells(record.scholarIdentifier),
           ])}
         />
       ) : null}

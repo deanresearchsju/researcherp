@@ -2,7 +2,7 @@
 // The selection, admission and course-work rules (pure parts, no server needed).
 import assert from "node:assert/strict";
 
-import { load, summary, test } from "./helpers.mjs";
+import { load, seedRegister, summary, test } from "./helpers.mjs";
 
 const admission = load("@/lib/admission.ts");
 const seating = load("@/lib/seating.ts");
@@ -10,6 +10,7 @@ const exam = load("@/lib/exam-office.ts");
 const doctoral = load("@/lib/doctoral.ts");
 const regFormat = load("@/lib/registration-format.ts");
 const register = load("@/lib/register.ts");
+seedRegister();
 const { researchRegister } = load("@/data/research-register");
 
 const application = (n, department = "Physics") => ({

@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { DeskModal, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -50,6 +51,7 @@ export function SemesterPromotionScreen() {
     currentAllotments,
   );
   const [query, setQuery] = useState("");
+  const profile = useScholarProfiles();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -83,8 +85,10 @@ export function SemesterPromotionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allotments, batchId, doctoral]);
 
-  const listed = rows.filter((row) =>
-    textMatches(query, [row.name, row.identifier, row.registration, row.department]),
+  const listed = rows.filter(
+    (row) =>
+      profile.matches(row.identifier) &&
+      textMatches(query, [row.name, row.identifier, row.registration, row.department]),
   );
 
   function toggleScholar(identifier: string) {
@@ -250,12 +254,17 @@ export function SemesterPromotionScreen() {
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
+            filters={profile.filters}
             shown={listed.length}
             total={rows.length}
             filename="semester-promotion.csv"
-            headers={["scholar_name", "identifier", "current_semester"]}
-            rows={listed.map((row) => [row.name, row.identifier, row.currentLabel])}
+            headers={["scholar_name", "identifier", "current_semester", ...profile.headers]}
+            rows={listed.map((row) => [
+              row.name,
+              row.identifier,
+              row.currentLabel,
+              ...profile.cells(row.identifier),
+            ])}
           />
           <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
             <table className="w-full min-w-[40rem] border-collapse text-left text-sm">

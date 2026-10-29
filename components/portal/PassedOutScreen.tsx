@@ -17,6 +17,8 @@ import {
 } from "@/lib/register";
 import { scholarRows } from "@/lib/supervision";
 import { usePreviewSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { syncAllottedVacancies } from "@/lib/vacancies";
 
 type ReadyRow = {
@@ -48,6 +50,7 @@ export function PassedOutScreen() {
   const [query, setQuery] = useState("");
   const [guideFilter, setGuideFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
+  const profile = useScholarProfiles(undefined, { omitGuide: true });
 
   const ready = useMemo<ReadyRow[]>(() => {
     if (!office || !doctoral) return [];
@@ -82,12 +85,14 @@ export function PassedOutScreen() {
   const readyShown = ready.filter(
     (row) =>
       filterMatches(guideFilter, row.supervisorName) &&
+      profile.matches(row.identifier) &&
       textMatches(query, [row.name, row.identifier, row.supervisorName, row.batchName]),
   );
   const passedShown = passedOut.filter(
     (row) =>
       filterMatches(guideFilter, row.supervisorName) &&
       filterMatches(yearFilter, row.movedOn.slice(0, 4)) &&
+      profile.matches(row.key) &&
       textMatches(query, [row.name, row.key, row.supervisorName]),
   );
 
@@ -183,18 +188,27 @@ export function PassedOutScreen() {
                 options: guides.map((value) => ({ value, label: value })),
                 onChange: setGuideFilter,
               },
+              ...profile.filters,
             ]}
             shown={readyShown.length}
             total={ready.length}
             filename="viva-passed-scholars.csv"
             title="Scholars who passed the viva"
-            headers={["Scholar", "Sign-in", "Batch", "Supervisor", "Viva on"]}
+            headers={[
+              "Scholar",
+              "Sign-in",
+              "Batch",
+              "Supervisor",
+              "Viva on",
+              ...profile.headers,
+            ]}
             rows={readyShown.map((row) => [
               row.name,
               row.identifier,
               row.batchName,
               row.supervisorName,
               row.vivaOn,
+              ...profile.cells(row.identifier),
             ])}
           />
           {ready.length === 0 ? (
@@ -225,6 +239,7 @@ export function PassedOutScreen() {
                       />
                     </th>
                     <th className="px-4 py-3">Scholar</th>
+                    <th className="px-4 py-3">{profileColumnHeading}</th>
                     <th className="px-4 py-3">Batch</th>
                     <th className="px-4 py-3">Supervisor</th>
                     <th className="px-4 py-3">Viva on</th>
@@ -253,6 +268,9 @@ export function PassedOutScreen() {
                       <td className="px-4 py-3">
                         <p className="font-semibold text-primary">{row.name}</p>
                         <p className="text-muted-foreground">{row.identifier}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProfileCell profile={profile.profileOf(row.identifier)} />
                       </td>
                       <td className="px-4 py-3">{row.batchName || "—"}</td>
                       <td className="px-4 py-3">{row.supervisorName || "—"}</td>
@@ -300,6 +318,7 @@ export function PassedOutScreen() {
                   .map((value) => ({ value, label: value })),
                 onChange: setYearFilter,
               },
+              ...profile.filters,
             ]}
             shown={passedShown.length}
             total={passedOut.length}
@@ -312,6 +331,7 @@ export function PassedOutScreen() {
               "Viva on",
               "Moved on",
               "Moved by",
+              ...profile.headers,
             ]}
             rows={passedShown.map((row) => [
               row.name,
@@ -320,6 +340,7 @@ export function PassedOutScreen() {
               row.vivaOn,
               row.movedOn,
               row.movedBy,
+              ...profile.cells(row.key),
             ])}
           />
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -327,6 +348,7 @@ export function PassedOutScreen() {
               <thead className="bg-muted text-primary">
                 <tr>
                   <th className="px-4 py-3">Scholar</th>
+                  <th className="px-4 py-3">{profileColumnHeading}</th>
                   <th className="px-4 py-3">Supervisor</th>
                   <th className="px-4 py-3">Viva on</th>
                   <th className="px-4 py-3">Moved on</th>
@@ -339,7 +361,7 @@ export function PassedOutScreen() {
                 {passedShown.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No passed-out scholars yet.
@@ -351,6 +373,9 @@ export function PassedOutScreen() {
                       <td className="px-4 py-3">
                         <p className="font-semibold text-primary">{row.name}</p>
                         <p className="text-muted-foreground">{row.key}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProfileCell profile={profile.profileOf(row.key)} />
                       </td>
                       <td className="px-4 py-3">{row.supervisorName || "—"}</td>
                       <td className="px-4 py-3">{formatIsoDate(row.vivaOn)}</td>

@@ -40,7 +40,11 @@ export const colloquiumRule = {
 } as const;
 
 export const colloquiumRuleText =
-  "As per the University Ph.D. regulations, attendance at the colloquium is mandatory: a full-time scholar must attend at least 3 of 6 colloquia and a part-time scholar at least 4 of 8.";
+  "Attend the colloquia until you submit your synopsis. The research office checks your attendance when it verifies the synopsis and thesis checklists.";
+
+/** The minimum read out at the synopsis and thesis checklists (not shown on the colloquium pages). */
+export const colloquiumMinimumText = (mode: StudyMode) =>
+  `${mode === "Full time" ? "Full-time" : "Part-time"} scholar: at least ${colloquiumRule[mode].required} of ${colloquiumRule[mode].total} colloquia`;
 
 export type StudyMode = keyof typeof colloquiumRule;
 
@@ -66,6 +70,10 @@ export type ScholarReport = {
   batchId: string;
   batchName: string;
   subject: string;
+  /** The scholar's department on the register (the subject when it has none). */
+  department: string;
+  /** The campus of the scholar's guide. */
+  campus: string;
   mode: StudyMode;
   guideName: string;
   guideIdentifier: string;
@@ -260,6 +268,9 @@ export function scholarReport(row: ScholarRow, sources: ReportSources): ScholarR
     batchId,
     batchName: row.batchName || batchById(batchId)?.name || ledger.batchName || "",
     subject: row.subject || register?.department || enrollment?.school || "",
+    department: register?.department || row.subject || enrollment?.school || "",
+    campus:
+      supervisorForGuide(row.currentName || register?.guideName || "")?.campus || "",
     mode,
     guideName: row.currentName,
     guideIdentifier: row.currentIdentifier,
@@ -414,9 +425,7 @@ export function registerMilestones(
     confirmation,
     colloquium1: attendedOn[0] ?? "",
     colloquium2: attendedOn[1] ?? "",
-    colloquium: standing
-      ? `${standing.attended} of ${standing.required} · ${standing.status}`
-      : "",
+    colloquium: standing ? `${standing.attended} attended` : "",
     synopsis: decision(
       find((key) => latestSynopsis(doctoral, key)),
       scholar.synopsis,
@@ -472,7 +481,6 @@ export function alertsOf(row: ScholarReport) {
   if (row.sixMonthDue > row.sixMonthApproved) {
     alerts.push(`${row.sixMonthDue - row.sixMonthApproved} six-month report(s) pending`);
   }
-  if (row.colloquium.status === "At risk") alerts.push("Colloquium attendance short");
   if (row.courseArrears > 0) alerts.push(`${row.courseArrears} course-work arrear(s)`);
   if (row.feeBalance > 0)
     alerts.push(`Fee due ₹${row.feeBalance.toLocaleString("en-IN")}`);

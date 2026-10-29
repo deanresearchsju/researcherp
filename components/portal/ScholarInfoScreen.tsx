@@ -17,7 +17,9 @@ import {
   subscribeScholarRecords,
   type ScholarRecord,
 } from "@/lib/scholar-records";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { useScholarReports } from "@/lib/use-report-sources";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { usePreviewSession } from "@/lib/use-preview-session";
 import { RegisterImport } from "@/components/portal/RegisterImport";
 
@@ -46,6 +48,7 @@ export function ScholarInfoScreen() {
     record?: ScholarRecord;
   } | null>(null);
   const [viewing, setViewing] = useState<ScholarRecord | null>(null);
+  const profile = useScholarProfiles();
 
   if (!data.ready || !load) {
     return <p className="text-sm text-muted-foreground">Loading scholars…</p>;
@@ -67,6 +70,7 @@ export function ScholarInfoScreen() {
     (row) =>
       filterMatches(batch, row.report.batchName) &&
       filterMatches(status, row.state) &&
+      profile.matches(row.report.identifier) &&
       textMatches(query, [row.report.name, row.report.registration, row.report.subject]),
   );
   const fields = menu.fields;
@@ -123,6 +127,7 @@ export function ScholarInfoScreen() {
             })),
             onChange: setStatus,
           },
+          ...profile.filters,
         ]}
         shown={shown.length}
         total={rows.length}
@@ -133,6 +138,7 @@ export function ScholarInfoScreen() {
           "Registration No.",
           "Batch",
           "Status",
+          ...profile.headers,
           ...fields.map((f) => f.label),
         ]}
         rows={shown.map((row) => [
@@ -140,6 +146,7 @@ export function ScholarInfoScreen() {
           row.report.registration,
           row.report.batchName,
           row.state,
+          ...profile.cells(row.report.identifier),
           ...fields.map((field) => row.record?.payload[field.name] ?? ""),
         ])}
       />
@@ -147,7 +154,7 @@ export function ScholarInfoScreen() {
         <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
           <thead className="bg-muted text-primary">
             <tr>
-              {["Scholar", "Batch", "Mobile · Email", "Status", ""].map((header) => (
+              {["Scholar", profileColumnHeading, "Batch", "Mobile · Email", "Status", ""].map((header) => (
                 <th key={header} className="px-4 py-3 font-semibold">
                   {header}
                 </th>
@@ -157,7 +164,7 @@ export function ScholarInfoScreen() {
           <tbody>
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-muted-foreground">
+                <td colSpan={6} className="px-4 py-6 text-muted-foreground">
                   No scholar matches.
                 </td>
               </tr>
@@ -169,6 +176,9 @@ export function ScholarInfoScreen() {
                     <p className="font-mono text-xs text-muted-foreground">
                       {report.registration}
                     </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <ProfileCell profile={profile.profileOf(report.identifier)} />
                   </td>
                   <td className="px-4 py-3">{report.batchName || "—"}</td>
                   <td className="px-4 py-3 text-xs">

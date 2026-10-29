@@ -10,6 +10,13 @@ import { z } from "zod";
 import { DeskModal, FormDialog, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
+import {
+  chainOf,
+  currentApprovalRules,
+  mayAct,
+  stageApplies,
+  subscribeApprovalRules,
+} from "@/lib/approval-rules";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -21,15 +28,16 @@ import {
   currentOffice,
   decideRac,
   decideRacFinal,
+  deleteRacEntry,
   enterRacByOffice,
   normaliseNominee,
   nomineeProblem,
   presentRac,
   racExternalMax,
+  racMemberProblem,
   racExternalMin,
   racInternalMax,
   racInternalMin,
-  racPublicationsRequired,
   racStanding,
   sameId,
   saveRacProposal,
@@ -41,6 +49,8 @@ import {
 import { researchRegister } from "@/data/research-register";
 import { scholarSignInId, supervisorForGuide } from "@/lib/register";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell } from "@/components/portal/ProfileCell";
 
 const nomineeSchema = z.object({
   name: z.string().trim().min(2, "Enter the name."),
@@ -54,9 +64,7 @@ const nomineeSchema = z.object({
     .trim()
     .refine((value) => value.replace(/\D/g, "").length >= 8, "Enter the contact number."),
   specialization: z.string().trim().min(2, "Enter the area of research."),
-  publications: z
-    .array(z.string().trim().min(5, "Name the publication."))
-    .length(racPublicationsRequired),
+  publications: z.array(z.string()),
 });
 
 /** An optional member: left empty it is ignored; once started it needs every detail. */
@@ -76,17 +84,15 @@ const optionalSlots = ["internal2", "internal3", "external3"] as const;
 
 /** Has anything been typed for this member (the institution of an internal member is pre-filled)? */
 function touched(value: z.infer<typeof looseNominee>) {
-  return (
-    [
-      value.name,
-      value.designation,
-      value.department,
-      value.address,
-      value.email,
-      value.phone,
-      value.specialization,
-    ].some((item) => item.trim()) || value.publications.some((item) => item.trim())
-  );
+  return [
+    value.name,
+    value.designation,
+    value.department,
+    value.address,
+    value.email,
+    value.phone,
+    value.specialization,
+  ].some((item) => item.trim());
 }
 
 const proposalSchema = z
@@ -136,7 +142,7 @@ function blankNominee(institution: string) {
     email: "",
     phone: "",
     specialization: "",
-    publications: Array.from({ length: racPublicationsRequired }, () => ""),
+    publications: [] as string[],
   };
 }
 
@@ -345,26 +351,6 @@ function NomineeFields({
           </FormField>
         </div>
       </div>
-      <div className="mt-3 space-y-2">
-        <p className="text-sm font-medium">
-          Latest {racPublicationsRequired} publications (type each one; no file is
-          uploaded)
-        </p>
-        {Array.from({ length: racPublicationsRequired }, (_, index) => (
-          <div key={index}>
-            <Input
-              aria-label={`Publication ${index + 1}`}
-              placeholder={`Publication ${index + 1}: authors, title, journal, year`}
-              {...register(field(`publications.${index}`))}
-            />
-            {problems.publications?.[index]?.message ? (
-              <p className="mt-1 text-xs text-secondary">
-                {problems.publications?.[index]?.message}
-              </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
     </fieldset>
   );
 }
@@ -412,30 +398,15 @@ function NomineeEditor({
           />
         </label>
       </div>
-      <div className="mt-3 space-y-2">
-        <p className="text-sm font-medium">
-          Latest {racPublicationsRequired} publications (type each one)
-        </p>
-        {value.publications.map((item, index) => (
-          <Input
-            key={index}
-            aria-label={`Publication ${index + 1}`}
-            placeholder={`Publication ${index + 1}: authors, title, journal, year`}
-            value={item}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                publications: value.publications.map((entry, at) =>
-                  at === index ? event.target.value : entry,
-                ),
-              })
-            }
-          />
-        ))}
-      </div>
     </fieldset>
   );
 }
+
+const sideLabel = (side: RacNominee["side"], recorded: boolean, key: string) => {
+  if (side === "coguide") return "Co-guide (if required)";
+  if (side === "internal") return `Internal member ${key.slice(-1)}`;
+  return recorded ? "External member" : `External panel candidate ${key.slice(-1)}`;
+};
 
 const blankMember = (
   key: RacNominee["key"],
@@ -452,9 +423,11 @@ const blankMember = (
  * the external candidates, with the details. It goes to the Dean and the Vice Chancellor like any
  * other nomination; the administrator can instead record a RAC approved earlier.
  */
-function OfficeEntryDialog({
+export function OfficeEntryDialog({
   scholars,
   canRecord,
+  initialScholar = "",
+  defaultRecorded = false,
   onClose,
   onDone,
 }: {
@@ -465,11 +438,15 @@ function OfficeEntryDialog({
     supervisorName: string;
   }[];
   canRecord: boolean;
+  /** The scholar already chosen (when the dialog is opened from the Scholar register). */
+  initialScholar?: string;
+  /** Start with "approved earlier" ticked: the usual case when the RACs of all batches are entered. */
+  defaultRecorded?: boolean;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
-  const [scholar, setScholar] = useState("");
-  const [recorded, setRecorded] = useState(false);
+  const [scholar, setScholar] = useState(initialScholar);
+  const [recorded, setRecorded] = useState(defaultRecorded && canRecord);
   const [reason, setReason] = useState("");
   const [members, setMembers] = useState<RacNominee[]>([
     blankMember("internal-1", "internal", university.name),
@@ -480,10 +457,12 @@ function OfficeEntryDialog({
   const [busy, setBusy] = useState(false);
   const internalCount = members.filter((item) => item.side === "internal").length;
   const externalCount = members.filter((item) => item.side === "external").length;
+  const coGuide = members.find((item) => item.side === "coguide");
   const shown = recorded
     ? [
         members.find((item) => item.side === "internal"),
         members.find((item) => item.side === "external"),
+        coGuide,
       ].filter((item): item is RacNominee => Boolean(item))
     : members;
   const addMember = (side: RacNominee["side"]) =>
@@ -509,7 +488,11 @@ function OfficeEntryDialog({
         index < (recorded ? 2 : racInternalMin + racExternalMin) || touched(member),
     );
     for (const member of used) {
-      const problem = nomineeProblem(member);
+      // A RAC approved earlier, and a co-guide, need only the name, designation and institution.
+      const problem =
+        recorded || member.side === "coguide"
+          ? racMemberProblem(member)
+          : nomineeProblem(member);
       if (problem) return setError(problem);
     }
     setBusy(true);
@@ -571,16 +554,10 @@ function OfficeEntryDialog({
             </span>
           </label>
         ) : null}
-        {shown.map((member, index) => (
+        {shown.map((member) => (
           <NomineeEditor
             key={member.key}
-            label={
-              member.side === "internal"
-                ? `Internal member ${member.key.slice(-1)}`
-                : recorded
-                  ? "External member"
-                  : `External panel candidate ${member.key.slice(-1)}`
-            }
+            label={sideLabel(member.side, recorded, member.key)}
             value={member}
             onChange={(next) =>
               setMembers((current) =>
@@ -589,6 +566,31 @@ function OfficeEntryDialog({
             }
           />
         ))}
+        <div className="flex flex-wrap gap-2">
+          {coGuide ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setMembers((current) => current.filter((item) => item.side !== "coguide"))
+              }
+            >
+              Remove the co-guide
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setMembers((current) => [...current, blankMember("coguide-1", "coguide")])
+              }
+            >
+              Add a co-guide
+            </Button>
+          )}
+        </div>
         {!recorded ? (
           <div className="flex flex-wrap gap-2">
             {internalCount < racInternalMax ? (
@@ -630,10 +632,16 @@ function OfficeEntryDialog({
 export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }) {
   const session = usePortalSession();
   const office = useSyncExternalStore(subscribeOffice, currentOffice, () => null);
+  const rules = useSyncExternalStore(
+    subscribeApprovalRules,
+    currentApprovalRules,
+    () => null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [kindFilter, setKindFilter] = useState("");
+  const profile = useScholarProfiles();
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [agenda, setAgenda] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, string>>({});
@@ -657,8 +665,15 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
     ((mode === "scholar" && session.role === "scholar") ||
       (mode === "supervisor" && session.role === "supervisor") ||
       mode === "admin");
-  const canSelect = session?.role === "dean" || session?.role === "admin";
-  const canFinish = session?.role === "vc" || session?.role === "admin";
+  const racChain = chainOf(rules?.rules ?? {}, "rac");
+  const selector = racChain.find((stage) => stage !== "supervisor") ?? "dean";
+  const canSelect = mayAct(session?.role, selector);
+  const mayNominate = racChain.includes("supervisor");
+  const vcStep = stageApplies(rules?.rules ?? {}, "rac", "vc");
+  const canFinish =
+    session?.role === "vc" ||
+    session?.role === "admin" ||
+    (session?.role === "dean" && !vcStep);
   const canEnter =
     session?.role === "admin" || session?.role === "staff" || session?.role === "dean";
   const mine =
@@ -837,6 +852,7 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
     (proposal) =>
       filterMatches(kindFilter, proposal.kind) &&
       filterMatches(statusFilter, proposal.status) &&
+      profile.matches(proposal.scholarIdentifier) &&
       textMatches(query, [
         proposal.scholarName,
         proposal.supervisorName,
@@ -963,6 +979,10 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                           {racCopy.printMemo}
                         </Button>
                       </>
+                    ) : standing.canRequest && !mayNominate ? (
+                      <p className="text-sm text-muted-foreground">
+                        The research office enters the RAC now.
+                      </p>
                     ) : standing.canRequest ? (
                       <Button
                         type="button"
@@ -1065,17 +1085,19 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                 })),
                 onChange: setStatusFilter,
               },
+              ...profile.filters,
             ]}
             shown={filtered.length}
             total={office.proposals.length}
             filename="rac-nominations.csv"
-            headers={["scholar", "supervisor", "kind", "status", "selected by"]}
+            headers={["scholar", "supervisor", "kind", "status", "selected by", ...profile.headers]}
             rows={filtered.map((proposal) => [
               proposal.scholarName,
               proposal.supervisorName,
               proposal.kind,
               proposal.status,
               proposal.decidedBy,
+              ...profile.cells(proposal.scholarIdentifier),
             ])}
           />
           {filtered.length === 0 ? (
@@ -1100,6 +1122,9 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                       <h2 className="font-semibold text-primary">
                         {proposal.scholarName} · {proposal.kind}
                       </h2>
+                      <div className="text-xs">
+                        <ProfileCell profile={profile.profileOf(proposal.scholarIdentifier)} />
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         Guide {proposal.supervisorName} ·{" "}
                         {formatIsoDate(proposal.createdAt.slice(0, 10))}
@@ -1115,6 +1140,32 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
+                      {proposal.officeEntry &&
+                      (session?.role === "admin" || session?.role === "staff") ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="maroon"
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                `Delete the RAC entered for ${proposal.scholarName}? An entered RAC cannot be edited; enter it again if it was wrong.`,
+                              )
+                            )
+                              return;
+                            setNotice(null);
+                            void deleteRacEntry(proposal).then((result) =>
+                              setNotice(
+                                result.ok
+                                  ? `The RAC of ${proposal.scholarName} is deleted.`
+                                  : result.message,
+                              ),
+                            );
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"
@@ -1196,38 +1247,44 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                               return (
                                 <tr key={nominee.key} className="border-t border-border">
                                   <td className="px-2 py-2">
-                                    <input
-                                      type="radio"
-                                      name={`${proposal.id}-${nominee.side}`}
-                                      checked={selected}
-                                      disabled={
-                                        !open ||
-                                        (nominee.side === "internal" &&
-                                          proposal.nominees.filter(
-                                            (item) => item.side === "internal",
-                                          ).length === 1)
-                                      }
-                                      aria-label={`Select ${nominee.name}`}
-                                      onChange={() =>
-                                        setChoice((current) => ({
-                                          ...current,
-                                          [proposal.id]: {
-                                            internal:
-                                              nominee.side === "internal"
-                                                ? nominee.key
-                                                : (current[proposal.id]?.internal ??
-                                                  proposal.selectedInternal),
-                                            external:
-                                              nominee.side === "external"
-                                                ? nominee.key
-                                                : (current[proposal.id]?.external ??
-                                                  proposal.selectedExternal),
-                                          },
-                                        }))
-                                      }
-                                    />
+                                    {nominee.side === "coguide" ? null : (
+                                      <input
+                                        type="radio"
+                                        name={`${proposal.id}-${nominee.side}`}
+                                        checked={selected}
+                                        disabled={
+                                          !open ||
+                                          (nominee.side === "internal" &&
+                                            proposal.nominees.filter(
+                                              (item) => item.side === "internal",
+                                            ).length === 1)
+                                        }
+                                        aria-label={`Select ${nominee.name}`}
+                                        onChange={() =>
+                                          setChoice((current) => ({
+                                            ...current,
+                                            [proposal.id]: {
+                                              internal:
+                                                nominee.side === "internal"
+                                                  ? nominee.key
+                                                  : (current[proposal.id]?.internal ??
+                                                    proposal.selectedInternal),
+                                              external:
+                                                nominee.side === "external"
+                                                  ? nominee.key
+                                                  : (current[proposal.id]?.external ??
+                                                    proposal.selectedExternal),
+                                            },
+                                          }))
+                                        }
+                                      />
+                                    )}
                                   </td>
-                                  <td className="px-2 py-2 capitalize">{nominee.side}</td>
+                                  <td className="px-2 py-2 capitalize">
+                                    {nominee.side === "coguide"
+                                      ? "co-guide"
+                                      : nominee.side}
+                                  </td>
                                   <td className="px-2 py-2">{nominee.name}</td>
                                   <td className="px-2 py-2">{nominee.designation}</td>
                                   <td className="px-2 py-2">
@@ -1402,7 +1459,7 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
       {entering ? (
         <OfficeEntryDialog
           scholars={officeScholars}
-          canRecord={session?.role === "admin"}
+          canRecord={session?.role === "admin" || session?.role === "staff"}
           onClose={() => setEntering(false)}
           onDone={(message) => {
             setNotice(message);

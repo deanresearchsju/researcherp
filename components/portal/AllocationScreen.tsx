@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import { PageTitle } from "@/components/portal/Desk";
 import { GuideHistory } from "@/components/portal/GuideHistory";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { PersonNameLink } from "@/components/portal/PersonNameLink";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -47,6 +48,7 @@ export function AllocationScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [guideFilter, setGuideFilter] = useState("");
+  const profile = useScholarProfiles(undefined, { omitGuide: true });
 
   if (!office || !users) {
     return <p className="text-sm text-muted-foreground">Loading allotments…</p>;
@@ -174,11 +176,13 @@ export function AllocationScreen() {
             })),
             onChange: setGuideFilter,
           },
+          ...profile.filters,
         ]}
         shown={
           office.allocations.filter(
             (item) =>
               filterMatches(guideFilter, item.supervisorIdentifier) &&
+              profile.matches(item.scholarIdentifier) &&
               textMatches(query, [
                 item.scholarName,
                 item.scholarIdentifier,
@@ -194,11 +198,13 @@ export function AllocationScreen() {
           "scholar_identifier",
           "supervisor_name",
           "supervisor_identifier",
+          ...profile.headers,
         ]}
         rows={office.allocations
           .filter(
             (item) =>
               filterMatches(guideFilter, item.supervisorIdentifier) &&
+              profile.matches(item.scholarIdentifier) &&
               textMatches(query, [
                 item.scholarName,
                 item.scholarIdentifier,
@@ -211,6 +217,7 @@ export function AllocationScreen() {
             item.scholarIdentifier,
             item.supervisorName,
             item.supervisorIdentifier,
+            ...profile.cells(item.scholarIdentifier),
           ])}
       />
       <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -229,6 +236,7 @@ export function AllocationScreen() {
               .filter(
                 (item) =>
                   filterMatches(guideFilter, item.supervisorIdentifier) &&
+                  profile.matches(item.scholarIdentifier) &&
                   textMatches(query, [
                     item.scholarName,
                     item.scholarIdentifier,

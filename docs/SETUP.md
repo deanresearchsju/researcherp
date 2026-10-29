@@ -75,6 +75,7 @@ The files, in order:
 32. `20261024200000_course_work_exams`
 33. `20261027100000_single_sign_in` (one sign-in at a time)
 34. `20261027200000_rac_vc_approval` (RAC approval by the Vice Chancellor, RAC entered by the office)
+35. `20261028100000_close_public_access` (closes every table and function to the public key; run it **last**, after the new version is live and `node --env-file=.env.local scripts/seed-register.mjs` has stored the register; see SECURITY)
 
 When a new migration is added later, run only the new file.
 

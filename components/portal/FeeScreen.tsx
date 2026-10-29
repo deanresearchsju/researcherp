@@ -1,12 +1,14 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Wallet } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
 import { PaymentInstructions } from "@/components/forms/PaymentInstructions";
 import {
+  DeskTabs,
   FormDialog,
   PageTitle,
   ScholarIdentityHeader,
@@ -14,6 +16,7 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ScholarFeeStatus } from "@/components/portal/ScholarFeeStatus";
+import { SubmissionFeePanel } from "@/components/portal/SubmissionFeePanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -365,6 +368,10 @@ export function FeeScreen() {
   );
   const [paying, setPaying] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<"annual" | "synopsis" | "thesis">(
+    asked === "synopsis" || asked === "thesis" ? asked : "annual",
+  );
 
   if (!ready || !load || !session) {
     return <p className="text-sm text-muted-foreground">Loading fee…</p>;
@@ -383,91 +390,111 @@ export function FeeScreen() {
     <section className="space-y-6">
       <PageTitle kicker="Scholar" title="Fee" />
       <ScholarIdentityHeader identifier={session.identifier} />
-      {notice ? (
-        <p role="status" className="text-sm font-medium text-secondary">
-          {notice}
-        </p>
-      ) : null}
-      {myReminders.map((item) => (
-        <div
-          key={`${item.key}-${item.feeYear}`}
-          role="alert"
-          className="flex items-start gap-3 rounded-2xl border border-secondary/30 bg-secondary/10 p-4 text-sm text-secondary"
-        >
-          <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-          <div>
-            <p className="font-semibold">
-              Fee reminder{item.dueOn ? ` · due ${formatIsoDate(item.dueOn)}` : ""}
-            </p>
-            <p className="mt-1 leading-6">{item.message}</p>
-          </div>
-        </div>
-      ))}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Tile
-          label="Annual research fee"
-          value={`₹${formatInr(current.amount)}`}
-          note={ledger.studyMode}
-        />
-        <Tile
-          label={`Paid · Year ${current.index}`}
-          value={`₹${formatInr(current.paid)}`}
-          tone="good"
-        />
-        <Tile
-          label={`Balance · Year ${current.index}`}
-          value={`₹${formatInr(current.balance)}`}
-          tone={current.balance > 0 ? "due" : "good"}
-          note={
-            current.pending
-              ? `₹${formatInr(current.pending)} under verification`
-              : undefined
-          }
-        />
-        <Tile
-          label="Total outstanding"
-          value={`₹${formatInr(ledger.outstanding)}`}
-          tone={ledger.outstanding > 0 ? "due" : "good"}
-          note="All years so far"
-        />
-      </div>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Wallet className="size-4" aria-hidden="true" />
-        The annual fee can be paid in up to {maxInstallments} instalments. The last
-        instalment clears the balance.
-        {current.balance === 0 ? (
-          <span className="inline-flex items-center gap-1 font-semibold text-primary">
-            <CheckCircle2 className="size-4" aria-hidden="true" /> This year is fully
-            paid.
-          </span>
-        ) : null}
-      </p>
-      <div className="space-y-4">
-        {[...ledger.plan].reverse().map((year) => (
-          <YearCard
-            key={year.index}
-            year={year}
-            onPay={() => {
-              setNotice(null);
-              setPaying(year.index);
-            }}
-            onNotice={setNotice}
-          />
-        ))}
-      </div>
-      <ScholarFeeStatus identifier={session.identifier} />
-      {payingYear ? (
-        <PayDialog
-          year={payingYear}
+      <DeskTabs
+        tabs={[
+          { id: "annual", label: "Annual fee" },
+          { id: "synopsis", label: "Synopsis fee" },
+          { id: "thesis", label: "Thesis fee" },
+        ]}
+        value={tab}
+        onChange={(id) => setTab(id as typeof tab)}
+      />
+      {tab !== "annual" ? (
+        <SubmissionFeePanel
+          kind={tab}
           identifier={session.identifier}
           name={session.name.trim() || session.identifier}
-          onClose={() => setPaying(null)}
-          onDone={(message) => {
-            setPaying(null);
-            setNotice(message);
-          }}
+          payments={load.records}
         />
-      ) : null}
+      ) : (
+        <>
+          {notice ? (
+            <p role="status" className="text-sm font-medium text-secondary">
+              {notice}
+            </p>
+          ) : null}
+          {myReminders.map((item) => (
+            <div
+              key={`${item.key}-${item.feeYear}`}
+              role="alert"
+              className="flex items-start gap-3 rounded-2xl border border-secondary/30 bg-secondary/10 p-4 text-sm text-secondary"
+            >
+              <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">
+                  Fee reminder{item.dueOn ? ` · due ${formatIsoDate(item.dueOn)}` : ""}
+                </p>
+                <p className="mt-1 leading-6">{item.message}</p>
+              </div>
+            </div>
+          ))}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Tile
+              label="Annual research fee"
+              value={`₹${formatInr(current.amount)}`}
+              note={ledger.studyMode}
+            />
+            <Tile
+              label={`Paid · Year ${current.index}`}
+              value={`₹${formatInr(current.paid)}`}
+              tone="good"
+            />
+            <Tile
+              label={`Balance · Year ${current.index}`}
+              value={`₹${formatInr(current.balance)}`}
+              tone={current.balance > 0 ? "due" : "good"}
+              note={
+                current.pending
+                  ? `₹${formatInr(current.pending)} under verification`
+                  : undefined
+              }
+            />
+            <Tile
+              label="Total outstanding"
+              value={`₹${formatInr(ledger.outstanding)}`}
+              tone={ledger.outstanding > 0 ? "due" : "good"}
+              note="All years so far"
+            />
+          </div>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Wallet className="size-4" aria-hidden="true" />
+            The annual fee can be paid in up to {maxInstallments} instalments. The last
+            instalment clears the balance.
+            {current.balance === 0 ? (
+              <span className="inline-flex items-center gap-1 font-semibold text-primary">
+                <CheckCircle2 className="size-4" aria-hidden="true" /> This year is fully
+                paid.
+              </span>
+            ) : null}
+          </p>
+          <div className="space-y-4">
+            {[...ledger.plan].reverse().map((year) => (
+              <YearCard
+                key={year.index}
+                year={year}
+                onPay={() => {
+                  setNotice(null);
+                  setPaying(year.index);
+                }}
+                onNotice={setNotice}
+              />
+            ))}
+          </div>
+          <ScholarFeeStatus identifier={session.identifier} />
+          {payingYear ? (
+            <PayDialog
+              year={payingYear}
+              identifier={session.identifier}
+              name={session.name.trim() || session.identifier}
+              onClose={() => setPaying(null)}
+              onDone={(message) => {
+                setPaying(null);
+                setNotice(message);
+              }}
+            />
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

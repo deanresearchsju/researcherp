@@ -123,19 +123,21 @@ const adminGroups: PortalNavGroup[] = [
   {
     heading: portalModules.examination,
     items: [
-      { label: "Registration windows", href: "/admin/course-windows", ready: true },
-      { label: "Course registrations", href: "/admin/course-work", ready: true },
       {
         label: registrationCopy.menu,
         href: "/admin/registration-numbers",
         ready: true,
       },
+      { label: "Registration windows", href: "/admin/course-windows", ready: true },
+      { label: "Course registrations", href: "/admin/course-work", ready: true },
       { label: "Semester promotion", href: "/admin/promotions", ready: true },
       { label: "Exam setup", href: "/admin/exam-setup", ready: true },
       { label: "Hall tickets & seating", href: "/admin/exam-tickets", ready: true },
       { label: "Invigilation duty", href: "/admin/invigilation", ready: true },
-      { label: "Result approval", href: "/admin/exam-results", ready: true },
       { label: "Results", href: "/admin/results", ready: true },
+      { label: "Mark entry", href: "/admin/coe/marks", ready: true },
+      { label: "Verify & freeze marks", href: "/admin/coe/verify", ready: true },
+      { label: "Result approval", href: "/admin/exam-results", ready: true },
     ],
   },
   {
@@ -158,7 +160,7 @@ const adminGroups: PortalNavGroup[] = [
   {
     heading: portalModules.fees,
     items: [
-      { label: "Fee collection", href: "/admin/fee", ready: true },
+      { label: "Tuition fees", href: "/admin/fee", ready: true },
       { label: "Fee approvals", href: "/admin/payments", ready: true },
     ],
   },
@@ -192,6 +194,7 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.administration,
     items: [
       { label: "Users", href: "/admin/users", ready: true },
+      { label: "Approval rules", href: "/admin/approval-rules", ready: true },
       { label: "Fee settings", href: "/admin/fee-settings", ready: true },
       { label: "Clear test data", href: "/admin/test-data", ready: true },
     ],
@@ -241,9 +244,11 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [
         record("scholar", "personal-details", "My details"),
         record("scholar", "abc-id", "ABC ID"),
+        { label: "Vidwan ID", href: "/scholar/vidwan-id", ready: true },
         { label: "Fee", href: "/scholar/fee", ready: true },
         { label: "Approved documents", href: "/scholar/approved", ready: true },
         { label: "Forms & formats", href: "/scholar/forms", ready: true },
+        { label: "Helpdesk", href: "/scholar/helpdesk", ready: true },
       ],
     },
   ],
@@ -280,6 +285,7 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [
         { label: "Approved documents", href: "/supervisor/approved", ready: true },
         { label: "Forms & formats", href: "/supervisor/forms", ready: true },
+        { label: "Helpdesk", href: "/supervisor/helpdesk", ready: true },
       ],
     },
   ],
@@ -292,18 +298,9 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [{ label: "Dashboard", href: "/admin/dashboard", ready: true }],
     },
     {
-      heading: portalModules.accounts,
-      items: [
-        { label: "Registration fee", href: "/admin/accounts/registration", ready: true },
-        {
-          label: "Course-work registration fee",
-          href: "/admin/accounts/course-work",
-          ready: true,
-        },
-        { label: "Annual fee", href: "/admin/accounts/annual", ready: true },
-        { label: "Synopsis fee", href: "/admin/accounts/synopsis", ready: true },
-        { label: "Thesis fee", href: "/admin/accounts/thesis", ready: true },
-      ],
+      // The same screen the research office uses under Fees: one place to check every fee.
+      heading: portalModules.fees,
+      items: [{ label: "Fee approvals", href: "/admin/payments", ready: true }],
     },
   ],
   coe: [
@@ -347,6 +344,46 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
     },
   ],
 };
+
+/**
+ * Every menu the administrator may give to a sign-in of a role. A role's own menus
+ * (portalGroups) are what it starts with; the administrator can add any other menu of the
+ * research office to any office sign-in (Accounts, the Vice Chancellor and the Controllers of
+ * Examinations included) and take any away. Clearing test data stays with the main administrator.
+ */
+function mergeGroups(groups: readonly PortalNavGroup[]): PortalNavGroup[] {
+  const seen = new Set<string>();
+  const merged: PortalNavGroup[] = [];
+  for (const group of groups) {
+    const items = group.items.filter((item) => {
+      if (seen.has(item.href)) return false;
+      seen.add(item.href);
+      return true;
+    });
+    if (items.length === 0) continue;
+    const same = merged.find((entry) => entry.heading === group.heading);
+    if (same) same.items = [...same.items, ...items];
+    else merged.push({ ...group, items });
+  }
+  return merged;
+}
+
+export const grantableGroups: Record<Role, PortalNavGroup[]> = Object.fromEntries(
+  (Object.keys(portalGroups) as Role[]).map((role) => {
+    if (role === "scholar" || role === "supervisor") return [role, portalGroups[role]];
+    return [
+      role,
+      mergeGroups([
+        ...portalGroups[role],
+        ...officeGroups(true, role === "admin"),
+        ...portalGroups.accounts,
+        ...portalGroups.coe,
+        ...portalGroups.coeverify,
+        ...portalGroups.vc,
+      ]),
+    ];
+  }),
+) as Record<Role, PortalNavGroup[]>;
 
 export const portalShellCopy = {
   workspace: "workspace",

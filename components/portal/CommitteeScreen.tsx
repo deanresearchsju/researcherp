@@ -19,7 +19,9 @@ import {
   ViewFilesButton,
 } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { Badge } from "@/components/ui/badge";
+import { approvalNeeds, mayAct, stageNames } from "@/lib/approval-rules";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -37,6 +39,7 @@ import {
   saveCommittee,
   setCommitteeTitle,
   subscribeDoctoral,
+  waitingStageOf,
   synopsisSubmitted,
   type CommitteeKind,
   type CommitteeReport,
@@ -59,6 +62,7 @@ import {
 import { loadRecordFile } from "@/lib/scholar-records";
 import { researchTitleOf, titleRuleText } from "@/lib/research-title";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { storeFile } from "@/lib/file-store";
 import { ApprovalBadge, ApprovalTrail } from "@/components/portal/ApprovalTrail";
 import { committeeSummary } from "@/lib/approval-flow";
@@ -78,7 +82,10 @@ export function isOfficeEntryScholar(identifier: string) {
 function stageOf(report: CommitteeReport) {
   if (report.status === "Approved") return report.officeEntry ? "Completed" : "Approved";
   if (report.status === "Rejected") return "Rejected";
-  return report.supervisorStatus === "Recommended" ? "With the Dean" : "With the guide";
+  const waiting = waitingStageOf(report);
+  return waiting === "supervisor" || !waiting
+    ? "With the guide"
+    : `With the ${stageNames[waiting]}`;
 }
 
 function stageTone(stage: string) {
@@ -154,7 +161,11 @@ function ScholarCommittee({
     }
     setUploading(false);
     setFile(null);
-    setNotice("Report submitted. Your guide reviews it first, then the Dean.");
+    setNotice(
+      approvalNeeds("committee", "supervisor")
+        ? "Report submitted. Your guide reviews it first, then the Dean."
+        : "Report submitted. It goes to the Dean.",
+    );
   }
 
   return (
@@ -236,7 +247,9 @@ function ScholarCommittee({
           title={`${dcCopy[kind].title} · report`}
           onClose={() => setUploading(false)}
           onSubmit={(event) => void upload(event)}
-          submitLabel="Submit to guide"
+          submitLabel={
+            approvalNeeds("committee", "supervisor") ? "Submit to guide" : "Submit"
+          }
         >
           {error ? (
             <p role="alert" className="text-sm text-secondary">
@@ -491,7 +504,7 @@ function OfficeCommittee({
     remarks: "",
   });
   const [error, setError] = useState<string | null>(null);
-  const canDecide = session?.role === "dean" || session?.role === "admin";
+  const profile = useScholarProfiles();
 
   const reports = doctoral.committees.filter(
     (item) => item.kind === kind && !item.officeEntry,
@@ -499,6 +512,7 @@ function OfficeCommittee({
   const shownReports = reports.filter(
     (item) =>
       filterMatches(stageFilter, stageOf(item)) &&
+      profile.matches(item.scholarIdentifier) &&
       textMatches(query, [item.scholarName, item.fileName, item.remarks]),
   );
 
@@ -519,6 +533,7 @@ function OfficeCommittee({
     (row) =>
       filterMatches(batchFilter, row.batchName) &&
       filterMatches(stageFilter, row.report ? "Completed" : "Not recorded") &&
+      profile.matches(row.identifier) &&
       textMatches(query, [row.name, row.identifier, row.batchName]),
   );
 
@@ -568,8 +583,9 @@ function OfficeCommittee({
       setError(saved.message);
       return;
     }
+    const last = waitingStageOf(reviewing) === reviewing.chain.at(-1);
     setNotice(
-      `${reviewing.scholarName}: ${status === "Approved" ? "approved" : "returned"}.`,
+      `${reviewing.scholarName}: ${status === "Approved" ? (last ? "approved" : "recommended") : "returned"}.`,
     );
     setReviewing(null);
   }
@@ -614,14 +630,19 @@ function OfficeCommittee({
                 id: "stage",
                 label: "Status",
                 value: stageFilter,
-                options: ["With the guide", "With the Dean", "Approved", "Returned"].map(
-                  (value) => ({
-                    value,
-                    label: value,
-                  }),
-                ),
+                options: [
+                  "With the guide",
+                  "With the Dean",
+                  "With the Vice Chancellor",
+                  "Approved",
+                  "Returned",
+                ].map((value) => ({
+                  value,
+                  label: value,
+                })),
                 onChange: setStageFilter,
               },
+              ...profile.filters,
             ]}
             shown={shownReports.length}
             total={reports.length}
@@ -634,6 +655,7 @@ function OfficeCommittee({
               "Guide",
               "Decided on",
               "Decided by",
+              ...profile.headers,
             ]}
             rows={shownReports.map((item) => [
               item.scholarName,
@@ -643,6 +665,7 @@ function OfficeCommittee({
               item.supervisorName,
               item.decidedOn,
               item.decidedBy,
+              ...profile.cells(item.scholarIdentifier),
             ])}
           />
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -650,6 +673,7 @@ function OfficeCommittee({
               <thead className="bg-muted text-primary">
                 <tr>
                   <th className="px-4 py-3">Scholar</th>
+                  <th className="px-4 py-3">{profileColumnHeading}</th>
                   <th className="px-4 py-3">Meeting</th>
                   <th className="px-4 py-3">Guide</th>
                   <th className="px-4 py-3">Status</th>
@@ -662,7 +686,7 @@ function OfficeCommittee({
                 {shownReports.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No uploaded report.
@@ -686,6 +710,9 @@ function OfficeCommittee({
                               {report.researchTitle}
                             </p>
                           ) : null}
+                        </td>
+                        <td className="px-4 py-3">
+                          <ProfileCell profile={profile.profileOf(report.scholarIdentifier)} />
                         </td>
                         <td className="px-4 py-3">
                           {report.meetingOn ? formatIsoDate(report.meetingOn) : "—"}
@@ -717,7 +744,8 @@ function OfficeCommittee({
                                 onError={setNotice}
                               />
                             ) : null}
-                            {stage === "With the Dean" && canDecide ? (
+                            {stage !== "With the guide" &&
+                            mayAct(session?.role, waitingStageOf(report)) ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -787,17 +815,26 @@ function OfficeCommittee({
                 })),
                 onChange: setStageFilter,
               },
+              ...profile.filters,
             ]}
             shown={shownLegacy.length}
             total={legacy.length}
             filename={`${kind}-committee-batches-1-3.csv`}
-            headers={["Scholar", "Batch", "Status", "Meeting date", "Recorded by"]}
+            headers={[
+              "Scholar",
+              "Batch",
+              "Status",
+              "Meeting date",
+              "Recorded by",
+              ...profile.headers,
+            ]}
             rows={shownLegacy.map((row) => [
               row.name,
               row.batchName,
               row.report ? "Completed" : "Not recorded",
               row.report?.meetingOn ?? "",
               row.report?.decidedBy ?? "",
+              ...profile.cells(row.identifier),
             ])}
           />
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -826,6 +863,7 @@ function OfficeCommittee({
                     />
                   </th>
                   <th className="px-4 py-3">Scholar</th>
+                  <th className="px-4 py-3">{profileColumnHeading}</th>
                   <th className="px-4 py-3">Batch</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">
@@ -852,6 +890,9 @@ function OfficeCommittee({
                       />
                     </td>
                     <td className="px-4 py-3 font-semibold text-primary">{row.name}</td>
+                    <td className="px-4 py-3">
+                      <ProfileCell profile={profile.profileOf(row.identifier)} />
+                    </td>
                     <td className="px-4 py-3">{row.batchName}</td>
                     <td className="px-4 py-3">
                       {row.report ? (
@@ -1070,7 +1111,9 @@ function OfficeCommittee({
               size="sm"
               onClick={() => void decide("Approved")}
             >
-              Approve
+              {reviewing && waitingStageOf(reviewing) !== reviewing.chain.at(-1)
+                ? "Recommend"
+                : "Approve"}
             </Button>
           </div>
         </DeskModal>

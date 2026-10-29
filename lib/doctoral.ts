@@ -6,14 +6,25 @@ import {
   programmeSemesters,
   reportTargets,
   schoolNeedsIndexedPair,
+  nptelCopy,
+  nptelKinds,
+  nptelMax,
   synopsisChecklist,
   thesisChecklist,
+  type NptelKind,
   thesisWindowMonths,
 } from "@/data/doctoral";
 import { officeActionCopy } from "@/data/office-actions";
 import { researchRegister } from "@/data/research-register";
 import { readPreviewSession } from "@/lib/auth";
 import { scholarSchoolName } from "@/lib/admission";
+import {
+  approvalChain,
+  mayAct,
+  nextStage,
+  stageNames,
+  type ApprovalStage,
+} from "@/lib/approval-rules";
 import { notifyOffice, pushNotice, recordAudit } from "@/lib/audit";
 import { committeeHref } from "@/lib/notice-links";
 import { examOutcomes, type ExamOutcome } from "@/data/exams";
@@ -29,6 +40,7 @@ import { clientToday } from "@/lib/dates";
 import { saveJsonBlob } from "@/lib/json-lock";
 import { currentOffice, presentRac, sameId } from "@/lib/office";
 import { scholarBySignIn, scholarSignInId, supervisorForGuide } from "@/lib/register";
+import { currentFees } from "@/lib/fee-settings";
 import { adminActionBlock, officeWriteBlock } from "@/lib/access";
 import { officeViewWriteBlock } from "@/lib/office-view";
 import { toJson } from "@/lib/records";
@@ -107,6 +119,8 @@ export type CourseRegistration = {
   code: string;
   name: string;
   amount: number;
+  /** The mark sheet fee, charged once with a registration (on its first paper). */
+  markSheetFee: number;
   paymentMode: string;
   paymentReference: string;
   paymentDate: string;
@@ -200,6 +214,10 @@ export type CommitteeReport = {
   decidedAt: string;
   /** Recorded by the office for batches that met before the ERP (no upload, no guide step). */
   officeEntry: boolean;
+  /** The guide's step comes first (an Approval rules choice, fixed when the report was sent). */
+  needsSupervisor: boolean;
+  chain: ApprovalStage[];
+  steps: StepMark[];
   /** Research title: fixed at the first committee, finalised at the second. */
   researchTitle: string;
 };
@@ -236,6 +254,16 @@ export function colloquiumMarked(item: Pick<Colloquium, "markedOn">) {
   return Boolean(item.markedOn);
 }
 
+/** A step of the approval chain after the supervisor's (the Dean's or the Vice Chancellor's). */
+export type StepMark = {
+  stage: ApprovalStage;
+  /** Recommended: passed on to the next step. Returned: turned down at this step. */
+  status: "Recommended" | "Returned";
+  by: string;
+  at: string;
+  remarks: string;
+};
+
 export type SynopsisSubmission = {
   id: string;
   scholarIdentifier: string;
@@ -249,6 +277,9 @@ export type SynopsisSubmission = {
   createdAt: string;
   /** The guide's step before the Dean, for work that needs it. */
   needsSupervisor: boolean;
+  /** The steps this request goes through (fixed when it was sent), and those done after the guide's. */
+  chain: ApprovalStage[];
+  steps: StepMark[];
   supervisorStatus: "" | "Recommended" | "Returned";
   supervisorRemarks: string;
   supervisorOn: string;
@@ -292,6 +323,9 @@ export type ThesisSubmission = {
   createdAt: string;
   /** The guide's step before the Dean, for work that needs it. */
   needsSupervisor: boolean;
+  /** The steps this request goes through (fixed when it was sent), and those done after the guide's. */
+  chain: ApprovalStage[];
+  steps: StepMark[];
   supervisorStatus: "" | "Recommended" | "Returned";
   supervisorRemarks: string;
   supervisorOn: string;
@@ -373,6 +407,39 @@ export type ReportAccess = {
   createdAt: string;
 };
 
+export type NptelCourse = {
+  id: string;
+  scholarIdentifier: string;
+  scholarName: string;
+  /** The semester (1 or 2) whose paper this course replaces. */
+  semester: number;
+  kind: NptelKind;
+  subjectName: string;
+  credit: string;
+  status: "Passed" | "In progress";
+  /** Month and year of passing (the month and year expected, while in progress). */
+  passMonth: string;
+  passYear: string;
+  racMinutesName: string;
+  racMinutesData: string | null;
+  proofName: string;
+  proofData: string | null;
+  /** In progress: no proof yet. Submitted: with the Dean. Approved: the scholar is exempt from the paper. */
+  approval: "In progress" | "Submitted" | "Approved" | "Rejected";
+  remarks: string;
+  decidedBy: string;
+  decidedOn: string;
+  createdAt: string;
+};
+
+export type VidwanEntry = {
+  /** The scholar's sign-in, in lower case. */
+  id: string;
+  identifier: string;
+  vidwanId: string;
+  savedOn: string;
+};
+
 export type DoctoralState = {
   batches: CourseBatch[];
   windows: CourseWindow[];
@@ -391,6 +458,10 @@ export type DoctoralState = {
   vivas: VivaRecord[];
   completions: CompletionRecord[];
   letters: IssuedLetter[];
+  /** NPTEL courses taken in place of course-work papers. */
+  nptel: NptelCourse[];
+  /** The Vidwan ID each scholar entered (the number only). */
+  vidwanIds: VidwanEntry[];
   detail: string | null;
 };
 
@@ -451,6 +522,8 @@ const empty: Omit<DoctoralState, "detail"> = {
   vivas: [],
   completions: [],
   letters: [],
+  nptel: [],
+  vidwanIds: [],
 };
 
 function text(value: unknown) {
@@ -458,9 +531,38 @@ function text(value: unknown) {
 }
 
 /** The guide-then-Dean approval details of a submitted document. */
+function parseStages(row: Record<string, unknown>, fallback: ApprovalStage[]) {
+  const wanted = list(row.chain).filter(
+    (item): item is ApprovalStage =>
+      item === "supervisor" || item === "dean" || item === "vc",
+  );
+  const chain = (["supervisor", "dean", "vc"] as const).filter((stage) =>
+    wanted.includes(stage),
+  );
+  return {
+    chain: chain.length > 0 ? chain : fallback,
+    steps: list(row.steps).flatMap((entry): StepMark[] => {
+      const step = objectRow(entry);
+      const stage = text(step?.stage);
+      if (!step || (stage !== "dean" && stage !== "vc" && stage !== "supervisor"))
+        return [];
+      return [
+        {
+          stage,
+          status: text(step.status) === "Returned" ? "Returned" : "Recommended",
+          by: text(step.by),
+          at: text(step.at),
+          remarks: text(step.remarks),
+        },
+      ];
+    }),
+  };
+}
+
 function parseChain(row: Record<string, unknown>) {
   const status = text(row.supervisorStatus);
   return {
+    ...parseStages(row, row.needsSupervisor === true ? ["supervisor", "dean"] : ["dean"]),
     needsSupervisor: row.needsSupervisor === true,
     supervisorStatus: (status === "Recommended" || status === "Returned"
       ? status
@@ -602,6 +704,7 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           code: text(registration.code),
           name: text(registration.name),
           amount: Number(registration.amount) || 0,
+          markSheetFee: Number(registration.markSheetFee) || 0,
           paymentMode: text(registration.paymentMode),
           paymentReference: text(registration.paymentReference),
           paymentDate: text(registration.paymentDate),
@@ -672,6 +775,15 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
           supervisorOn: text(report.supervisorOn),
           supervisorAt: text(report.supervisorAt),
           supervisorName: text(report.supervisorName),
+          needsSupervisor: report.needsSupervisor !== false,
+          ...parseStages(
+            report,
+            report.officeEntry === true
+              ? []
+              : report.needsSupervisor !== false
+                ? ["supervisor", "dean"]
+                : ["dean"],
+          ),
           decidedBy: text(report.decidedBy),
           decidedAt: text(report.decidedAt),
           officeEntry: report.officeEntry === true,
@@ -893,6 +1005,53 @@ function parseStored(value: unknown): Omit<DoctoralState, "detail"> {
         },
       ];
     }),
+    nptel: list(row.nptel).flatMap((item) => {
+      const course = objectRow(item);
+      if (!course || !text(course.id)) return [];
+      const kind = nptelKinds.find((value) => value === text(course.kind));
+      if (!kind) return [];
+      const approval = text(course.approval);
+      return [
+        {
+          id: text(course.id),
+          scholarIdentifier: text(course.scholarIdentifier),
+          scholarName: text(course.scholarName),
+          semester: Number(course.semester) === 2 ? 2 : 1,
+          kind,
+          subjectName: text(course.subjectName),
+          credit: text(course.credit),
+          status: (text(course.status) === "Passed" ? "Passed" : "In progress") as
+            "Passed" | "In progress",
+          passMonth: text(course.passMonth),
+          passYear: text(course.passYear),
+          racMinutesName: text(course.racMinutesName),
+          racMinutesData: text(course.racMinutesData) || null,
+          proofName: text(course.proofName),
+          proofData: text(course.proofData) || null,
+          approval: (approval === "Submitted" ||
+          approval === "Approved" ||
+          approval === "Rejected"
+            ? approval
+            : "In progress") as NptelCourse["approval"],
+          remarks: text(course.remarks),
+          decidedBy: text(course.decidedBy),
+          decidedOn: text(course.decidedOn),
+          createdAt: text(course.createdAt),
+        },
+      ];
+    }),
+    vidwanIds: list(row.vidwanIds).flatMap((item) => {
+      const entry = objectRow(item);
+      if (!entry || !text(entry.identifier) || !text(entry.vidwanId)) return [];
+      return [
+        {
+          id: text(entry.identifier).toLowerCase(),
+          identifier: text(entry.identifier),
+          vidwanId: text(entry.vidwanId),
+          savedOn: text(entry.savedOn),
+        },
+      ];
+    }),
     letters: list(row.letters).flatMap((item) => {
       const letter = objectRow(item);
       if (!letter || !text(letter.id)) return [];
@@ -1014,6 +1173,8 @@ async function loadDoctoral(): Promise<DoctoralState> {
     vivas: keep(browser.vivas, remote.vivas),
     completions: keep(browser.completions, remote.completions),
     letters: keep(browser.letters, remote.letters),
+    nptel: keep(browser.nptel ?? [], remote.nptel),
+    vidwanIds: remote.vidwanIds,
     detail: null,
   };
 }
@@ -1069,6 +1230,8 @@ function snapshot(): Omit<DoctoralState, "detail"> {
     vivas: current.vivas ?? [],
     completions: current.completions ?? [],
     letters: current.letters ?? [],
+    nptel: current.nptel ?? [],
+    vidwanIds: current.vidwanIds ?? [],
   };
 }
 
@@ -1510,6 +1673,7 @@ export async function registerSubject(
     code: registration.code ?? "",
     name: registration.name ?? "",
     amount: 0,
+    markSheetFee: 0,
     paymentMode: "",
     paymentReference: "",
     paymentDate: "",
@@ -1686,10 +1850,14 @@ export async function registerCoursePapers(input: {
       !item.arrear &&
       item.paymentStatus !== "Returned",
   );
-  if (firstAttempts.length + fresh.length > 2) {
+  const exempt = nptelUsed(next, input.scholarIdentifier, input.semester);
+  if (firstAttempts.length + fresh.length > Math.max(0, 2 - exempt)) {
     return {
       ok: false as const,
-      message: "Two papers are the limit for this semester.",
+      message:
+        exempt > 0
+          ? `Two papers are the limit for this semester, and ${exempt} of them ${exempt === 1 ? "is" : "are"} taken as an NPTEL course.`
+          : "Two papers are the limit for this semester.",
     };
   }
   const catalog = courseCatalogFor(next, {
@@ -1733,8 +1901,12 @@ export async function registerCoursePapers(input: {
   if (matched.some((item) => item === null)) {
     return { ok: false as const, message: "Select a listed subject." };
   }
+  const markSheet = currentFees().markSheet;
+  let first = true;
   for (const subject of matched) {
     if (!subject) continue;
+    const markSheetFee = first ? markSheet : 0;
+    first = false;
     next.registrations.unshift({
       id: localId(),
       batchId: input.batchId,
@@ -1749,6 +1921,7 @@ export async function registerCoursePapers(input: {
       code: subject.code,
       name: subject.name,
       amount: courseWorkFee,
+      markSheetFee,
       paymentMode: input.paymentMode,
       paymentReference: input.paymentReference.trim(),
       paymentDate: input.paymentDate,
@@ -2012,6 +2185,11 @@ export async function saveCommittee(
         item.status !== "Rejected"
       ),
   );
+  const committeeChain = chainFor(
+    "committee",
+    Boolean(guideOf(report.scholarIdentifier)),
+  );
+  const viaGuide = committeeChain.includes("supervisor");
   next.committees.unshift({
     ...report,
     researchTitle,
@@ -2031,11 +2209,14 @@ export async function saveCommittee(
     decidedBy: "",
     decidedAt: "",
     officeEntry: false,
+    needsSupervisor: viaGuide,
+    chain: committeeChain,
+    steps: [],
   });
   const saved = await saveDoctoral(next);
   if (saved.ok) {
     const guide = guideOf(report.scholarIdentifier);
-    if (guide) {
+    if (guide && viaGuide) {
       await pushNotice({
         role: "supervisor",
         identifier: guide,
@@ -2046,12 +2227,88 @@ export async function saveCommittee(
     } else {
       await notifyOffice({
         title: `${committeeNames[report.kind]} report · ${report.scholarName}`,
-        detail: "No guide is on record. The report is waiting for the research office.",
+        detail: viaGuide
+          ? "No guide is on record. The report is waiting for the research office."
+          : `The report is waiting for the ${stageNames[committeeChain[0]]}.`,
         href: committeeHref("admin", report.kind),
       });
     }
   }
   return saved;
+}
+
+/** The steps of an approval already done: the guide's, then those marked after it. */
+export function doneStagesOf(item: {
+  supervisorStatus: "" | "Recommended" | "Returned";
+  steps: readonly StepMark[];
+}): ApprovalStage[] {
+  return [
+    ...(item.supervisorStatus === "Recommended" ? (["supervisor"] as const) : []),
+    ...item.steps
+      .filter((step) => step.status === "Recommended")
+      .map((step) => step.stage),
+  ];
+}
+
+/** The step a submitted document waits at (null once it is decided). */
+export function waitingStageOf(item: {
+  status: "Submitted" | "Approved" | "Rejected";
+  chain: readonly ApprovalStage[];
+  supervisorStatus: "" | "Recommended" | "Returned";
+  steps: readonly StepMark[];
+}): ApprovalStage | null {
+  if (item.status !== "Submitted") return null;
+  return nextStage(item.chain.length > 0 ? item.chain : ["dean"], doneStagesOf(item));
+}
+
+/** The steps a request made now goes through; the guide's step drops out when there is no guide. */
+function chainFor(id: string, hasGuide: boolean): ApprovalStage[] {
+  const chain = approvalChain(id).filter((stage) => stage !== "supervisor" || hasGuide);
+  return chain.length > 0 ? chain : ["dean"];
+}
+
+/** Whether the signed-in role may act now on a document, and whether that is the last step. */
+function actingStage(
+  item: Parameters<typeof waitingStageOf>[0],
+  role: string | undefined,
+): { ok: true; stage: ApprovalStage; final: boolean } | { ok: false; message: string } {
+  const stage = waitingStageOf(item);
+  if (!stage) return { ok: false, message: "This is not waiting for a decision." };
+  if (stage === "supervisor") {
+    return { ok: false, message: "The supervisor has to approve first." };
+  }
+  if (!mayAct(role, stage)) {
+    return { ok: false, message: `This is waiting for the ${stageNames[stage]}.` };
+  }
+  const last = (item.chain.length > 0 ? item.chain : ["dean"]).at(-1);
+  return { ok: true, stage, final: stage === last };
+}
+
+/**
+ * What a decision at a step changes. The last step approves or rejects the document; a step
+ * before it only recommends (the document stays submitted and moves to the next step); a
+ * rejection at any step ends it.
+ */
+function stageOutcome<T extends { steps: StepMark[] }>(
+  item: T,
+  acting: { stage: ApprovalStage; final: boolean },
+  decision: { status: "Approved" | "Rejected"; remarks: string },
+): { patch: Partial<T> & { steps: StepMark[] }; settles: boolean } {
+  const signer = readPreviewSession();
+  const mark: StepMark = {
+    stage: acting.stage,
+    status: decision.status === "Approved" ? "Recommended" : "Returned",
+    by: signer ? signer.name.trim() || signer.identifier : "",
+    at: new Date().toISOString(),
+    remarks: decision.remarks.trim(),
+  };
+  const settles = decision.status === "Rejected" || acting.final;
+  return {
+    patch: {
+      steps: [...item.steps.filter((step) => step.stage !== acting.stage), mark],
+    } as Partial<T> & { steps: StepMark[] },
+    settles,
+  };
 }
 
 /** Who decided as the Dean, and the exact moment. */
@@ -2260,6 +2517,9 @@ export async function recordCommitteeHeld(input: {
       decidedBy: by,
       decidedAt: stamp,
       officeEntry: true,
+      needsSupervisor: false,
+      chain: [] as ApprovalStage[],
+      steps: [] as StepMark[],
       researchTitle: input.titles?.[scholar.identifier]?.trim() ?? "",
     })),
     ...next.committees.filter(
@@ -2347,45 +2607,49 @@ export async function decideCommittee(
     return { ok: false as const, message: "Enter the minutes before approving." };
   }
   const signer = readPreviewSession();
-  if (!signer || (signer.role !== "dean" && signer.role !== "admin")) {
+  const acting = actingStage(current, signer?.role);
+  if (!signer || !acting.ok) {
     return {
       ok: false as const,
-      message: "Only the Dean (or the administrator) approves this report.",
+      message: acting.ok ? "Sign in again." : acting.message,
     };
   }
-  if (
-    decision.status === "Approved" &&
-    !current.officeEntry &&
-    current.supervisorStatus !== "Recommended"
-  ) {
-    return {
-      ok: false as const,
-      message: "The guide has to recommend the report first.",
-    };
-  }
+  const outcome = stageOutcome(current, acting, decision);
   next.committees = next.committees.map((item) =>
     item.id === id
       ? {
           ...item,
-          ...decision,
-          decidedBy: signer.name.trim() || signer.identifier,
-          decidedAt: new Date().toISOString(),
+          ...outcome.patch,
+          ...(outcome.settles
+            ? {
+                ...decision,
+                decidedBy: signer.name.trim() || signer.identifier,
+                decidedAt: new Date().toISOString(),
+              }
+            : {
+                agenda: decision.agenda ?? item.agenda,
+                attendance: decision.attendance ?? item.attendance,
+                minutes: decision.minutes ?? item.minutes,
+              }),
         }
       : item,
   );
   const saved = await saveDoctoral(next);
   if (saved.ok && current) {
     await recordAudit({
-      action: `committee:${decision.status}`,
+      action: `committee:${outcome.settles ? decision.status : `recommended-by-${acting.stage}`}`,
       subject: id,
       detail: `${current.scholarName} · ${current.kind}`,
     });
     await pushNotice({
       role: "scholar",
       identifier: current.scholarIdentifier,
-      title: `Doctoral committee ${decision.status}`,
-      detail:
-        decision.remarks || `The committee report was ${decision.status.toLowerCase()}.`,
+      title: outcome.settles
+        ? `Doctoral committee ${decision.status}`
+        : "Doctoral committee report recommended",
+      detail: outcome.settles
+        ? decision.remarks || `The committee report was ${decision.status.toLowerCase()}.`
+        : `The ${stageNames[acting.stage]} recommended the report. It goes to the next approval.`,
       href: committeeHref("scholar", current.kind),
     });
   }
@@ -2509,6 +2773,8 @@ export async function issueColloquium(
 
 type ChainKeys =
   | "needsSupervisor"
+  | "chain"
+  | "steps"
   | "supervisorStatus"
   | "supervisorRemarks"
   | "supervisorOn"
@@ -2518,6 +2784,7 @@ type ChainKeys =
   | "decidedAt";
 
 const noChain = {
+  steps: [] as StepMark[],
   supervisorStatus: "" as const,
   supervisorRemarks: "",
   supervisorOn: "",
@@ -2566,6 +2833,8 @@ export async function saveSynopsis(
       ),
   );
   const guide = guideOf(synopsis.scholarIdentifier);
+  const chain = chainFor("synopsis", Boolean(guide));
+  const viaGuide = chain.includes("supervisor");
   next.synopses.unshift({
     ...synopsis,
     id: localId(),
@@ -2573,12 +2842,13 @@ export async function saveSynopsis(
     remarks: "",
     decidedOn: "",
     createdAt: new Date().toISOString(),
-    needsSupervisor: Boolean(guide),
+    needsSupervisor: viaGuide,
+    chain,
     ...noChain,
   });
   const saved = await saveDoctoral(next);
   if (saved.ok) {
-    if (guide) {
+    if (guide && viaGuide) {
       await pushNotice({
         role: "supervisor",
         identifier: guide,
@@ -2589,7 +2859,9 @@ export async function saveSynopsis(
     } else {
       await notifyOffice({
         title: `Synopsis submitted · ${synopsis.scholarName}`,
-        detail: "No guide is on record. Waiting for the research office.",
+        detail: guide
+          ? `Waiting for the ${stageNames[chain[0]]}.`
+          : "No guide is on record. Waiting for the research office.",
         href: "/admin/synopsis",
       });
     }
@@ -2602,9 +2874,6 @@ export async function decideSynopsis(
   decision: { status: "Approved" | "Rejected"; remarks: string; decidedOn: string },
 ) {
   const role = readPreviewSession()?.role;
-  if (role !== "dean" && role !== "admin") {
-    return { ok: false as const, message: "Only the Dean can give the final decision." };
-  }
   const next = snapshot();
   const current = next.synopses.find((item) => item.id === id);
   if (!current) return { ok: false as const, message: "That synopsis was not found." };
@@ -2614,31 +2883,32 @@ export async function decideSynopsis(
       message: `This synopsis is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
-  if (
-    decision.status === "Approved" &&
-    current.needsSupervisor &&
-    current.supervisorStatus !== "Recommended"
-  ) {
-    return {
-      ok: false as const,
-      message: "The supervisor has to approve the synopsis first.",
-    };
-  }
+  const acting = actingStage(current, role);
+  if (!acting.ok) return { ok: false as const, message: acting.message };
+  const outcome = stageOutcome(current, acting, decision);
   next.synopses = next.synopses.map((item) =>
-    item.id === id ? { ...item, ...decision, ...deanStamp() } : item,
+    item.id === id
+      ? {
+          ...item,
+          ...outcome.patch,
+          ...(outcome.settles ? { ...decision, ...deanStamp() } : {}),
+        }
+      : item,
   );
   const saved = await saveDoctoral(next);
   if (saved.ok && current) {
     await recordAudit({
-      action: `synopsis:${decision.status}`,
+      action: `synopsis:${outcome.settles ? decision.status : `recommended-by-${acting.stage}`}`,
       subject: id,
       detail: current.scholarName,
     });
     await pushNotice({
       role: "scholar",
       identifier: current.scholarIdentifier,
-      title: `Synopsis ${decision.status}`,
-      detail: decision.remarks || `The synopsis was ${decision.status.toLowerCase()}.`,
+      title: outcome.settles ? `Synopsis ${decision.status}` : "Synopsis recommended",
+      detail: outcome.settles
+        ? decision.remarks || `The synopsis was ${decision.status.toLowerCase()}.`
+        : `The ${stageNames[acting.stage]} recommended the synopsis. It goes to the next approval.`,
       href: "/scholar/synopsis",
     });
   }
@@ -2676,6 +2946,8 @@ export async function saveThesis(
   );
   const createdAt = new Date().toISOString();
   const guide = guideOf(thesis.scholarIdentifier);
+  const thesisChain = chainFor("thesis", Boolean(guide));
+  const viaThesisGuide = thesisChain.includes("supervisor");
   next.theses.unshift({
     ...thesis,
     id: localId(),
@@ -2685,12 +2957,13 @@ export async function saveThesis(
     remarks: "",
     decidedOn: "",
     createdAt,
-    needsSupervisor: Boolean(guide),
+    needsSupervisor: viaThesisGuide,
+    chain: thesisChain,
     ...noChain,
   });
   const saved = await saveDoctoral(next);
   if (saved.ok) {
-    if (guide) {
+    if (guide && viaThesisGuide) {
       await pushNotice({
         role: "supervisor",
         identifier: guide,
@@ -2714,9 +2987,6 @@ export async function decideThesis(
   decision: { status: "Approved" | "Rejected"; remarks: string; decidedOn: string },
 ) {
   const role = readPreviewSession()?.role;
-  if (role !== "dean" && role !== "admin") {
-    return { ok: false as const, message: "Only the Dean can give the final decision." };
-  }
   const next = snapshot();
   const current = next.theses.find((item) => item.id === id);
   if (!current) return { ok: false as const, message: "That thesis was not found." };
@@ -2726,6 +2996,8 @@ export async function decideThesis(
       message: `This thesis is already ${current.status.toLowerCase()} and cannot be changed.`,
     };
   }
+  const acting = actingStage(current, role);
+  if (!acting.ok) return { ok: false as const, message: acting.message };
   if (decision.status === "Approved") {
     const certificate = latestPlagiarism(
       next,
@@ -2742,31 +3014,30 @@ export async function decideThesis(
   if (decision.status === "Rejected" && decision.remarks.trim().length < 2) {
     return { ok: false as const, message: "Enter the remarks." };
   }
-  if (
-    decision.status === "Approved" &&
-    current.needsSupervisor &&
-    current.supervisorStatus !== "Recommended"
-  ) {
-    return {
-      ok: false as const,
-      message: "The supervisor has to approve the thesis first.",
-    };
-  }
+  const outcome = stageOutcome(current, acting, decision);
   next.theses = next.theses.map((item) =>
-    item.id === id ? { ...item, ...decision, ...deanStamp() } : item,
+    item.id === id
+      ? {
+          ...item,
+          ...outcome.patch,
+          ...(outcome.settles ? { ...decision, ...deanStamp() } : {}),
+        }
+      : item,
   );
   const saved = await saveDoctoral(next);
   if (saved.ok && current) {
     await recordAudit({
-      action: `thesis:${decision.status}`,
+      action: `thesis:${outcome.settles ? decision.status : `recommended-by-${acting.stage}`}`,
       subject: id,
       detail: current.scholarName,
     });
     await pushNotice({
       role: "scholar",
       identifier: current.scholarIdentifier,
-      title: `Thesis ${decision.status}`,
-      detail: decision.remarks || `The thesis was ${decision.status.toLowerCase()}.`,
+      title: outcome.settles ? `Thesis ${decision.status}` : "Thesis recommended",
+      detail: outcome.settles
+        ? decision.remarks || `The thesis was ${decision.status.toLowerCase()}.`
+        : `The ${stageNames[acting.stage]} recommended the thesis. It goes to the next approval.`,
       href: "/scholar/thesis",
     });
   }
@@ -3548,6 +3819,319 @@ export async function issueLetter(draft: LetterDraft) {
       title: `${letterNames[draft.kind]} ${reissue ? "reissued" : "issued"}`,
       detail: `${draft.refNo} dated ${draft.issuedOn}. Download it under Approved documents.`,
       href: `/${draft.recipientRole}/approved`,
+    });
+  }
+  return saved;
+}
+
+/** What may be entered as a Vidwan ID: the number (or the profile address pasted from the portal). */
+export function vidwanProblem(value: string) {
+  const text = value.trim();
+  if (text.length < 3 || text.length > 200) return "Enter your Vidwan ID (the number).";
+  if (/^https?:\/\//i.test(text)) return null;
+  return /^[A-Za-z0-9_-]+$/.test(text)
+    ? null
+    : "The Vidwan ID has only letters, numbers and dashes.";
+}
+
+export function vidwanOf(
+  state: Pick<DoctoralState, "vidwanIds"> | null,
+  identifier: string,
+) {
+  const key = identifier.trim().toLowerCase();
+  return state?.vidwanIds.find((item) => item.id === key)?.vidwanId ?? "";
+}
+
+/** A scholar (or the research office) saves the Vidwan ID; it then shows on the scholar's home page. */
+export async function saveVidwanId(identifier: string, value: string) {
+  const problem = vidwanProblem(value);
+  if (problem) return { ok: false as const, message: problem };
+  const next = snapshot();
+  const key = identifier.trim().toLowerCase();
+  next.vidwanIds = [
+    ...next.vidwanIds.filter((item) => item.id !== key),
+    {
+      id: key,
+      identifier: identifier.trim(),
+      vidwanId: value.trim(),
+      savedOn: new Date().toISOString().slice(0, 10),
+    },
+  ];
+  return saveDoctoral(next);
+}
+
+/* ------------------------------------------ NPTEL courses ---------------------------------- */
+
+/** The NPTEL courses of a scholar that count (not turned down), for one semester or for all. */
+export function nptelOf(
+  state: Pick<DoctoralState, "nptel"> | null,
+  identifier: string,
+  semester?: number,
+) {
+  return (state?.nptel ?? []).filter(
+    (item) =>
+      sameId(item.scholarIdentifier, identifier) &&
+      item.approval !== "Rejected" &&
+      (semester === undefined || item.semester === semester),
+  );
+}
+
+/** How many of the semester's two papers are taken as NPTEL courses. */
+export function nptelUsed(
+  state: Pick<DoctoralState, "nptel"> | null,
+  identifier: string,
+  semester: number,
+) {
+  return nptelOf(state, identifier, semester).length;
+}
+
+export type NptelInput = {
+  semester: number;
+  kind: NptelKind;
+  subjectName: string;
+  credit: string;
+  status: "Passed" | "In progress";
+  passMonth: string;
+  passYear: string;
+  /** The scholar answers: is the course approved in the RAC? */
+  racApproved: boolean | null;
+  hasRacMinutes: boolean;
+  hasProof: boolean;
+};
+
+/** Why an NPTEL course cannot be added; null when it can. */
+export function nptelProblem(
+  input: NptelInput,
+  existing: readonly Pick<NptelCourse, "kind">[],
+  today = clientToday(),
+) {
+  if (input.semester !== 1 && input.semester !== 2) return "Choose the semester.";
+  if (!(nptelKinds as readonly string[]).includes(input.kind)) {
+    return "Choose which paper the NPTEL course is for.";
+  }
+  if (existing.length >= nptelMax) {
+    return `At most ${nptelMax} of the four papers can be taken as NPTEL courses.`;
+  }
+  if (existing.some((item) => item.kind === input.kind)) {
+    return `${input.kind} is already taken.`;
+  }
+  if (input.racApproved === null)
+    return "Say whether the RAC approved this NPTEL course.";
+  if (!input.racApproved) return nptelCopy.racNo;
+  if (!input.hasRacMinutes)
+    return "Attach the minutes of the RAC that approved the course.";
+  const name = input.subjectName.trim();
+  if (name.length < 3 || name.length > 150) return "Enter the name of the NPTEL subject.";
+  const credit = Number(input.credit);
+  if (!Number.isFinite(credit) || credit <= 0 || credit > 12) {
+    return "Enter the credit of the course (a number up to 12).";
+  }
+  const monthSet = Boolean(input.passMonth);
+  const yearSet = Boolean(input.passYear.trim());
+  if (input.status === "Passed" || monthSet || yearSet) {
+    if (!(months as readonly string[]).includes(input.passMonth)) {
+      return "Choose the month of the pass.";
+    }
+    const year = Number(input.passYear);
+    if (!/^\d{4}$/.test(input.passYear.trim()) || year < 2010 || year > 2100) {
+      return "Enter the year of the pass (four digits).";
+    }
+    if (input.status === "Passed") {
+      const monthIndex = months.indexOf(input.passMonth as (typeof months)[number]);
+      const passed = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+      if (passed > today.slice(0, 7))
+        return "The month of the pass cannot be in the future.";
+    }
+  }
+  if (input.status === "Passed" && !input.hasProof) {
+    return "Attach the proof of passing (the NPTEL certificate).";
+  }
+  return null;
+}
+
+export async function addNptel(
+  input: NptelInput & {
+    scholarIdentifier: string;
+    scholarName: string;
+    racMinutesName: string;
+    racMinutesData: string | null;
+    proofName: string;
+    proofData: string | null;
+  },
+) {
+  const next = snapshot();
+  const mine = nptelOf(next, input.scholarIdentifier);
+  const problem = nptelProblem(input, mine);
+  if (problem) return { ok: false as const, message: problem };
+  const taken = nptelUsed(next, input.scholarIdentifier, input.semester);
+  const papers = next.registrations.filter(
+    (item) =>
+      sameId(item.scholarIdentifier, input.scholarIdentifier) &&
+      item.semester === input.semester &&
+      !item.arrear &&
+      item.paymentStatus !== "Returned",
+  ).length;
+  if (papers + taken + 1 > 2) {
+    return {
+      ok: false as const,
+      message:
+        "Semester " +
+        input.semester +
+        " already has two papers (registered or taken as NPTEL courses).",
+    };
+  }
+  next.nptel = [
+    {
+      id: localId(),
+      scholarIdentifier: input.scholarIdentifier,
+      scholarName: input.scholarName,
+      semester: input.semester,
+      kind: input.kind,
+      subjectName: input.subjectName.trim(),
+      credit: String(Number(input.credit)),
+      status: input.status,
+      passMonth: input.passMonth,
+      passYear: input.passYear.trim(),
+      racMinutesName: input.racMinutesName,
+      racMinutesData: input.racMinutesData,
+      proofName: input.status === "Passed" ? input.proofName : "",
+      proofData: input.status === "Passed" ? input.proofData : null,
+      approval: input.status === "Passed" ? "Submitted" : "In progress",
+      remarks: "",
+      decidedBy: "",
+      decidedOn: "",
+      createdAt: new Date().toISOString(),
+    },
+    ...(next.nptel ?? []),
+  ];
+  const saved = await saveDoctoral(next);
+  if (saved.ok && input.status === "Passed") {
+    await notifyOffice({
+      title: `NPTEL course · ${input.scholarName}`,
+      detail: `${input.kind}: ${input.subjectName.trim()}. The proof of passing waits for the Dean.`,
+      href: "/admin/course-work?tab=nptel",
+    });
+  }
+  return saved;
+}
+
+/** The scholar passed an NPTEL course that was in progress: the month, year and proof go to the Dean. */
+export async function completeNptel(
+  id: string,
+  pass: {
+    passMonth: string;
+    passYear: string;
+    proofName: string;
+    proofData: string | null;
+  },
+) {
+  const next = snapshot();
+  const current = (next.nptel ?? []).find((item) => item.id === id);
+  if (!current)
+    return { ok: false as const, message: "That NPTEL course was not found." };
+  if (current.approval === "Approved" || current.approval === "Submitted") {
+    return {
+      ok: false as const,
+      message: "The proof of passing is already with the Dean.",
+    };
+  }
+  if (!(months as readonly string[]).includes(pass.passMonth)) {
+    return { ok: false as const, message: "Choose the month of the pass." };
+  }
+  if (!/^\d{4}$/.test(pass.passYear.trim())) {
+    return { ok: false as const, message: "Enter the year of the pass (four digits)." };
+  }
+  if (!pass.proofName || !pass.proofData) {
+    return {
+      ok: false as const,
+      message: "Attach the proof of passing (the NPTEL certificate).",
+    };
+  }
+  next.nptel = next.nptel.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          status: "Passed" as const,
+          passMonth: pass.passMonth,
+          passYear: pass.passYear.trim(),
+          proofName: pass.proofName,
+          proofData: pass.proofData,
+          approval: "Submitted" as const,
+          remarks: "",
+        }
+      : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await notifyOffice({
+      title: `NPTEL course · ${current.scholarName}`,
+      detail: `${current.kind}: ${current.subjectName}. The proof of passing waits for the Dean.`,
+      href: "/admin/course-work?tab=nptel",
+    });
+  }
+  return saved;
+}
+
+/** A scholar takes back an NPTEL course that is not approved yet (it no longer counts). */
+export async function removeNptel(id: string) {
+  const next = snapshot();
+  const current = (next.nptel ?? []).find((item) => item.id === id);
+  if (!current)
+    return { ok: false as const, message: "That NPTEL course was not found." };
+  if (current.approval === "Approved") {
+    return { ok: false as const, message: "An approved NPTEL course cannot be removed." };
+  }
+  next.nptel = next.nptel.filter((item) => item.id !== id);
+  return saveDoctoral(next);
+}
+
+/** The Dean approves the proof of passing (the scholar is then exempt from the paper) or turns it down. */
+export async function decideNptel(
+  id: string,
+  decision: { status: "Approved" | "Rejected"; remarks: string },
+) {
+  const role = readPreviewSession()?.role;
+  if (role !== "dean" && role !== "admin") {
+    return { ok: false as const, message: "Only the Dean approves an NPTEL course." };
+  }
+  const next = snapshot();
+  const current = (next.nptel ?? []).find((item) => item.id === id);
+  if (!current)
+    return { ok: false as const, message: "That NPTEL course was not found." };
+  if (current.approval !== "Submitted") {
+    return { ok: false as const, message: "This course is not waiting for the Dean." };
+  }
+  if (decision.status === "Rejected" && decision.remarks.trim().length < 5) {
+    return { ok: false as const, message: "Write the reason for turning it down." };
+  }
+  const signer = readPreviewSession();
+  next.nptel = next.nptel.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          approval: decision.status,
+          remarks: decision.remarks.trim(),
+          decidedBy: signer ? signer.name.trim() || signer.identifier : "",
+          decidedOn: new Date().toISOString().slice(0, 10),
+        }
+      : item,
+  );
+  const saved = await saveDoctoral(next);
+  if (saved.ok) {
+    await recordAudit({
+      action: `nptel:${decision.status}`,
+      subject: current.scholarIdentifier,
+      detail: `${current.scholarName} · ${current.kind} · ${current.subjectName}`,
+    });
+    await pushNotice({
+      role: "scholar",
+      identifier: current.scholarIdentifier,
+      title: `NPTEL course ${decision.status.toLowerCase()}`,
+      detail:
+        decision.status === "Approved"
+          ? `${current.kind} (${current.subjectName}) is approved. You need not appear for that paper.`
+          : decision.remarks.trim(),
+      href: "/scholar/course-work?tab=nptel",
     });
   }
   return saved;

@@ -23,7 +23,7 @@ export function submissionFeeAmount(kind: SubmissionFeeKind) {
 
 /**
  * Why the synopsis or thesis cannot be submitted for want of its fee; null when no fee is
- * fixed or an approved payment covers it. The fee is paid under Payment history and verified
+ * fixed or an approved payment covers it. The fee is paid under Fee and verified
  * by Accounts.
  */
 export function submissionFeeBlock(
@@ -49,5 +49,5 @@ export function submissionFeeBlock(
   );
   return waiting
     ? `Your ${label} fee of ₹${fee} is with the Accounts department for verification. The ${label} upload opens once it is verified.`
-    : `Pay the ${label} submission fee of ₹${fee} under Payment history (purpose: ${submissionFeePurpose[kind]}) and attach the receipt. The ${label} upload opens once Accounts verifies it.`;
+    : `Pay the ${label} submission fee of ₹${fee} under Fee, the ${label} fee tab, and attach the receipt. The ${label} upload opens once Accounts verifies it.`;
 }

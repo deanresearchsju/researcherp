@@ -31,8 +31,10 @@ import {
   subscribeDoctoral,
   thesisBlocked,
   thesisOpensOn,
+  waitingStageOf,
   type ThesisSubmission,
 } from "@/lib/doctoral";
+import { mayAct, stageNames } from "@/lib/approval-rules";
 import { fileError, type StoredFile } from "@/lib/files";
 import { loadEvaluations } from "@/lib/thesis-evaluation";
 import {
@@ -41,6 +43,8 @@ import {
   type EvaluationRecord,
 } from "@/lib/thesis-evaluation-model";
 import { usePortalSession } from "@/lib/use-preview-session";
+import { useScholarProfiles } from "@/lib/use-scholar-profile";
+import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCell";
 import { researchTitleOf } from "@/lib/research-title";
 import { currentScholarRecords, subscribeScholarRecords } from "@/lib/scholar-records";
 import Link from "next/link";
@@ -158,11 +162,8 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
           {feeBlocked && blocked === feeBlocked ? (
             <>
               {" "}
-              <Link
-                href="/scholar/records/payment-history"
-                className="font-semibold underline"
-              >
-                Go to Payment history
+              <Link href="/scholar/fee?tab=thesis" className="font-semibold underline">
+                Pay the fee
               </Link>
             </>
           ) : null}
@@ -248,7 +249,9 @@ function OfficeThesis() {
   const [statusFilter, setStatusFilter] = useState("");
   const [returning, setReturning] = useState<ThesisSubmission | null>(null);
   const [remarks, setRemarks] = useState("");
-  const canDecide = session?.role === "dean" || session?.role === "admin";
+  const profile = useScholarProfiles();
+  const canDecide =
+    session?.role === "dean" || session?.role === "admin" || session?.role === "vc";
 
   useEffect(() => {
     if (!canDecide) return;
@@ -266,6 +269,7 @@ function OfficeThesis() {
   const queue = doctoral.theses.filter(
     (thesis) =>
       filterMatches(statusFilter, thesis.status) &&
+      profile.matches(thesis.scholarIdentifier) &&
       textMatches(query, [
         thesis.scholarName,
         thesis.title,
@@ -278,9 +282,11 @@ function OfficeThesis() {
     if (!plagiarismIssued(doctoral!, thesis.scholarIdentifier, "thesis")) {
       return "Thesis plagiarism certificate not issued.";
     }
+    const stage = waitingStageOf(thesis);
     if (!canDecide) return "Only the Dean or the administrator accepts the thesis.";
-    if (thesis.needsSupervisor && thesis.supervisorStatus !== "Recommended") {
-      return "Waiting for the supervisor's approval.";
+    if (stage === "supervisor") return "Waiting for the supervisor's approval.";
+    if (stage && !mayAct(session?.role, stage)) {
+      return `Waiting for the ${stageNames[stage]}.`;
     }
     const panel = panels?.find(
       (item) => item.scholarKey === scholarKeyOf(thesis.scholarIdentifier),
@@ -298,7 +304,11 @@ function OfficeThesis() {
       decidedOn: clientToday(),
     });
     setNotice(
-      saved.ok ? `${thesis.scholarName}'s thesis is sent for evaluation.` : saved.message,
+      saved.ok
+        ? waitingStageOf(thesis) === thesis.chain.at(-1)
+          ? `${thesis.scholarName}'s thesis is sent for evaluation.`
+          : `${thesis.scholarName}'s thesis is recommended; it goes to the next approval.`
+        : saved.message,
     );
   }
 
@@ -342,16 +352,18 @@ function OfficeThesis() {
             })),
             onChange: setStatusFilter,
           },
+          ...profile.filters,
         ]}
         shown={queue.length}
         total={doctoral.theses.length}
         filename="theses.csv"
-        headers={["scholar", "title", "domain", "status"]}
+        headers={["scholar", "title", "domain", "status", ...profile.headers]}
         rows={queue.map((thesis) => [
           thesis.scholarName,
           thesis.title,
           thesis.domain,
           thesis.status,
+          ...profile.cells(thesis.scholarIdentifier),
         ])}
       />
       <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -359,6 +371,7 @@ function OfficeThesis() {
           <thead className="bg-muted text-primary">
             <tr>
               <th className="px-4 py-3 font-semibold">Scholar</th>
+              <th className="px-4 py-3 font-semibold">{profileColumnHeading}</th>
               <th className="px-4 py-3 font-semibold">Title · Domain</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">
@@ -369,7 +382,7 @@ function OfficeThesis() {
           <tbody>
             {queue.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                   No thesis submitted yet.
                 </td>
               </tr>
@@ -380,6 +393,9 @@ function OfficeThesis() {
                   <tr key={thesis.id} className="border-t border-border align-top">
                     <td className="px-4 py-3 font-semibold text-primary">
                       {thesis.scholarName}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProfileCell profile={profile.profileOf(thesis.scholarIdentifier)} />
                     </td>
                     <td className="px-4 py-3">
                       <p>{thesis.title}</p>
@@ -411,7 +427,9 @@ function OfficeThesis() {
                               disabled={Boolean(waiting)}
                               onClick={() => void accept(thesis)}
                             >
-                              Send for evaluation
+                              {waitingStageOf(thesis) === thesis.chain.at(-1)
+                                ? "Send for evaluation"
+                                : "Recommend"}
                             </Button>
                             <Button
                               type="button"

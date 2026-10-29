@@ -67,7 +67,7 @@ RAC proposals, supervisor transfer (only to a supervisor with a vacancy), superv
 
 ## Fees
 
-Fee collection and Fee approvals.
+Tuition fees and Fee approvals.
 
 ## Letters, reports and the website
 

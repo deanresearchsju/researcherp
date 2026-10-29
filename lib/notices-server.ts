@@ -20,3 +20,25 @@ export async function insertOfficeNotice(input: {
     });
   }
 }
+
+/** Server-side notice to one person (the identifier is kept in lower case, as the inbox reads it). */
+export async function insertUserNotice(input: {
+  role: "scholar" | "supervisor";
+  identifier: string;
+  title: string;
+  detail: string;
+  href: string;
+}) {
+  const supabase = createAdminSupabase();
+  if (!supabase) return;
+  const row = { ...input, identifier: input.identifier.trim().toLowerCase() };
+  const { error } = await supabase.from("portal_notices").insert(row);
+  if (error) {
+    await supabase.from("portal_notices").insert({
+      role: row.role,
+      identifier: row.identifier,
+      title: row.title,
+      detail: row.detail,
+    });
+  }
+}

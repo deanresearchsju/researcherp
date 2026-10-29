@@ -1,11 +1,12 @@
 "use client";
 
 import { Camera, Mail, Phone, UserRound } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 
 import { university, fileLimits } from "@/lib/constants";
-import { currentDoctoral, subscribeDoctoral } from "@/lib/doctoral";
+import { currentDoctoral, subscribeDoctoral, vidwanOf } from "@/lib/doctoral";
 import { ImageCropper } from "@/components/forms/ImageCropper";
 import { cropAspectFor, fileError, fileToDataUrl, fileTypeError } from "@/lib/files";
 import {
@@ -28,6 +29,7 @@ import {
   registrationOf,
   scholarBySignIn,
   supervisorForGuide,
+  vidwanLink,
   currentAllotments,
   subscribeRegister,
 } from "@/lib/register";
@@ -362,6 +364,8 @@ export function ProfileCard({
           </div>
         ))}
       </dl>
+      {role === "scholar" ? <AbcRow identifier={identifier} /> : null}
+      {role === "scholar" ? <VidwanRow identifier={identifier} /> : null}
       {role === "scholar" ? <GuideBlock identifier={identifier} /> : null}
       {notice ? (
         <p role="status" className="px-5 pb-4 text-sm text-secondary sm:px-7">
@@ -369,6 +373,83 @@ export function ProfileCard({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The Academic Bank of Credits home page, where the ABC ID is used. */
+const abcPortal = "https://www.abc.gov.in/";
+
+/**
+ * The scholar's ABC ID. It shows (as a link to the ABC portal) once the proof has been approved;
+ * until then the scholar sees where the request stands.
+ */
+function AbcRow({ identifier }: { identifier: string }) {
+  const load = useSyncExternalStore(
+    (onChange) => subscribeScholarRecords("abc_id", onChange),
+    () => currentScholarRecords("abc_id"),
+    () => null,
+  );
+  const session = usePortalSession();
+  const mine = (load?.records ?? [])
+    .filter((record) => sameId(record.scholarIdentifier, identifier))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const approved = mine?.status === "Approved" ? (mine.payload.abcId ?? "").trim() : "";
+  return (
+    <div className="flex gap-3 px-5 pb-2 text-sm sm:px-7">
+      <span className="w-32 shrink-0 text-muted-foreground">ABC ID</span>
+      {approved ? (
+        <a
+          href={abcPortal}
+          target="_blank"
+          rel="noreferrer"
+          className="min-w-0 font-medium break-words text-primary underline underline-offset-4"
+        >
+          {approved}
+        </a>
+      ) : mine && mine.status !== "Returned" ? (
+        <span className="text-muted-foreground">Waiting for approval</span>
+      ) : session?.role === "scholar" ? (
+        <Link
+          href="/scholar/records/abc-id"
+          className="font-medium text-primary underline underline-offset-4"
+        >
+          {mine ? "Returned: update your ABC ID" : "Add your ABC ID and its proof"}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">Not entered</span>
+      )}
+    </div>
+  );
+}
+
+/** The scholar's Vidwan ID: a link to the Vidwan portal once saved, otherwise a way to add it. */
+function VidwanRow({ identifier }: { identifier: string }) {
+  const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
+  const session = usePortalSession();
+  const vidwan = vidwanOf(doctoral, identifier);
+  return (
+    <div className="flex gap-3 px-5 pb-4 text-sm sm:px-7">
+      <span className="w-32 shrink-0 text-muted-foreground">Vidwan ID</span>
+      {vidwan ? (
+        <a
+          href={vidwanLink(vidwan)}
+          target="_blank"
+          rel="noreferrer"
+          className="min-w-0 font-medium break-words text-primary underline underline-offset-4"
+        >
+          {vidwan}
+        </a>
+      ) : session?.role === "scholar" ? (
+        <Link
+          href="/scholar/vidwan-id"
+          className="font-medium text-primary underline underline-offset-4"
+        >
+          Add your Vidwan ID
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">Not entered</span>
+      )}
+    </div>
   );
 }
 

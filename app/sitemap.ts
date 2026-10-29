@@ -9,7 +9,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/supervisors",
     "/our-team",
     "/downloads",
-    "/contact",
     "/announcements",
     "/apply",
     "/apply/status",

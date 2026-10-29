@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
-import { applyRegisterPayload, scholarSignInId, scholarsGuidedBy } from "@/lib/register";
+import {
+  applyRegisterPayload,
+  ensureRegisterSeed,
+  scholarSignInId,
+  scholarsGuidedBy,
+} from "@/lib/register";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import {
   activeIndex,
@@ -127,6 +132,7 @@ async function guides(
   ) {
     return true;
   }
+  await ensureRegisterSeed();
   const { data: register } = await supabase
     .from("research_register")
     .select("payload")

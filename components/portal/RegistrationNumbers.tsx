@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 
 import { DeskPage } from "@/components/portal/Desk";
-import { ListToolbar, textMatches } from "@/components/portal/ListToolbar";
+import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { SpreadsheetBar } from "@/components/portal/SpreadsheetBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -126,6 +126,10 @@ export function RegistrationNumbers() {
   const [chosen, setChosen] = useState("");
   const [tab, setTab] = useState<"pending" | "records">("pending");
   const [query, setQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [campusFilter, setCampusFilter] = useState("");
+  const [guideFilter, setGuideFilter] = useState("");
+  const [modeFilter, setModeFilter] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,7 +153,18 @@ export function RegistrationNumbers() {
       line.studyMode,
       line.number,
     ]);
-  const visible = (showing === "pending" ? pending : recorded).filter(matches);
+  const inScope = (line: Line) =>
+    filterMatches(departmentFilter, line.department) &&
+    filterMatches(campusFilter, line.guideCampus) &&
+    filterMatches(guideFilter, line.guideName) &&
+    filterMatches(modeFilter, line.studyMode);
+  const visible = (showing === "pending" ? pending : recorded)
+    .filter(inScope)
+    .filter(matches);
+  const choices = (pick: (line: Line) => string) =>
+    [...new Set(lines.map(pick).filter(Boolean))]
+      .sort()
+      .map((value) => ({ value, label: value }));
 
   async function record(
     entries: readonly {
@@ -320,7 +335,36 @@ export function RegistrationNumbers() {
           <ListToolbar
             query={query}
             onQuery={setQuery}
-            filters={[]}
+            filters={[
+              {
+                id: "department",
+                label: "Department",
+                value: departmentFilter,
+                options: choices((line) => line.department),
+                onChange: setDepartmentFilter,
+              },
+              {
+                id: "campus",
+                label: "Campus",
+                value: campusFilter,
+                options: choices((line) => line.guideCampus),
+                onChange: setCampusFilter,
+              },
+              {
+                id: "guide",
+                label: "Guide",
+                value: guideFilter,
+                options: choices((line) => line.guideName),
+                onChange: setGuideFilter,
+              },
+              {
+                id: "mode",
+                label: "Mode",
+                value: modeFilter,
+                options: choices((line) => line.studyMode),
+                onChange: setModeFilter,
+              },
+            ]}
             shown={visible.length}
             total={showing === "pending" ? pending.length : recorded.length}
             filename={`registration-numbers-${batchId || "batch"}.csv`}
@@ -334,6 +378,7 @@ export function RegistrationNumbers() {
               "registration_number",
             ]}
             rows={(showing === "pending" ? pending : lines)
+              .filter(inScope)
               .filter(matches)
               .map((line) => [
                 line.name,
