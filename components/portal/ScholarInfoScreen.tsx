@@ -1,15 +1,18 @@
 "use client";
 
-import { Lock, PencilLine, UserPlus } from "lucide-react";
+import { IndianRupee, Lock, PencilLine, UserPlus, Users } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 import { DeskModal, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
+import { MarkFeePaidDialog, type FeeMarkRow } from "@/components/portal/MarkFeePaidDialog";
+import { OfficeEntryDialog } from "@/components/portal/RacScreen";
 import { RecordForm } from "@/components/portal/ScholarRecordScreen";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { menuByKind } from "@/data/scholar-records";
-import { formatIsoDate } from "@/lib/dates";
+import { clientToday, formatIsoDate } from "@/lib/dates";
+import { feeLedger } from "@/lib/fee-ledger";
 import { sameId } from "@/lib/office";
 import { batchNames } from "@/lib/scholar-report";
 import {
@@ -21,13 +24,16 @@ import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCe
 import { useScholarReports } from "@/lib/use-report-sources";
 import { useScholarProfiles } from "@/lib/use-scholar-profile";
 import { usePreviewSession } from "@/lib/use-preview-session";
+import { formatInr } from "@/lib/utils";
 import { RegisterImport } from "@/components/portal/RegisterImport";
 
 const menu = menuByKind("personal_details");
 
 /**
  * Staff enter each scholar's information once; the entry locks and only the administrator can
- * correct it.
+ * correct it. The fee already paid and the RAC are entered from the same row, so one menu holds
+ * everything the office has to enter for a scholar; both go to the same stores as the Fee and
+ * RAC menus, so they show everywhere the fee and the RAC are used.
  */
 export function ScholarInfoScreen() {
   const session = usePreviewSession();
@@ -49,6 +55,12 @@ export function ScholarInfoScreen() {
   } | null>(null);
   const [viewing, setViewing] = useState<ScholarRecord | null>(null);
   const profile = useScholarProfiles();
+  const [feeFor, setFeeFor] = useState<{ identifier: string; name: string } | null>(null);
+  const [feeRound, setFeeRound] = useState(0);
+  const [feeInfo, setFeeInfo] = useState<string | null>(null);
+  const [racFor, setRacFor] = useState<string | null>(null);
+  const [feeFilter, setFeeFilter] = useState("");
+  const [racFilter, setRacFilter] = useState("");
 
   if (!data.ready || !load) {
     return <p className="text-sm text-muted-foreground">Loading scholars…</p>;
@@ -70,10 +82,31 @@ export function ScholarInfoScreen() {
     (row) =>
       filterMatches(batch, row.report.batchName) &&
       filterMatches(status, row.state) &&
+      filterMatches(feeFilter, row.report.feeBalance > 0 ? "Balance due" : "Paid up") &&
+      filterMatches(racFilter, row.report.rac) &&
       profile.matches(row.report.identifier) &&
       textMatches(query, [row.report.name, row.report.registration, row.report.subject]),
   );
   const fields = menu.fields;
+  const today = clientToday();
+  /** The fee years that have started for a scholar, as the Fee menu lists them. */
+  const feeRows = (identifier: string, name: string): FeeMarkRow[] =>
+    feeLedger(identifier, name, data.sources.payments, today)
+      .plan.filter((year) => year.status !== "Upcoming")
+      .map((year) => ({
+        key: `${identifier}#${year.index}`,
+        identifier,
+        name,
+        year,
+      }));
+  const racChoice = data.reports
+    .filter((report) => report.guideName)
+    .map((report) => ({
+      identifier: report.identifier,
+      name: report.name,
+      supervisorIdentifier: report.guideIdentifier,
+      supervisorName: report.guideName,
+    }));
 
   return (
     <section className="space-y-5">
@@ -127,6 +160,22 @@ export function ScholarInfoScreen() {
             })),
             onChange: setStatus,
           },
+          {
+            id: "fee",
+            label: "Fee",
+            value: feeFilter,
+            options: ["Balance due", "Paid up"].map((value) => ({ value, label: value })),
+            onChange: setFeeFilter,
+          },
+          {
+            id: "rac",
+            label: "RAC",
+            value: racFilter,
+            options: ["Constituted", "Waiting for the Dean", "Not constituted"].map(
+              (value) => ({ value, label: value }),
+            ),
+            onChange: setRacFilter,
+          },
           ...profile.filters,
         ]}
         shown={shown.length}
@@ -138,6 +187,9 @@ export function ScholarInfoScreen() {
           "Registration No.",
           "Batch",
           "Status",
+          "Fee paid (₹)",
+          "Fee balance (₹)",
+          "RAC",
           ...profile.headers,
           ...fields.map((f) => f.label),
         ]}
@@ -146,6 +198,9 @@ export function ScholarInfoScreen() {
           row.report.registration,
           row.report.batchName,
           row.state,
+          formatInr(row.report.feePaid),
+          formatInr(row.report.feeBalance),
+          row.report.rac,
           ...profile.cells(row.report.identifier),
           ...fields.map((field) => row.record?.payload[field.name] ?? ""),
         ])}
@@ -154,7 +209,15 @@ export function ScholarInfoScreen() {
         <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
           <thead className="bg-muted text-primary">
             <tr>
-              {["Scholar", profileColumnHeading, "Batch", "Mobile · Email", "Status", ""].map((header) => (
+              {[
+                "Scholar",
+                profileColumnHeading,
+                "Batch",
+                "Mobile · Email",
+                "Fee · RAC",
+                "Status",
+                "",
+              ].map((header) => (
                 <th key={header} className="px-4 py-3 font-semibold">
                   {header}
                 </th>
@@ -164,7 +227,7 @@ export function ScholarInfoScreen() {
           <tbody>
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-muted-foreground">
+                <td colSpan={7} className="px-4 py-6 text-muted-foreground">
                   No scholar matches.
                 </td>
               </tr>
@@ -185,6 +248,25 @@ export function ScholarInfoScreen() {
                     {record?.payload.mobile || "—"}
                     <br />
                     {record?.payload.email || report.email || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    <p>
+                      <span className="text-muted-foreground">Fee: </span>
+                      {report.feeBalance > 0 ? (
+                        <span className="font-semibold text-secondary">
+                          ₹{formatInr(report.feeBalance)} due
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-primary">Paid up</span>
+                      )}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Paid ₹{formatInr(report.feePaid)}
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">RAC: </span>
+                      {report.rac}
+                    </p>
                   </td>
                   <td className="px-4 py-3">
                     {state === "Locked" ? (
@@ -249,6 +331,42 @@ export function ScholarInfoScreen() {
                           Correct
                         </Button>
                       ) : null}
+                      {report.feeBalance > 0 ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setNotice(null);
+                            setFeeInfo(null);
+                            setFeeRound((value) => value + 1);
+                            setFeeFor({ identifier: report.identifier, name: report.name });
+                          }}
+                        >
+                          <IndianRupee className="size-4" aria-hidden="true" />
+                          Fee paid
+                        </Button>
+                      ) : null}
+                      {report.rac === "Not constituted" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setNotice(null);
+                            if (!report.guideName) {
+                              setNotice(
+                                `${report.name}: allot a guide first, then enter the RAC.`,
+                              );
+                              return;
+                            }
+                            setRacFor(report.identifier);
+                          }}
+                        >
+                          <Users className="size-4" aria-hidden="true" />
+                          Enter RAC
+                        </Button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -257,6 +375,42 @@ export function ScholarInfoScreen() {
           </tbody>
         </table>
       </div>
+      {feeFor ? (
+        <MarkFeePaidDialog
+          key={feeRound}
+          scholarName={feeFor.name}
+          rows={feeRows(feeFor.identifier, feeFor.name)}
+          info={feeInfo}
+          onClose={() => {
+            setFeeFor(null);
+            setFeeInfo(null);
+          }}
+          onDone={(message, again) => {
+            setNotice(message);
+            if (again) {
+              setFeeInfo(message);
+              setFeeRound((value) => value + 1);
+            } else {
+              setFeeFor(null);
+              setFeeInfo(null);
+            }
+          }}
+        />
+      ) : null}
+      {racFor ? (
+        <OfficeEntryDialog
+          key={racFor}
+          scholars={racChoice}
+          initialScholar={racFor}
+          defaultRecorded
+          canRecord={isAdmin || session?.role === "staff"}
+          onClose={() => setRacFor(null)}
+          onDone={(message) => {
+            setNotice(message);
+            setRacFor(null);
+          }}
+        />
+      ) : null}
       {editing ? (
         <RecordForm
           key={editing.identifier}

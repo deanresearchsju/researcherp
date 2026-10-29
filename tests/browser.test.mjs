@@ -343,6 +343,31 @@ if (roles.includes("admin")) {
     assert.deepEqual(bad, []);
   });
 
+  await test("admin: Scholar information also holds the fee paid and the RAC of each scholar", async () => {
+    await send("Page.navigate", { url: base + "/admin/scholar-info" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        for (let i = 0; i < 100; i += 1) {
+          if (document.querySelector("main tbody tr td button")) break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const heads = [...document.querySelectorAll("main thead th")].map((h) => h.textContent.trim());
+        const buttons = [...document.querySelectorAll("main tbody button")].map((b) => b.textContent.trim());
+        const first = [...document.querySelectorAll("main tbody tr")][0]?.innerText ?? "";
+        return JSON.stringify({ heads, buttons, first });
+      })()`)) ?? "{}",
+    );
+    assert.ok(state.heads.includes("Fee · RAC"), "no Fee · RAC column: " + state.heads.join("|"));
+    assert.ok(/Fee:/.test(state.first) && /RAC:/.test(state.first), "row lacks fee and RAC: " + state.first);
+    assert.ok(
+      state.buttons.some((label) => label === "Fee paid") ||
+        state.buttons.some((label) => label === "Enter RAC"),
+      "no Fee paid / Enter RAC button among: " + [...new Set(state.buttons)].join(", "),
+    );
+  });
+
   await test("admin: the publications list exports every detail as a CSV with the scholar's department, campus, guide and mode", async () => {
     await send("Page.navigate", { url: base + "/admin/records/publications" });
     await new Promise((r) => setTimeout(r, 300));
