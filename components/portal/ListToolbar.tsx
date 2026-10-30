@@ -320,6 +320,7 @@ export function ListToolbar({
   csv = false,
   pdfHeaders,
   pdfRows,
+  criteria: extraCriteria = [],
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -340,6 +341,8 @@ export function ListToolbar({
   /** A shorter layout for the PDF (cells may hold several lines), when the sheet is wide. */
   pdfHeaders?: readonly string[];
   pdfRows?: readonly (readonly string[])[];
+  /** Selections made outside the filter box (dates, a person), printed in the PDF header. */
+  criteria?: readonly string[];
 }) {
   const pathname = usePathname();
   const session = usePreviewSession();
@@ -393,6 +396,7 @@ export function ListToolbar({
           .map((value) => optionLabel(filter, value))
           .join(", ")}`,
     );
+    lines.push(...extraCriteria);
     if (query.trim()) lines.push(`Search: “${query.trim()}”`);
     return lines;
   }

@@ -2,6 +2,23 @@
 
 Newest first. Add a line here with every change that people will notice. "Incidents" at the end records anything that went wrong with data or security and what was done.
 
+## Audit trail and read-only profiles (30 October 2026, not yet saved to Git)
+
+**Audit trail (Administration, Audit trail; the administrator only)**
+
+- Every submission, approval, return, entry, correction and sign-in is written in the audit trail with **who** did it, **when**, **what** and **for whom**. The screen has an Activity log and a By user tab; filters for the person (name, e-mail or number: what they did *and* what was done for them), dates, who did it (role), the part of the ERP and the kind of act; Excel and PDF export (the PDF header lists the filters). A scholar's or supervisor's profile page has a link "audit trail" that opens the trail for that person.
+- **The server writes the person and the time.** A line added from the browser takes its role and sign-in from the session, whatever the browser sent, and the time from the database. Nobody can change or remove a line (the database policy has no such rule).
+- **New lines**: sign-in, wrong password, sign-out, password change (server); scholar submissions of requests, synopsis, thesis, committee reports, plagiarism files, course-work registration, NPTEL, Vidwan ID; office entries and corrections; register edits (scholars, supervisors, profiles, standing, exits, passed-out, imports); profile photos; users (created, changed, removed); approval rules; fee settings; course set-up; Helpdesk (asked, replied, closed). The existing lines (every approval and return, RAC, viva, fees, letters, exams) now name the scholar's sign-in as well.
+
+**Basic information and profile: filled details are locked, empty ones can be filled (scholars and supervisors)**
+
+- **The rule, for both scholars and supervisors:** what is already entered cannot be edited or updated by the person. If something is empty, the person may fill it in. Everything else (requests, approvals, workflow) is unchanged. If anything entered is incorrect, the **research staff change it**.
+- **Scholar, My details:** the fields that hold a value (from the register or from an earlier entry) are shown and cannot be changed; the empty ones are typed in and submitted as before, and the research office verifies and locks them (Scholar information). Once every detail is entered the page says so and the button goes. A record the office has locked can be completed by the office only.
+- **Supervisor, My details** (phone, campus, area of research, Vidwan ID, biography): the same. The name, designation, department and e-mail are the University's record. The Save button shows only while something is empty.
+- **Profile photo:** a person sets the own photo once, when there is none; only the administrator, the Dean or the staff replace it, from the person's profile.
+- **Kept on the server, not only on the page** (`lib/profile-lock-server.ts`, called from `/api/db`): a scholar's second personal-details record, or a change to a filled field, is refused; a supervisor may save the register only to fill the supervisor's own empty details (the rest of the register must come back unchanged); a second photo is refused. Every such save is also in the audit trail.
+- **Staff** enter and correct the personal details under Scholar information (the administrator did alone before). Supervisor details and profiles are corrected under Supervisor register and Supervisor profiles. ABC ID and Vidwan ID of scholars are still entered by the scholars.
+
 ## Scholar lists, exports and report headers (29 October 2026, not yet saved to Git)
 
 - **Every list of scholars** now carries **Department, Campus, Guide and Mode**: as filters in the filter box, as a column on the page where the table has room, and in the Excel and PDF downloads. Done on: Scholar information, Course registrations (and Arrears), Results, Fee approvals, Tuition fees, Colloquium (scholar-wise), Committee reports (both lists), Synopsis, Thesis, Plagiarism, Evaluators, Examiner reports, Viva, Completion, Six-month reports (and the office entry), RAC, Allotments, Supervisor transfer, Semester promotion, Registration numbers, Approved documents, Passed-out scholars, Attendance sheets (Excel), Scholar record requests, and the Reports page (every report that lists scholars gets the four columns, and Department and Campus filters).

@@ -1239,6 +1239,17 @@ function localId() {
   return `local-${crypto.randomUUID()}`;
 }
 
+/** Writes a line in the audit trail once a change has been saved, and hands the result back. */
+async function auditSaved<T extends { ok: boolean }>(
+  saved: T,
+  action: string,
+  subject: string,
+  detail: string,
+): Promise<T> {
+  if (saved.ok) await recordAudit({ action, subject, detail });
+  return saved;
+}
+
 export async function saveBatch(
   batch: Omit<CourseBatch, "id" | "enabled" | "openSemester">,
 ) {
@@ -1247,7 +1258,7 @@ export async function saveBatch(
     { ...batch, id: localId(), enabled: false, openSemester: 0 },
     ...next.batches,
   ];
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "batch:saved", batch.name, `Course-work batch ${batch.name}`);
 }
 
 export async function setBatch(
@@ -1258,7 +1269,7 @@ export async function setBatch(
   next.batches = next.batches.map((batch) =>
     batch.id === batchId ? { ...batch, ...patch } : batch,
   );
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "batch:changed", batchId, `Course-work batch ${batchId}: ${Object.keys(patch).join(", ")}`);
 }
 
 /** A subject code compared without case or spaces, so "RM 101" and "rm101" are the same code. */
@@ -1311,7 +1322,7 @@ export async function saveSubject(
     },
     ...next.subjects,
   ];
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "subject:saved", subject.code, `${subject.code} ${subject.name}`);
 }
 
 /** The Dean or the administrator approves a subject for registration. */
@@ -1336,7 +1347,7 @@ export async function approveSubject(id: string) {
         }
       : item,
   );
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "subject:approved", id, `Subject ${id} approved`);
 }
 
 /** A subject that nobody has registered can be removed (for example a wrong entry). */
@@ -1349,7 +1360,7 @@ export async function removeSubject(id: string) {
     };
   }
   next.subjects = next.subjects.filter((item) => item.id !== id);
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "subject:removed", id, `Subject ${id} removed`);
 }
 
 export async function saveEnrollment(enrollment: Omit<CourseEnrollment, "id">) {
@@ -1358,7 +1369,7 @@ export async function saveEnrollment(enrollment: Omit<CourseEnrollment, "id">) {
     (item) => !sameId(item.scholarIdentifier, enrollment.scholarIdentifier),
   );
   next.enrollments.unshift({ ...enrollment, id: localId() });
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "enrollment:saved", enrollment.scholarIdentifier, `${enrollment.scholarName} enrolled`);
 }
 
 /**
@@ -1626,7 +1637,7 @@ export async function saveCourseWindow(window: CourseWindow) {
     window,
     ...next.windows.filter((item) => item.batchId !== window.batchId),
   ];
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "course-window:saved", window.batchId, `Course window of ${window.batchId}`);
 }
 
 export async function registerSubject(
@@ -1685,7 +1696,7 @@ export async function registerSubject(
     coeForwardedOn: "",
     examCentreId: "",
   });
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "coursework:registered", registration.scholarIdentifier, `${registration.scholarName} registered for a paper`);
 }
 
 export type PaperStanding = {
@@ -1938,7 +1949,7 @@ export async function registerCoursePapers(input: {
       href: "/admin/payments",
     });
   }
-  return saved;
+  return auditSaved(saved, "coursework:registered", input.scholarIdentifier, `${input.scholarName} registered for course-work papers`);
 }
 
 export async function setCourseWorkPayment(
@@ -2234,7 +2245,7 @@ export async function saveCommittee(
       });
     }
   }
-  return saved;
+  return auditSaved(saved, "committee:submitted", report.scholarIdentifier, `${report.scholarName} submitted the ${report.kind} doctoral committee report`);
 }
 
 /** The steps of an approval already done: the guide's, then those marked after it. */
@@ -2866,7 +2877,7 @@ export async function saveSynopsis(
       });
     }
   }
-  return saved;
+  return auditSaved(saved, "synopsis:submitted", synopsis.scholarIdentifier, `${synopsis.scholarName} submitted the synopsis`);
 }
 
 export async function decideSynopsis(
@@ -2979,7 +2990,7 @@ export async function saveThesis(
       });
     }
   }
-  return saved;
+  return auditSaved(saved, "thesis:submitted", thesis.scholarIdentifier, `${thesis.scholarName} submitted the thesis`);
 }
 
 export async function decideThesis(
@@ -3279,7 +3290,7 @@ export async function savePlagiarism(
     decidedOn: "",
     createdAt: new Date().toISOString(),
   });
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "plagiarism:submitted", certificate.scholarIdentifier, `${certificate.scholarName} filed a plagiarism certificate`);
 }
 
 export async function decidePlagiarism(
@@ -3397,7 +3408,7 @@ export async function reviseThesis(
         }
       : item,
   );
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "thesis:revised", thesisId, `Thesis ${thesisId} revised`);
 }
 
 export async function saveViva(
@@ -3526,7 +3537,7 @@ export async function saveAccess(
     remarks: "",
     createdAt: new Date().toISOString(),
   });
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "access:requested", request.scholarIdentifier, `${request.scholarName} asked for report access`);
 }
 
 export async function decideAccess(
@@ -3857,7 +3868,7 @@ export async function saveVidwanId(identifier: string, value: string) {
       savedOn: new Date().toISOString().slice(0, 10),
     },
   ];
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "vidwan:saved", identifier, `Vidwan ID saved for ${identifier}`);
 }
 
 /* ------------------------------------------ NPTEL courses ---------------------------------- */
@@ -4012,7 +4023,7 @@ export async function addNptel(
       href: "/admin/course-work?tab=nptel",
     });
   }
-  return saved;
+  return auditSaved(saved, "nptel:added", input.scholarIdentifier, `NPTEL course added for ${input.scholarIdentifier}`);
 }
 
 /** The scholar passed an NPTEL course that was in progress: the month, year and proof go to the Dean. */
@@ -4069,7 +4080,7 @@ export async function completeNptel(
       href: "/admin/course-work?tab=nptel",
     });
   }
-  return saved;
+  return auditSaved(saved, "nptel:completed", id, `NPTEL course ${id} marked passed with proof`);
 }
 
 /** A scholar takes back an NPTEL course that is not approved yet (it no longer counts). */
@@ -4082,7 +4093,7 @@ export async function removeNptel(id: string) {
     return { ok: false as const, message: "An approved NPTEL course cannot be removed." };
   }
   next.nptel = next.nptel.filter((item) => item.id !== id);
-  return saveDoctoral(next);
+  return auditSaved(await saveDoctoral(next), "nptel:removed", id, `NPTEL course ${id} removed`);
 }
 
 /** The Dean approves the proof of passing (the scholar is then exempt from the paper) or turns it down. */

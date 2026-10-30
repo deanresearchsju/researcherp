@@ -322,9 +322,21 @@ const lockedMessage =
 
 /** A scholar's new submission goes to the supervisor first when the menu needs one. */
 async function announceSubmission(draft: RecordDraft, resubmitted: boolean) {
-  if (draft.status === "Approved") return;
   const signer = readPreviewSession();
-  if (signer && isOfficeRole(signer.role)) return;
+  const byOffice = Boolean(signer && isOfficeRole(signer.role));
+  await recordAudit({
+    action: byOffice
+      ? resubmitted
+        ? "record:corrected-by-office"
+        : "record:entered-by-office"
+      : resubmitted
+        ? "record:resubmitted"
+        : "record:submitted",
+    subject: `${draft.kind}:${draft.scholarIdentifier}`,
+    detail: `${draft.scholarName} (${draft.scholarIdentifier}) · ${draft.kind}`,
+  });
+  if (draft.status === "Approved") return;
+  if (byOffice) return;
   const menu = scholarRecordMenus.find((item) => item.kind === draft.kind);
   const label = recordLabel(draft.kind);
   const verb = resubmitted ? "Updated" : "New";
@@ -378,9 +390,13 @@ export async function saveScholarRecord(draft: RecordDraft, existingId?: string)
     }
   }
   if (existingId && recordById(draft.kind, existingId)?.status === "Approved") {
-    // A locked record changes only by the administrator's correction.
+    // A locked record changes only by the administrator's correction. The personal details are
+    // kept by the research office, so the office staff correct those too.
     const signer = readPreviewSession();
-    if (signer?.role !== "admin") return { ok: false as const, message: lockedMessage };
+    const mayCorrect =
+      signer?.role === "admin" ||
+      (draft.kind === "personal_details" && signer?.role === "staff");
+    if (!mayCorrect) return { ok: false as const, message: lockedMessage };
   }
   if (draft.kind === "title_change") {
     const doctoral = currentDoctoral();
@@ -648,7 +664,7 @@ export async function annotateScholarRecord(
     await recordAudit({
       action: settled ? `record:${patch.status}` : "record:recommended",
       subject: `${record.kind}:${record.id}`,
-      detail: `${record.scholarName} · ${record.kind}`,
+      detail: `${record.scholarName} (${record.scholarIdentifier}) · ${record.kind}`,
     });
     if (settled) await announceStatus(record, patch.status, patch.extra?.remarks ?? "");
   }
@@ -703,7 +719,7 @@ export async function setScholarRecordStatus(
   await recordAudit({
     action: newStatus === record.status ? "record:recommended" : `record:${status}`,
     subject: `${record.kind}:${record.id}`,
-    detail: `${record.scholarName} · ${record.kind}`,
+    detail: `${record.scholarName} (${record.scholarIdentifier}) · ${record.kind}`,
   });
   if (newStatus !== record.status) await announceStatus(record, status, remarks);
   return true;

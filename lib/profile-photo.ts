@@ -1,3 +1,4 @@
+import { withAudit } from "@/lib/audit";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import type { Role } from "@/types";
@@ -107,7 +108,7 @@ export async function fetchProfilePhotos(role: Role, identifiers: readonly strin
   return found;
 }
 
-export async function saveProfilePhoto(role: Role, identifier: string, photo: string) {
+async function saveProfilePhotoRaw(role: Role, identifier: string, photo: string) {
   const key = profilePhotoKey(role, identifier);
   const supabase = createSupabase();
   if (supabase) {
@@ -126,3 +127,10 @@ export async function saveProfilePhoto(role: Role, identifier: string, photo: st
   publish();
   return { ok: true as const, detail: profilePhotoMigrationHint };
 }
+
+/* The changes below are written in the audit trail. */
+export const saveProfilePhoto = withAudit(saveProfilePhotoRaw, (role, identifier) => ({
+  action: "profile:photo-saved",
+  subject: identifier,
+  detail: `Profile photo of the ${role} ${identifier}`,
+}));

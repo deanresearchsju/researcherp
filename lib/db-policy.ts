@@ -189,6 +189,8 @@ const tables: Record<string, TableRule> = {
     guard: (context) => {
       if (context.op === "read" || !context.actor) return null;
       if (isOfficeRole(context.actor.role)) return null;
+      // A person sets the own photo once (/api/db checks there is none); the office replaces it.
+      if (context.op !== "insert") return "The profile photo is changed by the research office.";
       const rows = Array.isArray(context.request.body)
         ? context.request.body
         : [context.request.body];
@@ -197,7 +199,7 @@ const tables: Record<string, TableRule> = {
         const id = singleObject(row)?.id;
         return typeof id === "string" && id.toLowerCase() === own;
       });
-      return ok ? null : "You can change only your own photo.";
+      return ok ? null : "You can set only your own photo.";
     },
   },
 
@@ -240,10 +242,18 @@ const tables: Record<string, TableRule> = {
     delete: ["office", "scholar"],
     scope: (context) => {
       // A scholar changes or deletes only the records filed under the scholar's own sign-in.
+      // The personal details are never deleted by the scholar, and are changed only to fill
+      // what is empty (/api/db checks that).
       if (context.actor?.role === "scholar" && context.op !== "read") {
         return [
           ["scholar_identifier", `ilike.${exactPattern(context.actor.identifier)}`],
+          ...(context.op === "delete"
+            ? [["kind", "neq.personal_details"] as [string, string]]
+            : []),
         ];
+      }
+      if (context.actor?.role === "supervisor" && context.op !== "read") {
+        return [["kind", "neq.personal_details"]];
       }
       return [];
     },
@@ -338,7 +348,9 @@ const serverOnly = new Set([
 
 const jsonBlobTables: Record<string, readonly Group[]> = {
   doctoral_office: ["office", "scholar", "supervisor"],
-  research_register: ["office", "scholar", "supervisor"],
+  // The register (basic information and profiles) is kept by the research office. A supervisor
+  // saves it only to fill the supervisor's own empty details: /api/db checks that (lib/profile-lock).
+  research_register: ["office", "supervisor"],
   admission_office: ["office", "scholar"],
   exam_office: ["office"],
   news_board: office,

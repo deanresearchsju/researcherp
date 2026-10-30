@@ -498,4 +498,63 @@ await test("the steps cannot be saved empty, and the RAC needs the Dean or the V
   assert.equal(rules.rulesProblem({ rac: { dean: false, vc: true } }), null);
 });
 
+/* ------------------------------------------ audit trail ------------------------------------ */
+const auditLines = () => JSON.parse(storage.getItem(storageKeys.auditLog) ?? "[]");
+const audit = load("@/lib/audit.ts");
+const auditView = load("@/lib/audit-view.ts");
+
+await test("the audit trail names who submitted and who decided a synopsis", async () => {
+  storage.setItem(storageKeys.auditLog, "[]");
+  rules.setApprovalRulesInMemory({});
+  await fresh();
+  signIn("scholar", "s@x.org");
+  assert.equal((await submitSynopsis()).ok, true);
+  signIn("staff");
+  await decide(synopsisNow().id); // refused: the Dean decides
+  signIn("dean", "dean@x.org");
+  assert.equal((await decide(synopsisNow().id)).ok, true);
+  const lines = auditLines();
+  const submitted = lines.find((line) => line.action === "synopsis:submitted");
+  assert.ok(submitted, "the submission is recorded");
+  assert.equal(submitted.actorRole, "scholar");
+  assert.equal(submitted.actorIdentifier, "s@x.org");
+  assert.equal(submitted.subject, "s@x.org");
+  const decided = lines.find((line) => /^synopsis:Approved$/.test(line.action));
+  assert.ok(decided, "the approval is recorded");
+  assert.equal(decided.actorRole, "dean");
+  assert.equal(decided.actorIdentifier, "dean@x.org");
+  assert.ok(
+    !lines.some((line) => line.actorRole === "staff" && /approved/i.test(line.action)),
+    "a refused decision leaves no approval behind",
+  );
+});
+
+await test("a change that fails leaves no line; one that succeeds leaves one", async () => {
+  storage.setItem(storageKeys.auditLog, "[]");
+  signIn("admin", "admin");
+  const ok = audit.withAudit(
+    async (value) => ({ ok: value }),
+    (value) => ({ action: "demo:changed", subject: String(value), detail: "d" }),
+  );
+  await ok(false);
+  assert.equal(auditLines().length, 0);
+  await ok(true);
+  assert.equal(auditLines().length, 1);
+  assert.equal(auditLines()[0].actorRole, "admin");
+});
+
+await test("the audit trail reads in words: module, kind of act, and who did what", () => {
+  assert.equal(auditView.moduleLabel("rac:vc-approved"), "RAC");
+  assert.equal(auditView.moduleLabel("auth:sign-in"), "Sign-in and passwords");
+  assert.equal(auditView.actionLabel("record:Supervisor approved"), "Record · Supervisor approved");
+  assert.equal(auditView.kindOf("synopsis:submitted"), "Submitted");
+  assert.equal(auditView.kindOf("record:resubmitted"), "Submitted");
+  assert.equal(auditView.kindOf("record:Approved"), "Approved");
+  assert.equal(auditView.kindOf("record:recommended"), "Approved");
+  assert.equal(auditView.kindOf("thesis:Rejected"), "Returned");
+  assert.equal(auditView.kindOf("record:Returned"), "Returned");
+  assert.equal(auditView.kindOf("auth:sign-in"), "Sign-in");
+  assert.equal(auditView.kindOf("register:scholar-edited"), "Changed");
+});
+
 summary("chain");

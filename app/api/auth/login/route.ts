@@ -18,6 +18,7 @@ import {
   supervisorBySignIn,
 } from "@/lib/register";
 import { loginBlocked, loginFailed, loginSucceeded } from "@/lib/login-guard";
+import { auditServer } from "@/lib/audit-server";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { startSignIn } from "@/lib/single-session";
@@ -225,6 +226,13 @@ export async function POST(request: Request) {
   }
   if (!verifySecret(input.password, data.password)) {
     loginFailed(address, identifier);
+    await auditServer({
+      actorRole: data.role,
+      actorIdentifier: data.identifier,
+      action: "auth:sign-in-failed",
+      subject: data.identifier,
+      detail: `Wrong password from ${address}`,
+    });
     return NextResponse.json(
       {
         ok: false,
@@ -263,6 +271,13 @@ export async function POST(request: Request) {
     }),
   };
   loginSucceeded(address, identifier);
+  await auditServer({
+    actorRole: data.role,
+    actorIdentifier: data.identifier,
+    action: "auth:sign-in",
+    subject: data.identifier,
+    detail: `${data.name} signed in from ${address}`,
+  });
   // A new sign-in replaces any earlier one of the same user (one sign-in at a time).
   const sid = await startSignIn(data.id);
   const token = await encodeSessionCookie(sid ? { ...session, sid } : session, remember);

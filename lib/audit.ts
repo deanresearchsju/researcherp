@@ -77,6 +77,21 @@ export async function recordAudit(input: {
   }
 }
 
+/**
+ * Wraps a function that changes something and returns `{ ok }`: once it has succeeded, a line is
+ * written in the audit trail (who did it is stamped by the server from the sign-in).
+ */
+export function withAudit<A extends unknown[], R extends { ok: boolean }>(
+  run: (...args: A) => Promise<R>,
+  describe: (...args: A) => { action: string; subject: string; detail: string },
+) {
+  return async (...args: A): Promise<R> => {
+    const result = await run(...args);
+    if (result.ok) await recordAudit(describe(...args));
+    return result;
+  };
+}
+
 export type InboxNotice = Notice & {
   /** Page the notice is about; opening it clears the notice. */
   href: string;

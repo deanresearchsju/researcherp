@@ -663,6 +663,144 @@ await test("the register shows a scholar only the scholar's own contact details"
   );
 });
 
+/* ------------------------------------ the audit trail and the profile ------------------- */
+await test("an audit line carries the real sign-in, not the one the browser claims; only the administrator reads it", async () => {
+  const marker = `test:stamp-${randomBytes(4).toString("hex")}`;
+  const scholarCookie = await cookieFor("scholar", "audit-scholar@example.invalid", "Audit Scholar");
+  const adminCookie = await cookieFor("admin", "audit-admin@example.invalid", "Audit Admin");
+  const json = { "Content-Type": "application/json" };
+  const added = await gate(
+    "rest/v1/audit_log",
+    {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({
+        actor_role: "admin",
+        actor_identifier: "admin",
+        action: marker,
+        subject: "someone",
+        detail: "claims to be the administrator",
+        at: "2001-01-01T00:00:00Z",
+      }),
+    },
+    scholarCookie,
+  );
+  assert.ok(added.status === 201 || added.status === 200 || added.status === 204, `status ${added.status}`);
+  const seen = await gate(`rest/v1/audit_log?select=*&action=eq.${marker}`, {}, adminCookie);
+  const rows = await seen.json();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].actor_role, "scholar");
+  assert.equal(rows[0].actor_identifier, "audit-scholar@example.invalid");
+  assert.ok(!String(rows[0].at).startsWith("2001"), "the time comes from the database");
+  const hidden = await gate(`rest/v1/audit_log?select=*&action=eq.${marker}`, {}, scholarCookie);
+  assert.deepEqual(await hidden.json(), []);
+  const erase = await gate(
+    `rest/v1/audit_log?action=eq.${marker}`,
+    { method: "DELETE" },
+    adminCookie,
+  );
+  assert.equal(erase.status, 403, "nobody removes a line");
+});
+
+await test("signing in is written in the audit trail by the server", async () => {
+  const adminCookie = await cookieFor("admin", "audit-admin@example.invalid", "Audit Admin");
+  const seen = await gate(
+    `rest/v1/audit_log?select=action,actor_identifier&actor_identifier=ilike.${encodeURIComponent(identifier)}`,
+    {},
+    adminCookie,
+  );
+  const rows = await seen.json();
+  assert.ok(
+    rows.some((row) => row.action === "auth:sign-in"),
+    "the sign-in is recorded: " + JSON.stringify(rows),
+  );
+  assert.ok(
+    rows.some((row) => row.action === "auth:password-changed"),
+    "the password change is recorded",
+  );
+});
+
+await test("a scholar fills what is empty in the personal details and cannot change what is filled", async () => {
+  const json = { "Content-Type": "application/json" };
+  const who = "profile-scholar@example.invalid";
+  const cookie = await cookieFor("scholar", who, "Profile Scholar");
+  const make = (payload, id) =>
+    gate(
+      id ? `rest/v1/scholar_records?id=eq.${id}` : "rest/v1/scholar_records",
+      {
+        method: id ? "PATCH" : "POST",
+        headers: { ...json, Prefer: "return=representation" },
+        body: JSON.stringify(
+          id
+            ? { payload }
+            : {
+                kind: "personal_details",
+                scholar_identifier: who,
+                scholar_name: "Profile Scholar",
+                status: "Submitted",
+                payload,
+              },
+        ),
+      },
+      cookie,
+    );
+  try {
+    const first = await make({ fullName: "Profile Scholar", mobile: "9876543210" });
+    assert.equal(first.status, 201, await first.clone().text());
+    const row = (await first.json())[0];
+    // The details are on file: a second record is refused.
+    assert.equal((await make({ fullName: "Another" })).status, 403);
+    // A filled field cannot change; an empty one can be filled.
+    const changed = await make({ fullName: "Profile Scholar", mobile: "9000000000" }, row.id);
+    assert.equal(changed.status, 403);
+    const filled = await make(
+      { fullName: "Profile Scholar", mobile: "9876543210", fatherName: "Parent Name" },
+      row.id,
+    );
+    assert.equal(filled.status, 200, await filled.clone().text());
+  } finally {
+    await db.from("scholar_records").delete().eq("scholar_identifier", "profile-scholar@example.invalid");
+  }
+});
+
+await test("a supervisor cannot rewrite the register, and a photo is set once", async () => {
+  const json = { "Content-Type": "application/json" };
+  const supervisorCookie = await cookieFor("supervisor", "profile-guide@example.invalid", "Profile Guide");
+  const register = await gate(
+    "rest/v1/rpc/save_json_blob",
+    {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({
+        p_table: "research_register",
+        p_id: "register",
+        p_payload: { quotas: [{ name: "Anyone", quota: 99 }] },
+        p_updated_at: null,
+      }),
+    },
+    supervisorCookie,
+  );
+  assert.equal(register.status, 403);
+  const scholarCookie = await cookieFor("scholar", "photo-scholar@example.invalid", "Photo Scholar");
+  const set = (photo) =>
+    gate(
+      "rest/v1/profile_photos?on_conflict=id",
+      {
+        method: "POST",
+        headers: { ...json, Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ id: "scholar:photo-scholar@example.invalid", photo }),
+      },
+      scholarCookie,
+    );
+  try {
+    const first = await set("data:image/png;base64,AAAA");
+    assert.ok(first.status >= 200 && first.status < 300, `first photo ${first.status}`);
+    assert.equal((await set("data:image/png;base64,BBBB")).status, 403);
+  } finally {
+    await db.from("profile_photos").delete().eq("id", "scholar:photo-scholar@example.invalid");
+  }
+});
+
 await test("the public key of the database opens nothing (needs the close-public-access SQL)", async () => {
   const anon = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!anon) return;
@@ -678,5 +816,10 @@ await test("the public key of the database opens nothing (needs the close-public
   }
   assert.ok(!direct.ok || rows.length === 0);
 });
+
+// The audit lines the tests themselves caused (test sign-ins and test users) are removed.
+await db.from("audit_log").delete().ilike("actor_identifier", "%@test.invalid");
+await db.from("audit_log").delete().ilike("actor_identifier", "%@example.invalid");
+await db.from("audit_log").delete().like("action", "test:%");
 
 summary("http");

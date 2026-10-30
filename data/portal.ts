@@ -196,13 +196,14 @@ const adminGroups: PortalNavGroup[] = [
       { label: "Users", href: "/admin/users", ready: true },
       { label: "Approval rules", href: "/admin/approval-rules", ready: true },
       { label: "Fee settings", href: "/admin/fee-settings", ready: true },
+      { label: "Audit trail", href: "/admin/audit", ready: true },
       { label: "Clear test data", href: "/admin/test-data", ready: true },
     ],
   },
 ];
 
 /** Menus only the administrator has, however rights are granted to the others. */
-const adminOnlyHrefs = new Set(["/admin/test-data"]);
+const adminOnlyHrefs = new Set(["/admin/test-data", "/admin/audit"]);
 
 function officeGroups(withArchive: boolean, administrator = false): PortalNavGroup[] {
   return adminGroups.map((group) => {

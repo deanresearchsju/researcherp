@@ -1,4 +1,5 @@
 import { scholarRecordMenus } from "@/data/scholar-records";
+import { withAudit } from "@/lib/audit";
 import { adminActionBlock } from "@/lib/access";
 import { readPreviewSession } from "@/lib/auth";
 import { saveJsonBlob } from "@/lib/json-lock";
@@ -255,7 +256,7 @@ export function approvalNeeds(id: string, stage: ApprovalStage) {
 }
 
 /** The rules as ticked on the screen, saved for every sign-in. */
-export async function saveApprovalRules(
+async function saveApprovalRulesRaw(
   rules: Record<string, RuleChoice>,
   changeText: string,
 ) {
@@ -280,3 +281,10 @@ export async function saveApprovalRules(
   publish({ rules, changes, updatedAt: saved.updatedAt, detail: null });
   return { ok: true as const };
 }
+
+/* The changes below are written in the audit trail. */
+export const saveApprovalRules = withAudit(saveApprovalRulesRaw, (_rules, changeText) => ({
+  action: "approval-rules:saved",
+  subject: "approval-rules",
+  detail: changeText,
+}));

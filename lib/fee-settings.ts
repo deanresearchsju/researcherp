@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 
 import { defaultLetter } from "@/data/admission";
 import { adminActionBlock } from "@/lib/access";
+import { withAudit } from "@/lib/audit";
 import {
   currentAdmission,
   ensureAdmission,
@@ -73,7 +74,7 @@ export function rupees(value: number) {
 }
 
 /** The administrator sets the fees (0 means no fee for a synopsis or thesis). */
-export async function saveFeeSettings(fees: FeeSettings) {
+async function saveFeeSettingsRaw(fees: FeeSettings) {
   const blocked = adminActionBlock();
   if (blocked) return blocked;
   const current = await ensureAdmission();
@@ -90,3 +91,10 @@ export async function saveFeeSettings(fees: FeeSettings) {
     },
   });
 }
+
+/* The changes below are written in the audit trail. */
+export const saveFeeSettings = withAudit(saveFeeSettingsRaw, () => ({
+  action: "fee-settings:saved",
+  subject: "fee-settings",
+  detail: "Fee amounts were changed",
+}));

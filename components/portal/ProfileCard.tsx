@@ -33,6 +33,7 @@ import {
   currentAllotments,
   subscribeRegister,
 } from "@/lib/register";
+import { isOfficeRole } from "@/lib/access";
 import { researchTitleOf } from "@/lib/research-title";
 import { admissionCaseForIdentifier, currentAdmission } from "@/lib/admission";
 import { guideHiddenCopy, guideReleased } from "@/lib/guide-release";
@@ -218,9 +219,15 @@ export function ProfileCard({
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<File | null>(null);
   const shown = photo || (identifier ? portraitFor(portraits, identifier, name) : null);
-  const officeCanChange = own?.role === "admin" && view?.role === role;
-  const canSet = ready && identifier && !photo && !officeCanChange;
-  const canChange = ready && identifier && officeCanChange;
+  // The photo is part of the profile: a scholar or supervisor sets the own photo when there is
+  // none, and cannot change it afterwards; the administrator, the Dean and the staff set or
+  // replace it (opening the person's profile, or viewing as them).
+  const officeCanChange =
+    Boolean(own && isOfficeRole(own.role)) &&
+    (Boolean(identifierProp?.trim()) || view?.role === role);
+  const ownProfile = !identifierProp?.trim() && own?.role === role && !view;
+  const canSet = ready && identifier && !photo && (officeCanChange || ownProfile);
+  const canChange = ready && identifier && officeCanChange && Boolean(photo);
 
   // A chosen photo opens the crop window first; the cropped photo is resized to the limit.
   function onPick(file: File | undefined) {

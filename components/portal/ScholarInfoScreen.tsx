@@ -313,7 +313,7 @@ export function ScholarInfoScreen() {
                           <UserPlus className="size-4" aria-hidden="true" />
                           {record ? "Verify & lock" : "Enter details"}
                         </Button>
-                      ) : isAdmin ? (
+                      ) : isAdmin || session?.role === "staff" ? (
                         <Button
                           type="button"
                           size="sm"

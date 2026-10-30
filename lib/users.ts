@@ -1,4 +1,5 @@
 import { parseMenuRights } from "@/lib/access";
+import { withAudit } from "@/lib/audit";
 import { storageKeys } from "@/lib/constants";
 import { createSupabase } from "@/lib/supabase/client";
 import { ROLES, type Role } from "@/types";
@@ -404,7 +405,7 @@ export async function insertPortalUsers(
   };
 }
 
-export async function updatePortalUser(
+async function updatePortalUserRaw(
   user: PortalUser,
   next: { name: string; password: string; mustReset: boolean; menus: string[] | null },
   source: UserSource,
@@ -523,7 +524,7 @@ export async function updatePortalUser(
   return { ok: true as const, user: updated };
 }
 
-export async function createPortalUser(
+async function createPortalUserRaw(
   input: {
     role: Role;
     name: string;
@@ -649,7 +650,7 @@ export async function createPortalUser(
   return { ok: true as const, user };
 }
 
-export async function removePortalUser(user: PortalUser, source: UserSource) {
+async function removePortalUserRaw(user: PortalUser, source: UserSource) {
   if (
     source === "database" &&
     !user.id.startsWith("seed-") &&
@@ -688,3 +689,20 @@ export async function removePortalUser(user: PortalUser, source: UserSource) {
   publish({ users, source: "browser", detail: memory?.detail ?? null });
   return { ok: true as const };
 }
+
+/* The changes below are written in the audit trail. */
+export const createPortalUser = withAudit(createPortalUserRaw, (input) => ({
+  action: "user:created",
+  subject: input.identifier.trim(),
+  detail: `${input.role} sign-in for ${input.name.trim()}`,
+}));
+export const updatePortalUser = withAudit(updatePortalUserRaw, (user, next) => ({
+  action: "user:updated",
+  subject: user.identifier,
+  detail: `${user.role} ${next.name.trim()}${next.password && next.password !== user.password ? ", password set" : ""}${next.menus === null ? ", all menus" : `, ${next.menus.length} menu rights`}`,
+}));
+export const removePortalUser = withAudit(removePortalUserRaw, (user) => ({
+  action: "user:removed",
+  subject: user.identifier,
+  detail: `${user.role} sign-in of ${user.name}`,
+}));

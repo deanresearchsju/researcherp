@@ -23,10 +23,14 @@ import {
 } from "@/lib/register";
 import { usePortalSession } from "@/lib/use-preview-session";
 
+const editable = ["phone", "campus", "researchArea", "vidwan", "bio"] as const;
+
 /**
- * A supervisor's own details: the contact, campus, area of research, Vidwan ID and biography. The
- * name, designation and department are the University's record and are changed by the research
- * office. What appears on the public Supervisors page is decided by the research office.
+ * A supervisor's own details. What the research office or the supervisor has already entered
+ * cannot be changed here; the supervisor fills in what is empty. The name, designation,
+ * department and e-mail are the University's record. If anything entered is incorrect, the
+ * research office corrects it (Supervisor register, Supervisor profiles). What appears on the
+ * public Supervisors page is decided by the research office.
  */
 export function SupervisorOwnDetails() {
   const ready = useClientReady();
@@ -85,14 +89,18 @@ export function SupervisorOwnDetails() {
     );
   }
 
-  const values = draft ?? {
+  // What is on record now; a filled field is shown and kept, an empty one is typed in.
+  const stored: Record<(typeof editable)[number], string> = {
     phone: known.phone,
     campus: known.campus,
     researchArea: profile?.researchArea || known.researchArea,
     vidwan: profile?.vidwan ?? "",
     bio: profile?.bio ?? "",
   };
-  const set = (name: string, value: string) => setDraft({ ...values, [name]: value });
+  const locked = (name: (typeof editable)[number]) => stored[name].trim() !== "";
+  const anyEmpty = editable.some((name) => !locked(name));
+  const values = { ...stored, ...(draft ?? {}) };
+  const set = (name: string, value: string) => setDraft({ ...(draft ?? {}), [name]: value });
   const words = wordCount(values.bio);
 
   async function save(event: React.FormEvent) {
@@ -124,9 +132,9 @@ export function SupervisorOwnDetails() {
         </p>
       ) : null}
       <GateBanner>
-        Check your details and complete what is missing. Your name, designation and
-        department are the University&apos;s record: write to the research office to
-        change them.
+        {anyEmpty
+          ? "Fill in the details that are empty. What is already entered cannot be changed here: if anything is incorrect, write to the research office or raise a question under Helpdesk, and the staff will correct it. Your name, designation and department are the University's record."
+          : "Your details are complete. What is entered cannot be changed here: if anything is incorrect, write to the research office or raise a question under Helpdesk, and the staff will correct it."}
       </GateBanner>
       <form onSubmit={save} noValidate>
         <DeskSection title="About you">
@@ -146,12 +154,14 @@ export function SupervisorOwnDetails() {
             <FormField label="Phone" htmlFor="own-phone">
               <Input
                 id="own-phone"
+                readOnly={locked("phone")}
                 {...typed(inputRules.phone, values.phone, (next) => set("phone", next))}
               />
             </FormField>
             <FormField label="Campus" htmlFor="own-campus">
               <NativeSelect
                 id="own-campus"
+                disabled={locked("campus")}
                 value={values.campus}
                 onChange={(event) => set("campus", event.target.value)}
               >
@@ -169,11 +179,16 @@ export function SupervisorOwnDetails() {
               label="Area of research"
               htmlFor="own-area"
               className="sm:col-span-2"
-              hint="Short topics separated by commas, for example: Computer networks, Cloud computing."
+              hint={
+                locked("researchArea")
+                  ? undefined
+                  : "Short topics separated by commas, for example: Computer networks, Cloud computing."
+              }
             >
               <Textarea
                 id="own-area"
                 rows={2}
+                readOnly={locked("researchArea")}
                 value={values.researchArea}
                 onChange={(event) => set("researchArea", event.target.value)}
               />
@@ -181,10 +196,15 @@ export function SupervisorOwnDetails() {
             <FormField
               label="Vidwan ID"
               htmlFor="own-vidwan"
-              hint="Your Vidwan ID, or the full address of your Vidwan profile."
+              hint={
+                locked("vidwan")
+                  ? undefined
+                  : "Your Vidwan ID, or the full address of your Vidwan profile."
+              }
             >
               <Input
                 id="own-vidwan"
+                readOnly={locked("vidwan")}
                 {...typed(inputRules.doi, values.vidwan, (next) => set("vidwan", next))}
               />
             </FormField>
@@ -197,6 +217,7 @@ export function SupervisorOwnDetails() {
               <Textarea
                 id="own-bio"
                 rows={6}
+                readOnly={locked("bio")}
                 value={values.bio}
                 onChange={(event) => set("bio", event.target.value)}
               />
@@ -209,9 +230,11 @@ export function SupervisorOwnDetails() {
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button type="submit" variant="gold" disabled={busy || words > bioWordLimit}>
-            {busy ? "Saving…" : "Save my details"}
-          </Button>
+          {anyEmpty ? (
+            <Button type="submit" variant="gold" disabled={busy || words > bioWordLimit}>
+              {busy ? "Saving…" : "Save the details I filled in"}
+            </Button>
+          ) : null}
           <span className="text-sm text-muted-foreground">
             {profile?.published
               ? "Your profile is shown on the public Supervisors page."

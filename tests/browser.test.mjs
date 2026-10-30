@@ -398,6 +398,98 @@ if (roles.includes("admin")) {
   });
 }
 
+// Basic information and profile: read-only for scholars and supervisors; the audit trail for the administrator.
+if (roles.includes("admin")) {
+  await signInAs("scholar", ...identities.scholar);
+  await test("scholar: what is filled in the personal details cannot be changed; only empty details are typed in", async () => {
+    await send("Page.navigate", { url: base + "/scholar/records/personal-details" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        await new Promise((r) => setTimeout(r, 1500));
+        const main = document.querySelector("main");
+        const opener = [...(main?.querySelectorAll("button") ?? [])].find((b) => /^(Add|Update) /.test(b.textContent.trim()));
+        let dialog = null;
+        if (opener) {
+          opener.click();
+          await new Promise((r) => setTimeout(r, 600));
+          const box = document.querySelector('[role="dialog"]');
+          dialog = box
+            ? [...box.querySelectorAll("input:not([type=file]):not([type=hidden]), textarea, select")].map((el) => ({
+                id: el.id,
+                filled: (el.value || "").trim() !== "",
+                locked: el.readOnly === true || el.disabled === true,
+              }))
+            : [];
+        }
+        return JSON.stringify({ text: main ? main.innerText : "", hasOpener: Boolean(opener), dialog });
+      })()`)) ?? "{}",
+    );
+    assert.match(state.text, /Your details are complete|Fill in the details that are empty|verified and locked/);
+    if (state.hasOpener) {
+      assert.ok(state.dialog.length > 0, "the form did not open");
+      const open = state.dialog.filter((field) => field.filled && !field.locked);
+      assert.deepEqual(open.map((field) => field.id), [], "a filled field can still be changed");
+    } else {
+      assert.match(state.text, /complete|locked/, "no form and no reason");
+    }
+  });
+
+  await signInAs("supervisor", ...identities.supervisor);
+  await test("supervisor: My details: filled details are read-only, empty ones can be filled", async () => {
+    await send("Page.navigate", { url: base + "/supervisor/details" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        await new Promise((r) => setTimeout(r, 1500));
+        const main = document.querySelector("main");
+        const fields = [...(main?.querySelectorAll("input, textarea, select") ?? [])].map((el) => ({
+          id: el.id,
+          filled: (el.value || "").trim() !== "",
+          locked: el.readOnly === true || el.disabled === true,
+        }));
+        return JSON.stringify({
+          text: main ? main.innerText : "",
+          fields,
+          save: [...(main?.querySelectorAll("button") ?? [])].some((b) => /^Save/.test(b.textContent.trim())),
+        });
+      })()`)) ?? "{}",
+    );
+    assert.ok(state.fields.length > 0 || /not on the register/.test(state.text), "no details shown");
+    const open = state.fields.filter((field) => field.filled && !field.locked);
+    assert.deepEqual(open.map((field) => field.id), [], "a filled detail can still be changed");
+    const empty = state.fields.filter((field) => !field.filled);
+    assert.equal(state.save, empty.length > 0, "the Save button shows only while something is empty");
+  });
+
+  await signInAs("admin", "admin", "Administrator");
+  await test("admin: the audit trail opens with its filters, tabs and export", async () => {
+    await send("Page.navigate", { url: base + "/admin/audit" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        for (let i = 0; i < 100; i += 1) {
+          if (!/Reading the audit trail/.test(document.querySelector("main")?.innerText ?? "")) break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const main = document.querySelector("main");
+        return JSON.stringify({
+          text: main ? main.innerText : "",
+          buttons: [...(main?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()),
+        });
+      })()`)) ?? "{}",
+    );
+    for (const want of ["Audit trail", "Person", "Activity log", "By user"]) {
+      assert.ok(state.text.includes(want), `no "${want}": ` + state.text.slice(0, 300));
+    }
+    assert.ok(state.buttons.includes("Export PDF"), "no Export PDF");
+    assert.ok(!/could not be read/.test(state.text), "the audit trail could not be read");
+  });
+}
+
 // Sub-menus: the sections of a menu are in the side bar, and each one shows its own content.
 {
   const sections = load("@/data/menu-sections.ts");

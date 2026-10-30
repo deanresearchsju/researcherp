@@ -1,6 +1,7 @@
 "use client";
 
 import { LayoutDashboard } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
@@ -9,6 +10,7 @@ import { personFileCopy } from "@/data/person-file";
 import { roleProfiles } from "@/data/roles";
 import { visibleGroups } from "@/lib/access";
 import { openOfficeView } from "@/lib/office-view";
+import { usePreviewSession } from "@/lib/use-preview-session";
 
 function PersonMenus({
   role,
@@ -85,6 +87,7 @@ export function PersonProfileScreen({
   name: string;
 }) {
   const label = name.trim() || identifier;
+  const session = usePreviewSession();
   return (
     <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-4 lg:self-start">
@@ -96,6 +99,14 @@ export function PersonProfileScreen({
             {personFileCopy.viewProfile}
           </p>
           <h1 className="mt-2 font-heading text-3xl text-primary">{label}</h1>
+          {session?.role === "admin" ? (
+            <Link
+              href={`/admin/audit?person=${encodeURIComponent(identifier)}`}
+              className="mt-1 inline-block text-sm font-semibold text-secondary hover:underline"
+            >
+              See everything this {role} did and everything done for them (audit trail)
+            </Link>
+          ) : null}
         </header>
         <ProfileCard role={role} identifier={identifier} name={label} />
         <PersonalDetailsPanel role={role} identifier={identifier} name={label} />

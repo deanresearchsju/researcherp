@@ -5,7 +5,7 @@ import {
   type ResearchSupervisor,
 } from "@/data/research-register";
 import { adminActionBlock, officeWriteBlock } from "@/lib/access";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, withAudit } from "@/lib/audit";
 import { readPreviewSession } from "@/lib/auth";
 import { storageKeys, studyModes } from "@/lib/constants";
 import { currentResearchAreas } from "@/lib/research-areas";
@@ -1124,7 +1124,7 @@ function editor() {
 }
 
 /** Saves the office's correction of a scholar's register details. */
-export async function saveScholarEdit(
+async function saveScholarEditRaw(
   scholarId: string,
   next: Partial<Record<ScholarEditField, string>>,
 ) {
@@ -1162,7 +1162,7 @@ export async function saveScholarEdit(
 }
 
 /** Saves the office's correction of a supervisor's register details. */
-export async function saveSupervisorEdit(
+async function saveSupervisorEditRaw(
   key: string,
   next: Partial<Record<SupervisorEditField, string>>,
   onVacancyList: boolean,
@@ -1256,7 +1256,7 @@ export function currentProfiles() {
 }
 
 /** The research office saves a supervisor's public profile (biography, Vidwan ID, area). */
-export async function saveSupervisorProfile(
+async function saveSupervisorProfileRaw(
   profile: Omit<SupervisorProfile, "updatedOn" | "updatedBy">,
 ) {
   const blocked = officeWriteBlock();
@@ -1295,7 +1295,7 @@ export async function saveSupervisorProfile(
   return persistRegister({ ...current, profiles });
 }
 
-export async function removeSupervisorProfile(key: string) {
+async function removeSupervisorProfileRaw(key: string) {
   const blocked = officeWriteBlock();
   if (blocked) return blocked;
   const current = memory ?? (await loadRegister());
@@ -1614,7 +1614,7 @@ export function nextScholarSerial() {
   );
 }
 
-export async function importRegisterBatch(batch: RegisterBatch) {
+async function importRegisterBatchRaw(batch: RegisterBatch) {
   const blocked = officeWriteBlock();
   if (blocked) return blocked;
   const current = memory ?? (await loadRegister());
@@ -1743,10 +1743,11 @@ export async function saveSupervisorDetails(
 }
 
 /**
- * A supervisor keeps their own contact, campus, area of research, Vidwan ID and biography. What
+ * A supervisor fills in the own contact, campus, area of research, Vidwan ID and biography that
+ * are still empty; what is already there is kept and only the research office changes it. What
  * the public sees still waits for the Research Office to show the profile.
  */
-export async function saveOwnSupervisorDetails(values: {
+async function saveOwnSupervisorDetailsRaw(values: {
   phone: string;
   campus: string;
   researchArea: string;
@@ -1793,6 +1794,20 @@ export async function saveOwnSupervisorDetails(values: {
     current = { ...current, addedSupervisors: [...current.addedSupervisors, entry] };
     supervisor = entry;
   }
+  // What is already filled in stays as it is.
+  const heldProfile = current.profiles.find(
+    (item) => item.key === supervisorEditKey(supervisor).trim().toLowerCase(),
+  );
+  values = {
+    phone: supervisor.phone.trim() ? supervisor.phone : values.phone,
+    campus: supervisor.campus.trim() ? supervisor.campus : values.campus,
+    researchArea:
+      heldProfile?.researchArea.trim() || supervisor.researchArea.trim()
+        ? heldProfile?.researchArea.trim() || supervisor.researchArea
+        : values.researchArea,
+    vidwan: heldProfile?.vidwan.trim() ? heldProfile.vidwan : values.vidwan,
+    bio: heldProfile?.bio.trim() ? heldProfile.bio : values.bio,
+  };
   if (wordCount(values.bio) > bioWordLimit) {
     return {
       ok: false as const,
@@ -1917,7 +1932,7 @@ export function supervisorListingActive(
   return supervisorIsActive(supervisorKeys(supervisor), supervisor.active, standings);
 }
 
-export async function saveSupervisorStanding(
+async function saveSupervisorStandingRaw(
   supervisor: ResearchSupervisor,
   active: boolean,
   inactiveKind: "Inactive" | "Resigned" | null,
@@ -1960,13 +1975,13 @@ export async function saveStandingByKeys(
   return persistRegister({ ...current, standings });
 }
 
-export async function saveSupervisorExit(exit: SupervisorExit) {
+async function saveSupervisorExitRaw(exit: SupervisorExit) {
   const current = memory ?? (await loadRegister());
   const exits = [exit, ...current.exits.filter((item) => !sameKey(item.key, exit.key))];
   return persistRegister({ ...current, exits });
 }
 
-export async function removeSupervisorExit(key: string) {
+async function removeSupervisorExitRaw(key: string) {
   const current = memory ?? (await loadRegister());
   return persistRegister({
     ...current,
@@ -1974,7 +1989,7 @@ export async function removeSupervisorExit(key: string) {
   });
 }
 
-export async function savePassedOut(entries: readonly PassedOutScholar[]) {
+async function savePassedOutRaw(entries: readonly PassedOutScholar[]) {
   const current = memory ?? (await loadRegister());
   const passedOut = [
     ...entries,
@@ -2192,3 +2207,63 @@ export async function allotRegistrations(
         : `${saved} registration numbers were allotted.`,
   };
 }
+
+/* The changes below are written in the audit trail. */
+export const saveScholarEdit = withAudit(saveScholarEditRaw, (scholarId, next) => {
+  const scholar = researchRegister.scholars.find((item) => item.id === scholarId);
+  return {
+    action: "register:scholar-edited",
+    subject: scholar ? scholarSignInId(scholar) : scholarId,
+    detail: `${scholar?.name ?? scholarId}: ${Object.keys(next).join(", ")}`,
+  };
+});
+export const saveSupervisorEdit = withAudit(saveSupervisorEditRaw, (key, next) => ({
+  action: "register:supervisor-edited",
+  subject: key,
+  detail: `${key}: ${Object.keys(next).join(", ")}`,
+}));
+export const saveSupervisorProfile = withAudit(saveSupervisorProfileRaw, (profile) => ({
+  action: "register:supervisor-profile-saved",
+  subject: profile.key,
+  detail: `Profile of ${profile.name}${profile.published ? " (shown to the public)" : ""}`,
+}));
+export const removeSupervisorProfile = withAudit(removeSupervisorProfileRaw, (key) => ({
+  action: "register:supervisor-profile-removed",
+  subject: key,
+  detail: `Profile ${key} removed`,
+}));
+export const saveSupervisorStanding = withAudit(saveSupervisorStandingRaw, (supervisor, active, inactiveKind) => ({
+  action: "register:supervisor-standing",
+  subject: supervisor.email || supervisor.name,
+  detail: `${supervisor.name}: ${active ? "active" : (inactiveKind ?? "inactive")}`,
+}));
+export const saveSupervisorExit = withAudit(saveSupervisorExitRaw, (exit) => ({
+  action: "register:supervisor-exit",
+  subject: exit.key,
+  detail: `${exit.name}: ${exit.reason}, last working day ${exit.lastDay}${exit.completedOn ? ", moved to past supervisors" : ""}`,
+}));
+export const removeSupervisorExit = withAudit(removeSupervisorExitRaw, (key) => ({
+  action: "register:supervisor-exit-removed",
+  subject: key,
+  detail: `Exit ${key} removed`,
+}));
+export const savePassedOut = withAudit(savePassedOutRaw, (entries) => ({
+  action: "register:passed-out",
+  subject: "passed-out",
+  detail: `${entries.length} scholar(s): ${entries.map((item) => item.name).join(", ").slice(0, 300)}`,
+}));
+export const importRegisterBatch = withAudit(importRegisterBatchRaw, (batch) => ({
+  action: "register:imported",
+  subject: "register",
+  detail: Object.entries(batch)
+    .map(([part, value]) => `${part}: ${Array.isArray(value) ? value.length : 1}`)
+    .join(", "),
+}));
+export const saveOwnSupervisorDetails = withAudit(
+  saveOwnSupervisorDetailsRaw,
+  () => ({
+    action: "register:supervisor-own-details",
+    subject: readPreviewSession()?.identifier ?? "",
+    detail: "The supervisor filled in details that were empty",
+  }),
+);

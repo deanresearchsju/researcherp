@@ -5,6 +5,7 @@ import { hashSecret, verifySecret } from "@/lib/passwords";
 import { passwordProblem } from "@/lib/password-rules";
 import { issuedPassword } from "@/lib/register-access";
 import { requestSession } from "@/lib/api-session";
+import { auditServer } from "@/lib/audit-server";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { portalAuthClient } from "@/lib/supabase/admin";
 
@@ -75,6 +76,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  await auditServer({
+    actorRole: session.role,
+    actorIdentifier: session.identifier,
+    action: "auth:password-set",
+    subject: session.identifier,
+    detail: "The user set a new password after a reset",
+  });
   const next = { ...session, mustReset: false };
   const nextToken = await encodeSessionCookie(next, true);
   const response = NextResponse.json({ ok: true, session: next });

@@ -4,6 +4,7 @@ import { requestSession } from "@/lib/api-session";
 import { ensureRegisterSeed, scholarBySignIn } from "@/lib/register";
 import { decideDbRequest, type DbActor } from "@/lib/db-policy";
 import { projectRegisterRows } from "@/lib/db-projection";
+import { profileLockRefusal } from "@/lib/profile-lock-server";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 
 /**
@@ -144,6 +145,30 @@ async function handle(
   }
   if (decision.action === "empty") return emptyAnswer(request);
 
+  // A line written in the audit trail carries who really wrote it: the server takes the role and
+  // the sign-in from the session, whatever the browser sent, and the time from the database.
+  if (
+    method === "POST" &&
+    actor &&
+    path.join("/").replace(/^\/+|\/+$/g, "") === "rest/v1/audit_log"
+  ) {
+    const rows: unknown[] = Array.isArray(body) ? body : [body];
+    const text = (value: unknown, limit: number) =>
+      (typeof value === "string" ? value : "").slice(0, limit);
+    bodyText = JSON.stringify(
+      rows.map((row) => {
+        const entry = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+        return {
+          actor_role: actor.role,
+          actor_identifier: actor.identifier,
+          action: text(entry.action, 120),
+          subject: text(entry.subject, 240),
+          detail: text(entry.detail, 2000),
+        };
+      }),
+    );
+  }
+
   const limited = rateLimit(
     decision.rate.key,
     decision.rate.limit,
@@ -153,6 +178,21 @@ async function handle(
     return fail(429, "Too many requests. Try again in a little while.", {
       "Retry-After": String(limited.retryAfterSeconds),
     });
+  }
+
+  // What a scholar or supervisor has filled in about themselves is not theirs to change again.
+  if (method !== "GET" && method !== "HEAD") {
+    const refusal = await profileLockRefusal({
+      path: path.join("/"),
+      method,
+      query: decision.query,
+      body,
+      actor,
+      name: session?.name ?? "",
+      url,
+      serviceKey,
+    });
+    if (refusal) return fail(403, refusal);
   }
 
   const headers = new Headers({

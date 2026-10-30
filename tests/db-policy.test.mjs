@@ -498,31 +498,27 @@ await test("the audit trail can be added to by anyone signed in, read only by th
   }
 });
 
-await test("photos: a member may change only the member's own", () => {
-  assert.ok(
-    forwarded(
-      ask(
-        scholar,
-        "POST",
-        "rest/v1/profile_photos",
-        "on_conflict=id",
-        { id: "scholar:asha@example.org", photo: "data:" },
-        "resolution=merge-duplicates",
+await test("photos: a member sets the own photo once; only the research office changes it", () => {
+  for (const actor of [scholar, supervisor]) {
+    const own = `${actor.role}:${actor.identifier.toLowerCase()}`;
+    assert.ok(
+      forwarded(ask(actor, "POST", "rest/v1/profile_photos", "", { id: own, photo: "data:" })),
+      `${actor.role} sets the own photo`,
+    );
+    assert.ok(
+      denied(
+        ask(actor, "POST", "rest/v1/profile_photos", "", {
+          id: "supervisor:someone-else@example.org",
+          photo: "data:",
+        }),
       ),
-    ),
-  );
-  assert.ok(
-    denied(
-      ask(
-        scholar,
-        "POST",
-        "rest/v1/profile_photos",
-        "on_conflict=id",
-        { id: "supervisor:guide@example.org", photo: "data:" },
-        "resolution=merge-duplicates",
-      ),
-    ),
-  );
+      `${actor.role} cannot set another photo`,
+    );
+    assert.ok(
+      denied(ask(actor, "PATCH", "rest/v1/profile_photos", `id=eq.${own}`, { photo: "data:" })),
+      `${actor.role} cannot replace the photo`,
+    );
+  }
   assert.ok(
     forwarded(
       ask(staff, "POST", "rest/v1/profile_photos", "", {
@@ -531,6 +527,53 @@ await test("photos: a member may change only the member's own", () => {
       }),
     ),
   );
+  assert.ok(forwarded(ask(scholar, "GET", "rest/v1/profile_photos", "select=*")));
+});
+
+await test("the register is saved by the research office, and by a supervisor only under the profile rule", () => {
+  const save = (actor) =>
+    ask(actor, "POST", "rest/v1/rpc/save_json_blob", "", {
+      p_table: "research_register",
+      p_id: "register",
+      p_payload: {},
+      p_updated_at: null,
+    });
+  assert.ok(denied(save(scholar)));
+  assert.ok(forwarded(save(supervisor))); // the gate then compares it with what is stored
+  assert.ok(forwarded(save(staff)));
+  assert.ok(forwarded(save(admin)));
+});
+
+await test("a scholar fills the personal details, never deletes them; a supervisor never touches them", () => {
+  const body = { kind: "personal_details", scholar_identifier: scholar.identifier };
+  assert.ok(forwarded(ask(scholar, "POST", "rest/v1/scholar_records", "", body)));
+  assert.ok(denied(ask(scholar, "POST", "rest/v1/scholar_records", "", { ...body, scholar_identifier: "other@example.org" })));
+  const change = ask(scholar, "PATCH", "rest/v1/scholar_records", "id=eq.1", { payload: {} });
+  assert.ok(forwarded(change));
+  assert.deepEqual(change.query.getAll("kind"), []);
+  const erase = ask(scholar, "DELETE", "rest/v1/scholar_records", "id=eq.1");
+  assert.ok(forwarded(erase));
+  assert.ok(erase.query.getAll("kind").includes("neq.personal_details"));
+  const guide = ask(supervisor, "PATCH", "rest/v1/scholar_records", "id=eq.1", { payload: {} });
+  assert.ok(forwarded(guide));
+  assert.ok(guide.query.getAll("kind").includes("neq.personal_details"));
+  const office = ask(staff, "PATCH", "rest/v1/scholar_records", "id=eq.1", { status: "Approved" });
+  assert.ok(forwarded(office));
+  assert.deepEqual(office.query.getAll("kind"), []);
+});
+
+await test("the audit trail: anybody signed in adds a line, only the administrator reads it", () => {
+  const line = { actor_role: "admin", actor_identifier: "someone", action: "x", subject: "y" };
+  assert.ok(forwarded(ask(scholar, "POST", "rest/v1/audit_log", "", line)));
+  assert.ok(denied(ask(visitor, "POST", "rest/v1/audit_log", "", line)));
+  for (const actor of [scholar, supervisor, staff]) {
+    assert.equal(ask(actor, "GET", "rest/v1/audit_log", "select=*").action, "empty");
+  }
+  assert.ok(forwarded(ask(admin, "GET", "rest/v1/audit_log", "select=*&order=at.desc")));
+  for (const actor of [scholar, staff, admin]) {
+    assert.ok(denied(ask(actor, "PATCH", "rest/v1/audit_log", "id=eq.1", { detail: "z" })));
+    assert.ok(denied(ask(actor, "DELETE", "rest/v1/audit_log", "id=eq.1")));
+  }
 });
 
 await test("the Helpdesk questions kept in the examination table are out of the browser's reach", () => {

@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { hashSecret } from "@/lib/passwords";
 import { passwordChangeProblem } from "@/lib/password-change";
 import { requestSession } from "@/lib/api-session";
+import { auditServer } from "@/lib/audit-server";
 import { encodeSessionCookie, sessionCookieName } from "@/lib/session";
 import { startSignIn } from "@/lib/single-session";
 import { portalAuthClient } from "@/lib/supabase/admin";
@@ -67,6 +68,13 @@ export async function POST(request: NextRequest) {
   if (saved.error) return fail("The new password could not be saved.", 500);
   // Any other sign-in of this user ends now; this one carries on with a fresh id.
   const sid = await startSignIn(data.id);
+  await auditServer({
+    actorRole: session.role,
+    actorIdentifier: session.identifier,
+    action: "auth:password-changed",
+    subject: session.identifier,
+    detail: "The user changed their own password",
+  });
   const response = NextResponse.json({ ok: true });
   if (sid) {
     const token = await encodeSessionCookie({ ...session, sid }, true);

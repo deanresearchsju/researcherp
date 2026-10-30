@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
+import { auditServer } from "@/lib/audit-server";
 import { insertOfficeNotice, insertUserNotice } from "@/lib/notices-server";
 import { isAsker } from "@/lib/queries";
 import {
@@ -78,6 +79,13 @@ export async function POST(request: NextRequest) {
         question: text("question"),
       });
       if (!made.ok) return fail(made.message, made.status);
+      await auditServer({
+        actorRole: session.role,
+        actorIdentifier: session.identifier,
+        action: "helpdesk:asked",
+        subject: session.identifier,
+        detail: `${person.name} asked: ${made.value.category} · ${made.value.subject}`,
+      });
       await insertOfficeNotice({
         title: `Helpdesk · ${person.name}`,
         detail: `${made.value.category}: ${made.value.subject}`,
@@ -88,6 +96,13 @@ export async function POST(request: NextRequest) {
     if (action === "followup") {
       const done = await followUpQuery(person, text("id"), text("text"));
       if (!done.ok) return fail(done.message, done.status);
+      await auditServer({
+        actorRole: session.role,
+        actorIdentifier: session.identifier,
+        action: "helpdesk:followed-up",
+        subject: session.identifier,
+        detail: `${person.name} wrote again: ${done.value?.subject ?? ""}`,
+      });
       await insertOfficeNotice({
         title: `Helpdesk · ${person.name} wrote again`,
         detail: done.value?.subject ?? "",
@@ -98,6 +113,13 @@ export async function POST(request: NextRequest) {
     if (action === "close") {
       const done = await closeOwnQuery(person, text("id"));
       if (!done.ok) return fail(done.message, done.status);
+      await auditServer({
+        actorRole: session.role,
+        actorIdentifier: session.identifier,
+        action: "helpdesk:closed",
+        subject: session.identifier,
+        detail: `${person.name} closed a question`,
+      });
       return NextResponse.json({ ok: true });
     }
     return fail("Unknown action.");
@@ -116,6 +138,13 @@ export async function POST(request: NextRequest) {
   );
   if (!done.ok) return fail(done.message, done.status);
   const query = done.value;
+  await auditServer({
+    actorRole: session.role,
+    actorIdentifier: session.identifier,
+    action: body.close !== false ? "helpdesk:answered" : "helpdesk:replied",
+    subject: query?.identifier ?? "",
+    detail: `${session.name.trim() || session.identifier} replied${query ? ` to ${query.role} ${query.identifier}: ${query.subject}` : ""}`,
+  });
   if (query) {
     await insertUserNotice({
       role: query.role,

@@ -160,9 +160,12 @@ export function RecordForm({
   supervisorName,
   existing,
   prefill,
+  lockFilled = false,
   onClose,
   onDone,
 }: {
+  /** What is already filled in cannot be changed (a scholar's own basic details). */
+  lockFilled?: boolean;
   /** Saved by the research office already approved, which locks it. */
   officeEntry?: boolean;
   prefill?: Record<string, string>;
@@ -188,6 +191,17 @@ export function RecordForm({
       : { ...defaults, ...registerDefaults, ...prefill },
   });
   const doi = useWatch({ control: form.control, name: "doi" });
+  // A field that already holds a value is shown and kept; only the empty ones are typed in.
+  const startValues: Record<string, string> = existing
+    ? { ...defaults, ...existing.payload }
+    : { ...defaults, ...registerDefaults, ...prefill };
+  const locked = new Set(
+    lockFilled && !officeEntry
+      ? menu.fields
+          .filter((field) => (startValues[field.name] ?? "").trim() !== "")
+          .map((field) => field.name)
+      : [],
+  );
   // The office may record entries (such as fees paid before the ERP) without a receipt, and a
   // correction keeps the file already on the record.
   const fileRequired = menu.fileRequired && !officeEntry && !existing?.fileName;
@@ -196,7 +210,11 @@ export function RecordForm({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function onSubmit(values: Record<string, string>) {
+  async function onSubmit(typed: Record<string, string>) {
+    const values = {
+      ...typed,
+      ...Object.fromEntries([...locked].map((name) => [name, startValues[name]])),
+    };
     const problem = fileError(file?.file ?? null, menu.fileRule, fileRequired);
     setFileMessage(problem);
     if (problem) return;
@@ -280,9 +298,17 @@ export function RecordForm({
             className={field.kind === "textarea" ? "sm:col-span-2" : undefined}
           >
             {field.kind === "textarea" ? (
-              <Textarea id={field.name} {...form.register(field.name)} />
+              <Textarea
+                id={field.name}
+                readOnly={locked.has(field.name)}
+                {...form.register(field.name)}
+              />
             ) : field.kind === "select" ? (
-              <NativeSelect id={field.name} {...form.register(field.name)}>
+              <NativeSelect
+                id={field.name}
+                disabled={locked.has(field.name)}
+                {...form.register(field.name)}
+              >
                 <option value="">Select</option>
                 {field.options?.map((option) => (
                   <option key={option} value={option}>
@@ -294,6 +320,7 @@ export function RecordForm({
               <>
                 <Input
                   id={field.name}
+                  readOnly={locked.has(field.name)}
                   {...(field.kind === "date" ? { type: "date" } : {})}
                   {...(recordRule(field)
                     ? masked(form.register(field.name), recordRule(field) as InputRule)
@@ -562,8 +589,20 @@ export function ScholarRecordScreen({
 
   const opened = mine.find((record) => record.id === openId) ?? null;
   const flow = flowFor(menu.kind);
+  // Basic information: a scholar fills what is empty and cannot change what is there; the
+  // research office corrects anything (Scholar information).
+  const personalValues: Record<string, string> =
+    menu.kind === "personal_details" && session
+      ? existing
+        ? existing.payload
+        : personalDetailsFromRegister(session.identifier, session.name.trim())
+      : {};
+  const hasEmptyDetails =
+    menu.kind !== "personal_details" ||
+    menu.fields.some((field) => (personalValues[field.name] ?? "").trim() === "");
   const canForm =
     mode === "scholar" &&
+    hasEmptyDetails &&
     signedIn &&
     session &&
     (!viaSupervisor || Boolean(guide)) &&
@@ -605,7 +644,17 @@ export function ScholarRecordScreen({
         </GateBanner>
       ) : null}
 
-      {mode === "scholar" && menu.kind === "personal_details" && existing ? (
+      {mode === "scholar" && menu.kind === "personal_details" ? (
+        <GateBanner>
+          {!hasEmptyDetails
+            ? "Your details are complete. What is entered cannot be changed here: if anything is incorrect, write to the research office or raise a question under Helpdesk, and the staff will correct it."
+            : existing?.status === "Approved"
+              ? "Your details are verified and locked. Some are still empty: ask the research office to add them."
+              : "Fill in the details that are empty. What is already entered cannot be changed here: if anything is incorrect, write to the research office or raise a question under Helpdesk, and the staff will correct it."}
+        </GateBanner>
+      ) : null}
+
+      {mode === "scholar" && menu.kind === "personal_details" ? (
         <>
           {personalGroups.map((group) => (
             <DeskSection key={group.title} title={group.title}>
@@ -620,7 +669,7 @@ export function ScholarRecordScreen({
                     >
                       <dt className="text-muted-foreground">{field.label}</dt>
                       <dd className="font-semibold text-primary">
-                        {existing.payload[name] || "—"}
+                        {personalValues[name] || "—"}
                       </dd>
                     </div>
                   );
@@ -836,6 +885,7 @@ export function ScholarRecordScreen({
                 }
                 supervisorName={viaSupervisor ? (guide?.supervisorName ?? "") : ""}
                 existing={existing}
+                lockFilled={menu.kind === "personal_details"}
                 prefill={
                   menu.kind === "title_change" && doctoral
                     ? {
