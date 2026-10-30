@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { ResearchRegister } from "@/components/portal/ResearchRegister";
+import { ScholarRegisterHub } from "@/components/portal/ScholarRegisterHub";
 
 export const metadata: Metadata = {
   title: "Scholar register",
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <ResearchRegister />;
+  return (
+    <Suspense fallback={null}>
+      <ScholarRegisterHub />
+    </Suspense>
+  );
 }

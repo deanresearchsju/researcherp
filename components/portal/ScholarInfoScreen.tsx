@@ -5,14 +5,11 @@ import { useState, useSyncExternalStore } from "react";
 
 import { DeskModal, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
-import { MarkFeePaidDialog, type FeeMarkRow } from "@/components/portal/MarkFeePaidDialog";
-import { OfficeEntryDialog } from "@/components/portal/RacScreen";
-import { RecordForm } from "@/components/portal/ScholarRecordScreen";
+import { useScholarEntry } from "@/components/portal/ScholarEntryDialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { menuByKind } from "@/data/scholar-records";
-import { clientToday, formatIsoDate } from "@/lib/dates";
-import { feeLedger } from "@/lib/fee-ledger";
+import { formatIsoDate } from "@/lib/dates";
 import { sameId } from "@/lib/office";
 import { batchNames } from "@/lib/scholar-report";
 import {
@@ -48,17 +45,9 @@ export function ScholarInfoScreen() {
   const [batch, setBatch] = useState("");
   const [status, setStatus] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{
-    identifier: string;
-    name: string;
-    record?: ScholarRecord;
-  } | null>(null);
+  const entry = useScholarEntry((message) => setNotice(message || null));
   const [viewing, setViewing] = useState<ScholarRecord | null>(null);
   const profile = useScholarProfiles();
-  const [feeFor, setFeeFor] = useState<{ identifier: string; name: string } | null>(null);
-  const [feeRound, setFeeRound] = useState(0);
-  const [feeInfo, setFeeInfo] = useState<string | null>(null);
-  const [racFor, setRacFor] = useState<string | null>(null);
   const [feeFilter, setFeeFilter] = useState("");
   const [racFilter, setRacFilter] = useState("");
 
@@ -88,29 +77,9 @@ export function ScholarInfoScreen() {
       textMatches(query, [row.report.name, row.report.registration, row.report.subject]),
   );
   const fields = menu.fields;
-  const today = clientToday();
-  /** The fee years that have started for a scholar, as the Fee menu lists them. */
-  const feeRows = (identifier: string, name: string): FeeMarkRow[] =>
-    feeLedger(identifier, name, data.sources.payments, today)
-      .plan.filter((year) => year.status !== "Upcoming")
-      .map((year) => ({
-        key: `${identifier}#${year.index}`,
-        identifier,
-        name,
-        year,
-      }));
-  const racChoice = data.reports
-    .filter((report) => report.guideName)
-    .map((report) => ({
-      identifier: report.identifier,
-      name: report.name,
-      supervisorIdentifier: report.guideIdentifier,
-      supervisorName: report.guideName,
-    }));
-
   return (
     <section className="space-y-5">
-      <PageTitle kicker="Registers" title="Scholar information" />
+      <PageTitle kicker="Scholar register" title="Entering details" />
       {notice ? (
         <p
           role="status"
@@ -181,7 +150,7 @@ export function ScholarInfoScreen() {
         shown={shown.length}
         total={rows.length}
         filename="scholar-information.csv"
-        title="Scholar information"
+        title="Entering details"
         headers={[
           "Scholar",
           "Registration No.",
@@ -301,31 +270,21 @@ export function ScholarInfoScreen() {
                           type="button"
                           size="sm"
                           variant="gold"
-                          onClick={() => {
-                            setNotice(null);
-                            setEditing({
-                              identifier: report.identifier,
-                              name: report.name,
-                              record: record ?? undefined,
-                            });
-                          }}
+                          onClick={() =>
+                            entry.details(report.identifier, report.name, record ?? undefined)
+                          }
                         >
                           <UserPlus className="size-4" aria-hidden="true" />
-                          {record ? "Verify & lock" : "Enter details"}
+                          {record ? "Review & lock" : "Enter details"}
                         </Button>
                       ) : isAdmin || session?.role === "staff" ? (
                         <Button
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => {
-                            setNotice(null);
-                            setEditing({
-                              identifier: report.identifier,
-                              name: report.name,
-                              record: record ?? undefined,
-                            });
-                          }}
+                          onClick={() =>
+                            entry.details(report.identifier, report.name, record ?? undefined)
+                          }
                         >
                           <PencilLine className="size-4" aria-hidden="true" />
                           Correct
@@ -336,12 +295,7 @@ export function ScholarInfoScreen() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setNotice(null);
-                            setFeeInfo(null);
-                            setFeeRound((value) => value + 1);
-                            setFeeFor({ identifier: report.identifier, name: report.name });
-                          }}
+                          onClick={() => entry.fee(report.identifier, report.name)}
                         >
                           <IndianRupee className="size-4" aria-hidden="true" />
                           Fee paid
@@ -353,14 +307,11 @@ export function ScholarInfoScreen() {
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            setNotice(null);
-                            if (!report.guideName) {
+                            if (!entry.rac(report.identifier)) {
                               setNotice(
                                 `${report.name}: allot a guide first, then enter the RAC.`,
                               );
-                              return;
                             }
-                            setRacFor(report.identifier);
                           }}
                         >
                           <Users className="size-4" aria-hidden="true" />
@@ -375,59 +326,7 @@ export function ScholarInfoScreen() {
           </tbody>
         </table>
       </div>
-      {feeFor ? (
-        <MarkFeePaidDialog
-          key={feeRound}
-          scholarName={feeFor.name}
-          rows={feeRows(feeFor.identifier, feeFor.name)}
-          info={feeInfo}
-          onClose={() => {
-            setFeeFor(null);
-            setFeeInfo(null);
-          }}
-          onDone={(message, again) => {
-            setNotice(message);
-            if (again) {
-              setFeeInfo(message);
-              setFeeRound((value) => value + 1);
-            } else {
-              setFeeFor(null);
-              setFeeInfo(null);
-            }
-          }}
-        />
-      ) : null}
-      {racFor ? (
-        <OfficeEntryDialog
-          key={racFor}
-          scholars={racChoice}
-          initialScholar={racFor}
-          defaultRecorded
-          canRecord={isAdmin || session?.role === "staff"}
-          onClose={() => setRacFor(null)}
-          onDone={(message) => {
-            setNotice(message);
-            setRacFor(null);
-          }}
-        />
-      ) : null}
-      {editing ? (
-        <RecordForm
-          key={editing.identifier}
-          officeEntry
-          menu={menu}
-          scholarIdentifier={editing.identifier}
-          scholarName={editing.name}
-          supervisorIdentifier=""
-          supervisorName=""
-          existing={editing.record}
-          onClose={() => setEditing(null)}
-          onDone={(message) => {
-            setEditing(null);
-            setNotice(`${editing.name}: ${message}`);
-          }}
-        />
-      ) : null}
+      {entry.dialogs}
       {viewing ? (
         <DeskModal
           title={`Scholar information · ${viewing.scholarName}`}

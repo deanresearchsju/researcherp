@@ -142,8 +142,8 @@ const evaluate = async (expression) => {
   return result?.result?.result?.value;
 };
 
-async function signInAs(role, identifier, name) {
-  const menus = portal.portalGroups[role].flatMap((g) => g.items.map((i) => i.href));
+async function signInAs(role, identifier, name, rights) {
+  const menus = rights ?? portal.portalGroups[role].flatMap((g) => g.items.map((i) => i.href));
   // A real person may be signed in as this user: the cookie then carries that sign-in's id, or
   // the server (one sign-in at a time) would treat the test's cookie as replaced.
   const stored = await db
@@ -297,7 +297,7 @@ for (const role of roles) {
 if (roles.includes("admin")) {
   await signInAs("admin", "admin", "Administrator");
   const lists = [
-    "/admin/scholar-info",
+    "/admin/register?tab=entry",
     "/admin/course-work",
     "/admin/results",
     "/admin/payments?tab=course-work",
@@ -344,7 +344,7 @@ if (roles.includes("admin")) {
   });
 
   await test("admin: Scholar information also holds the fee paid and the RAC of each scholar", async () => {
-    await send("Page.navigate", { url: base + "/admin/scholar-info" });
+    await send("Page.navigate", { url: base + "/admin/register?tab=entry" });
     await new Promise((r) => setTimeout(r, 300));
     await evaluate(settle);
     const state = JSON.parse(
@@ -366,6 +366,121 @@ if (roles.includes("admin")) {
         state.buttons.some((label) => label === "Enter RAC"),
       "no Fee paid / Enter RAC button among: " + [...new Set(state.buttons)].join(", "),
     );
+  });
+
+  await test("admin: Scholar information finds a scholar by name and shows the portal information tab by tab", async () => {
+    seedRegister();
+    const register = load("@/data/research-register");
+    const named = register.researchRegister.scholars.find((s) => /^[A-Za-z]{4}/.test(s.name.trim()));
+    assert.ok(named, "the test register has a scholar");
+    const word = named.name.trim().slice(0, 4);
+    await send("Page.navigate", { url: base + "/admin/register?tab=information" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const setValue = (el, value) => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, value);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        let input = null;
+        for (let i = 0; i < 100 && !input; i += 1) {
+          input = document.querySelector('input[aria-label="Scholar name"]');
+          if (!input) await wait(200);
+        }
+        if (!input) return JSON.stringify({ step: "no search box" });
+        input.focus();
+        setValue(input, ${JSON.stringify(word)});
+        let option = null;
+        for (let i = 0; i < 50 && !option; i += 1) {
+          option = document.querySelector('[role="option"]');
+          if (!option) await wait(200);
+        }
+        if (!option) return JSON.stringify({ step: "no match listed" });
+        const headers = [...document.querySelectorAll('[role="listbox"] th')].map((h) => h.textContent.trim());
+        option.click();
+        await wait(1200);
+        const tabs = [...document.querySelectorAll('nav[aria-label="Scholar information"] button')].map((b) => b.textContent.trim());
+        const text = {};
+        for (const label of ["Fee details", "RAC", "Course work & results", "Doctoral committees", "Publications", "Synopsis, thesis & viva"]) {
+          const button = [...document.querySelectorAll('nav[aria-label="Scholar information"] button')].find((b) => b.textContent.trim() === label);
+          button?.click();
+          await wait(500);
+          text[label] = document.querySelector("main")?.innerText ?? "";
+        }
+        return JSON.stringify({ step: "done", headers, tabs, text });
+      })()`)) ?? "{}",
+    );
+    assert.equal(state.step, "done", JSON.stringify(state).slice(0, 300));
+    for (const want of ["Scholar", "Registration No.", "Batch", "Department", "Guide", "Mode", "Status"]) {
+      assert.ok(state.headers.includes(want), `the list lacks "${want}"`);
+    }
+    for (const want of ["Personal details", "Fee details", "RAC", "Course work & results", "Doctoral committees", "Six-month reports", "Colloquium attendance", "Publications", "Synopsis, thesis & viva"]) {
+      assert.ok(state.tabs.includes(want), `no tab "${want}"`);
+    }
+    assert.match(state.text["Fee details"], /Fee year/);
+    assert.match(state.text["RAC"], /RAC:/);
+    assert.match(state.text["Course work & results"], /Semester/);
+    assert.match(state.text["Doctoral committees"], /First doctoral committee/);
+    assert.match(state.text["Publications"], /Indexed in/);
+    assert.match(state.text["Synopsis, thesis & viva"], /Plagiarism:/);
+  });
+
+  await test("admin: Supervisor information finds a supervisor by name and shows the portal information tab by tab", async () => {
+    seedRegister();
+    const register = load("@/data/research-register");
+    const named = register.researchRegister.supervisors.find((s) => /^[A-Za-z]{4}/.test(s.name.trim()));
+    assert.ok(named, "the test register has a supervisor");
+    const word = named.name.trim().slice(0, 4);
+    await send("Page.navigate", { url: base + "/admin/supervisors?tab=information" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const state = JSON.parse(
+      (await evaluate(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const setValue = (el, value) => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, value);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        let input = null;
+        for (let i = 0; i < 100 && !input; i += 1) {
+          input = document.querySelector('input[aria-label="Supervisor name"]');
+          if (!input) await wait(200);
+        }
+        if (!input) return JSON.stringify({ step: "no search box" });
+        input.focus();
+        setValue(input, ${JSON.stringify(word)});
+        let option = null;
+        for (let i = 0; i < 50 && !option; i += 1) {
+          option = document.querySelector('[role="option"]');
+          if (!option) await wait(200);
+        }
+        if (!option) return JSON.stringify({ step: "no match listed" });
+        const headers = [...document.querySelectorAll('[role="listbox"] th')].map((h) => h.textContent.trim());
+        option.click();
+        await wait(1200);
+        const nav = () => [...document.querySelectorAll('nav[aria-label="Supervisor information"] button')];
+        const tabs = nav().map((b) => b.textContent.trim());
+        const text = {};
+        for (const label of ["Scholars", "RAC", "Recommendations", "Colloquium attendance", "Public profile"]) {
+          nav().find((b) => b.textContent.trim() === label)?.click();
+          await wait(500);
+          text[label] = document.querySelector("main")?.innerText ?? "";
+        }
+        return JSON.stringify({ step: "done", headers, tabs, text });
+      })()`)) ?? "{}",
+    );
+    assert.equal(state.step, "done", JSON.stringify(state).slice(0, 300));
+    for (const want of ["Supervisor", "Supervisor ID", "Designation", "Department", "Campus", "Scholars", "Status"]) {
+      assert.ok(state.headers.includes(want), `the list lacks "${want}"`);
+    }
+    for (const want of ["Personal details", "Scholars", "RAC", "Recommendations", "Colloquium attendance", "Public profile"]) {
+      assert.ok(state.tabs.includes(want), `no tab "${want}"`);
+    }
+    assert.match(state.text["Scholars"], /Registration No\./);
+    assert.match(state.text["Recommendations"], /Supervisor's step/);
+    assert.match(state.text["Public profile"], /Shown on the public Supervisors page/);
   });
 
   await test("admin: the publications list exports every detail as a CSV with the scholar's department, campus, guide and mode", async () => {
@@ -394,6 +509,123 @@ if (roles.includes("admin")) {
       "Volume", "Issue", "Pages", "ISSN", "Indexed in", "Impact factor", "DOI", "Year", "Status",
     ]) {
       assert.ok(head.split(",").includes(want), `column ${want} is missing: ${head}`);
+    }
+  });
+}
+
+// Staff enter the fee a scholar already paid: with the Add / edit right alone (no Approve right).
+if (roles.includes("admin")) {
+  const access = load("@/lib/access.ts");
+  const feeRights = (...extra) => [
+    "/admin/register",
+    "/admin/fee",
+    ...extra,
+    access.rightsMarker,
+  ];
+  /** Opens the first scholar's "Fee paid" dialog on Scholar information, fills it and records it. */
+  const enterFee = (reference) => `(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const setValue = (el, value) => {
+      const proto = el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    let opener = null;
+    for (let i = 0; i < 100 && !opener; i += 1) {
+      opener = [...document.querySelectorAll("main tbody button")].find((b) => b.textContent.trim() === "Fee paid");
+      if (!opener) await wait(200);
+    }
+    if (!opener) return JSON.stringify({ step: "no Fee paid button" });
+    const row = opener.closest("tr");
+    const scholar = row.querySelector("td p")?.textContent.trim() ?? "";
+    opener.click();
+    await wait(600);
+    const box = document.querySelector('[role="dialog"]');
+    if (!box) return JSON.stringify({ step: "dialog did not open", scholar });
+    const ticks = [...box.querySelectorAll('input[type=checkbox]')];
+    if (ticks[0] && !ticks[0].checked && !ticks[0].disabled) { ticks[0].click(); await wait(200); }
+    const amount = box.querySelector('input[aria-label^="Amount for Year"]');
+    const typed = amount && !amount.readOnly;
+    if (typed) { setValue(amount, "1"); await wait(100); }
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    setValue(box.querySelector("#mark-date"), yesterday);
+    setValue(box.querySelector("#mark-ref"), ${JSON.stringify(reference)});
+    await wait(200);
+    const submit = [...box.querySelectorAll("button")].find((b) => b.type === "submit");
+    const label = submit?.textContent.trim();
+    submit.click();
+    await wait(2500);
+    return JSON.stringify({
+      step: "submitted",
+      scholar,
+      label,
+      lastInstalmentPrefilled: Boolean(amount?.readOnly) && Boolean(amount?.value),
+      page: document.body.innerText.slice(0, 6000),
+      dialogOpen: Boolean(document.querySelector('[role="dialog"]')),
+    });
+  })()`;
+
+  await test("staff with the Add / edit right alone can enter the fee a scholar already paid", async () => {
+    const reference = "TEST-STAFF-ENTRY-" + Date.now();
+    const code = enterFee(reference);
+    await signInAs("staff", "staff-fee@test.invalid", "Test Staff", feeRights("/admin/register#edit", "/admin/fee#edit"));
+    await send("Page.navigate", { url: base + "/admin/register?tab=entry" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    try {
+      const result = JSON.parse((await evaluate(code)) ?? "{}");
+      assert.equal(result.step, "submitted", JSON.stringify(result).slice(0, 300));
+      assert.equal(result.label, "Record payment");
+      assert.ok(!/not permitted to/i.test(result.page), "blocked by the menu rights: " + result.page.slice(0, 300));
+      // A part payment leaves a balance, so the dialog opens again for the next instalment.
+      assert.match(result.page, /Year \d+: ₹1 saved/, "no confirmation: " + result.page.slice(0, 400));
+      const saved = await db
+        .from("scholar_records")
+        .select("id, status, payload")
+        .eq("kind", "payment")
+        .filter("payload->>transactionNumber", "eq", reference);
+      assert.equal(saved.data?.length, 1, "the payment was not saved");
+      assert.equal(saved.data[0].status, "Approved");
+      assert.equal(saved.data[0].payload.recordedBy, "Test Staff");
+    } finally {
+      await db
+        .from("scholar_records")
+        .delete()
+        .eq("kind", "payment")
+        .filter("payload->>transactionNumber", "eq", reference);
+      await db.from("audit_log").delete().ilike("actor_identifier", "%@test.invalid");
+    }
+  });
+
+  await test("without the Add / edit right the same entry is refused, and says why", async () => {
+    const code = enterFee("TEST-STAFF-NO-RIGHT");
+    await signInAs("staff", "staff-fee2@test.invalid", "Test Staff", feeRights());
+    await send("Page.navigate", { url: base + "/admin/register?tab=entry" });
+    await new Promise((r) => setTimeout(r, 300));
+    await evaluate(settle);
+    const result = JSON.parse((await evaluate(code)) ?? "{}");
+    assert.equal(result.step, "submitted", JSON.stringify(result).slice(0, 300));
+    assert.match(result.page, /not permitted to add \/ edit/i);
+    const saved = await db
+      .from("scholar_records")
+      .select("id")
+      .eq("kind", "payment")
+      .filter("payload->>transactionNumber", "eq", "TEST-STAFF-NO-RIGHT");
+    assert.equal(saved.data?.length, 0, "a payment was saved without the right");
+  });
+
+  await test("the fee screens name their entry buttons as data entry, not as an approval", async () => {
+    const access = load("@/lib/access.ts");
+    for (const label of [
+      "Record payment",
+      "Record selected as paid (3)",
+      "Record as paid in full",
+      "Fee paid",
+      "Enter RAC",
+      "Review & lock",
+    ]) {
+      assert.notEqual(access.actionForLabel(label), "approve", `"${label}" reads as an approval`);
     }
   });
 }

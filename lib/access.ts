@@ -189,14 +189,33 @@ function fixedMenus(role: Role) {
   return [...hrefs, ...actions, rightsMarker];
 }
 
-/** The fee screens of Accounts were merged into Fee approvals; rights given before still work. */
+/**
+ * The fee screens of Accounts were merged into Fee approvals, and Scholar information joined the
+ * Scholar register as its sections; rights given before still work.
+ */
 function moveLegacyMenus(menus: string[]) {
   const moved = menus.map((item) =>
     item.startsWith("/admin/accounts/")
       ? item.replace(/^\/admin\/accounts\/[^#]+/, "/admin/payments")
-      : item,
+      : item.replace(/^\/admin\/scholar-info(?=#|$)/, "/admin/register"),
   );
-  return [...new Set(moved)];
+  const result = [...new Set(moved)];
+  // Rights saved with sections name the sections of the Scholar register only from now on:
+  // someone who had the register keeps its list, and someone who had Scholar information
+  // also gets its two new sections.
+  if (result.includes(sectionsMarker) && result.includes("/admin/register")) {
+    const named = result.some((item) => item.startsWith("/admin/register#tab:"));
+    const hadInformation = menus.some((item) => /^\/admin\/scholar-info(#|$)/.test(item));
+    if (!named || hadInformation) {
+      for (const id of hadInformation
+        ? ["register", "information", "entry"]
+        : ["register"]) {
+        const key = sectionKey("/admin/register", id);
+        if (!result.includes(key)) result.push(key);
+      }
+    }
+  }
+  return result;
 }
 
 export function resolvedMenus(user: MenuHolder | null | undefined): string[] | null {

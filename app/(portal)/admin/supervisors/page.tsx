@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { SupervisorRegister } from "@/components/portal/SupervisorRegister";
+import { SupervisorRegisterHub } from "@/components/portal/SupervisorRegisterHub";
 import { loadStoredApplications } from "@/lib/records";
 
 export const metadata: Metadata = {
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 async function Register() {
   const loaded = await loadStoredApplications();
   const applications = loaded.records.filter((row) => row.kind === "supervisor");
-  return <SupervisorRegister applications={applications} />;
+  return <SupervisorRegisterHub applications={applications} />;
 }
 
 export default function SupervisorRegisterPage() {

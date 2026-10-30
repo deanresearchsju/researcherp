@@ -318,7 +318,7 @@ export function FeeCollectionScreen() {
                   setBulkMarking(true);
                 }}
               >
-                Mark selected as paid{selected.length ? ` (${selected.length})` : ""}
+                Record selected as paid{selected.length ? ` (${selected.length})` : ""}
               </Button>
               <Button
                 type="button"
@@ -597,7 +597,7 @@ export function FeeCollectionScreen() {
                                   });
                                 }}
                               >
-                                Mark paid
+                                Record payment
                               </Button>
                               <Button
                                 type="button"
@@ -818,9 +818,9 @@ export function FeeCollectionScreen() {
       ) : null}
       {bulkMarking ? (
         <FormDialog
-          title={`Mark ${selected.length} fee year${selected.length === 1 ? "" : "s"} as paid`}
+          title={`Record ${selected.length} fee year${selected.length === 1 ? "" : "s"} as paid`}
           onClose={() => setBulkMarking(false)}
-          submitLabel="Mark paid in full"
+          submitLabel="Record as paid in full"
           size="sm"
           onSubmit={(event) => {
             event.preventDefault();
@@ -861,7 +861,7 @@ export function FeeCollectionScreen() {
           <p className="text-sm leading-6">
             The full balance of each selected scholar and year is recorded as paid and
             verified, with the reference “{openingReference}”. Use{" "}
-            <strong>Mark paid</strong> on a row to enter a part payment or a different
+            <strong>Record payment</strong> on a row to enter a part payment or a different
             date.
           </p>
           {notice && !bulkDate ? (

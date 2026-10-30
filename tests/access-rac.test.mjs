@@ -337,7 +337,11 @@ await test("the section ids are the ids the screens use", async () => {
     "/admin/exam-setup": "components/portal/ExamSetupScreen.tsx",
     "/admin/exam-tickets": "components/portal/ExamTicketsScreen.tsx",
     "/admin/invigilation": "components/portal/InvigilationDesk.tsx",
-    "/admin/supervisors": "components/portal/SupervisorRegister.tsx",
+    "/admin/supervisors": [
+      "components/portal/SupervisorRegisterHub.tsx",
+      "components/portal/SupervisorRegister.tsx",
+    ],
+    "/admin/register": "components/portal/ScholarRegisterHub.tsx",
     "/admin/payments": "components/portal/PaymentDesk.tsx",
     "/admin/fee": "components/portal/FeeCollectionScreen.tsx",
     "/admin/supervisor-exit": "components/portal/SupervisorExitScreen.tsx",
@@ -346,12 +350,15 @@ await test("the section ids are the ids the screens use", async () => {
     "/admin/colloquium": "components/portal/ColloquiumScreen.tsx",
     "/admin/entrance-invigilation": "components/portal/InvigilationDesk.tsx",
   };
-  for (const [href, file] of Object.entries(screens)) {
-    const text = fs.readFileSync(path.join(root, file), "utf8");
+  for (const [href, files] of Object.entries(screens)) {
+    const list = Array.isArray(files) ? files : [files];
+    const text = list
+      .map((file) => fs.readFileSync(path.join(root, file), "utf8"))
+      .join("\n");
     for (const section of sections.menuSections[href]) {
       assert.ok(
         text.includes(`"${section.id}"`) || text.includes(`id: "${section.id}"`),
-        `${href}: ${section.id} in ${file}`,
+        `${href}: ${section.id} in ${list.join(" or ")}`,
       );
     }
   }

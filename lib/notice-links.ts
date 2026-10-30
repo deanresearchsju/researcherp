@@ -8,7 +8,7 @@ export function recordHref(side: Side, kind: ScholarRecordKind) {
   if (kind === "six_month_report") return `/${side}/reports`;
   if (kind === "payment") return side === "admin" ? "/admin/payments" : "/scholar/fee";
   if (kind === "personal_details") {
-    return side === "admin" ? "/admin/scholar-info" : "/scholar/dashboard";
+    return side === "admin" ? "/admin/register?tab=entry" : "/scholar/dashboard";
   }
   return `/${side}/records/${menuByKind(kind).slug}`;
 }

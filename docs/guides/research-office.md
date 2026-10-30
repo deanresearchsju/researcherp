@@ -25,7 +25,7 @@ What you see depends on the menus the administrator gave you. The administrator 
 
 - **Edit** is on every supervisor of the Supervisor register (including those recognised later). The administrator can also **import supervisors and scholars from Excel** (see [../DATA-UPLOAD.md](../DATA-UPLOAD.md)).
 
-- **Scholar register** and **Scholar information**: Scholar information is where the office enters everything about a scholar from one row: the personal details (entered and locked; only the administrator corrects), the **fee already paid** (Fee paid) and the **RAC** (Enter RAC). They change the register, the fee pages, the RAC menu, the reports and the exports at once.
+- **Supervisor register** also has **Supervisor information**: find a supervisor by name and read what the supervisor sees in the portal, tab by tab. **Scholar register** has three sub-menus: the register, **Scholar information** (find a scholar by name and read what the scholar sees in the portal, tab by tab) and **Entering details**, where the office enters everything about a scholar from one row: the personal details (entered and locked; the administrator and the staff correct), the **fee already paid** (Fee paid) and the **RAC** (Enter RAC). They change the register, the fee pages, the RAC menu, the reports and the exports at once.
 - **Registration numbers**: record the numbers the COE issues, batch by batch. A number is permanent.
 - **Supervisor register**: the list of supervisors with quota, vacancy and status; mark inactive or resigned; edit details.
 

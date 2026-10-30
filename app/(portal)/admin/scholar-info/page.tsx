@@ -1,12 +1,6 @@
-﻿import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { ScholarInfoScreen } from "@/components/portal/ScholarInfoScreen";
-
-export const metadata: Metadata = {
-  title: "Scholar information",
-  robots: { index: false, follow: false },
-};
-
+// Scholar information is now a part of the Scholar register.
 export default function Page() {
-  return <ScholarInfoScreen />;
+  redirect("/admin/register?tab=entry");
 }

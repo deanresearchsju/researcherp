@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node tests/rules.test.mjs && node tests/flows.test.mjs && node tests/standards.test.mjs && node tests/security.test.mjs && node tests/db-policy.test.mjs && node tests/chain.test.mjs && node tests/profile-lock.test.mjs && node tests/menu-context.test.mjs && node tests/table-pdf.test.mjs && node tests/access-rac.test.mjs && node tests/documents.test.mjs && node tests/invigilation.test.mjs && node tests/invigilation-list.test.mjs && node tests/invigilation-pdf.test.mjs",
+    "test": "node tests/rules.test.mjs && node tests/flows.test.mjs && node tests/standards.test.mjs && node tests/security.test.mjs && node tests/db-policy.test.mjs && node tests/chain.test.mjs && node tests/profile-lock.test.mjs && node tests/fee-entry.test.mjs && node tests/menu-context.test.mjs && node tests/table-pdf.test.mjs && node tests/access-rac.test.mjs && node tests/documents.test.mjs && node tests/invigilation.test.mjs && node tests/invigilation-list.test.mjs && node tests/invigilation-pdf.test.mjs",
     "test:live": "node --env-file=.env.local tests/http.test.mjs && node --env-file=.env.local tests/applications.test.mjs",
     "test:browser": "node --env-file=.env.local tests/browser.test.mjs",
     "lint": "eslint",

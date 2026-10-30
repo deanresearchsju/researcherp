@@ -104,11 +104,17 @@ export function MarkFeePaidDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /** The last instalment clears the balance, so it is not typed: it is the whole balance. */
+  const amountFor = (row: FeeMarkRow) => {
+    const next = nextInstallment(row.year);
+    return next.mustPayAll ? next.due : Number(amounts[row.key]) || 0;
+  };
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const entries = open
       .filter((row) => chosen[row.key])
-      .map((row) => ({ row, amount: Number(amounts[row.key]) || 0 }));
+      .map((row) => ({ row, amount: amountFor(row) }));
     if (entries.length === 0) {
       setError("Tick at least one year.");
       return;
@@ -168,11 +174,11 @@ export function MarkFeePaidDialog({
 
   return (
     <FormDialog
-      title={`Mark fee paid · ${scholarName}`}
+      title={`Fee already paid · ${scholarName}`}
       onClose={onClose}
       onSubmit={(event) => void submit(event)}
       busy={busy}
-      submitLabel="Mark paid"
+      submitLabel="Record payment"
     >
       {info ? (
         <p
@@ -236,7 +242,7 @@ export function MarkFeePaidDialog({
                         inputMode="numeric"
                         className="h-9"
                         placeholder={`Up to ${formatInr(next.due)}`}
-                        value={amounts[row.key] ?? ""}
+                        value={next.mustPayAll ? String(next.due) : (amounts[row.key] ?? "")}
                         disabled={!chosen[row.key] || !next.number}
                         readOnly={next.mustPayAll}
                         onChange={(event) =>

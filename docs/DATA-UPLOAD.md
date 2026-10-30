@@ -9,7 +9,7 @@ Only the **main administrator** sees the upload boxes.
 1. **Back up** the database (BACKUP-AND-RESTORE), then **clear the test data** (Administration, Clear test data). See TESTING.
 2. **Research areas** (Website): check that every school and department is there, so that supervisors and scholars can be placed.
 3. **Supervisors**: Registers, **Supervisor register**, box _Import supervisors from Excel_.
-4. **Scholars**: Registers, **Scholar information**, box _Import scholars and their details from Excel_.
+4. **Scholars**: Registers, **Scholar register**, **Entering details**, box _Import scholars and their details from Excel_.
 5. **Sign-ins**: Administration, **Users**, to give each supervisor and scholar a sign-in (the upload does not create sign-ins or passwords).
 6. **Check** the counts and a few records (below), then hand out the sign-ins.
 

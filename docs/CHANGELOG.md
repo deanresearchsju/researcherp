@@ -2,6 +2,19 @@
 
 Newest first. Add a line here with every change that people will notice. "Incidents" at the end records anything that went wrong with data or security and what was done.
 
+## Scholar register and Scholar information merged (30 October 2026, not yet saved to Git)
+
+- **One menu, three sub-menus.** Registers, **Scholar register** now holds: **Scholar register** (the register as before), **Scholar information** (new) and **Entering details** (what was the Scholar information list: personal details, fee already paid and RAC, row by row, with the Department, Campus, Guide, Mode, Fee and RAC filters and the Excel / PDF export). The separate Scholar information menu is gone; an old link opens Entering details.
+- **Scholar information (new)** works like a student-information screen: type a scholar's name, registration number or e-mail, pick the scholar from the list (name, registration number, batch, department, guide, mode, status Active / Passed out), and read what the scholar sees in the portal, one tab at a time: Personal details (photo, ABC and Vidwan ID, the details on file), Fee details (each year, each instalment), RAC, Course work and results, Doctoral committees, Six-month reports, Colloquium attendance, Publications, Synopsis, thesis and viva. The research office enters the personal details, the fee already paid and the RAC from the tabs they belong to.
+- **The same for supervisors.** Registers, **Supervisor register** now has the sub-menus Active supervisors, Inactive supervisors and **Supervisor information** (new): type a supervisor's name, e-mail or ID, pick the supervisor from the list (ID, designation, department, campus, scholars, status), and read, tab by tab, Personal details (with Correct details for the research office and a link to the audit trail for the administrator), Scholars (the allotted scholars with their department, mode, stage and fee balance), RAC, Recommendations (the committee reports, synopses and theses that came to the supervisor, and what the supervisor did), Colloquium attendance and Public profile. A sign-in with rights ticked section by section needs the new section **Supervisor information** ticked under Users, Menu rights.
+- **Rights given before still work.** A sign-in that had Scholar information now has the Scholar register with the same Add / edit, Approve and Export rights and all three sub-menus; one that had only the Scholar register keeps the register sub-menu (the administrator can tick the other two under Users).
+
+## Fix: staff could not enter the fee a scholar already paid (30 October 2026, not yet saved to Git)
+
+- **Cause 1: the button was read as an approval.** The fee-entry buttons were called "Mark paid", and the menu rights read the word "mark" as the **Approve / decide** right. A staff sign-in with only **Add / edit** was refused ("Your sign-in is not permitted to approve / decide in this menu"). The buttons now read **Record payment**, **Record selected as paid** and **Record as paid in full** (data entry: the Add / edit right). On Scholar information the button **Verify & lock** is now **Review & lock**, for the same reason.
+- **Cause 2: the last instalment could not be entered.** When two instalments of a year were already recorded, the third must clear the balance and its amount box was read-only and empty, so the entry always failed with "Enter the amount paid". The box now holds the whole balance.
+- Tested: `tests/fee-entry.test.mjs`, and in `tests/browser.test.mjs` a staff sign-in with the Add / edit right alone records a payment from Scholar information (saved, verified, then removed); the same sign-in without the right is refused with the reason and nothing is saved.
+
 ## Audit trail and read-only profiles (30 October 2026, not yet saved to Git)
 
 **Audit trail (Administration, Audit trail; the administrator only)**

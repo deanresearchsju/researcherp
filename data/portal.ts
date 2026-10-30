@@ -115,7 +115,6 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.registers,
     items: [
       { label: "Scholar register", href: "/admin/register", ready: true },
-      { label: "Scholar information", href: "/admin/scholar-info", ready: true },
       { label: "Supervisor register", href: "/admin/supervisors", ready: true },
       { label: "Passed-out scholars", href: "/admin/passed-out", ready: true },
     ],
