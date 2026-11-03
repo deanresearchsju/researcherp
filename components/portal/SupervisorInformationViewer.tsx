@@ -279,8 +279,7 @@ export function SupervisorInformationViewer() {
 
       {!supervisor ? (
         <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-card">
-          Type at least two letters of a supervisor&apos;s name, e-mail or ID, then choose the
-          supervisor from the list to see what the supervisor sees in the portal.
+          Type a supervisor&apos;s name, e-mail or ID.
         </p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">

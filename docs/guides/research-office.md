@@ -25,7 +25,7 @@ What you see depends on the menus the administrator gave you. The administrator 
 
 - **Edit** is on every supervisor of the Supervisor register (including those recognised later). The administrator can also **import supervisors and scholars from Excel** (see [../DATA-UPLOAD.md](../DATA-UPLOAD.md)).
 
-- **Supervisor register** also has **Supervisor information**: find a supervisor by name and read what the supervisor sees in the portal, tab by tab. **Scholar register** has three sub-menus: the register, **Scholar information** (find a scholar by name and read what the scholar sees in the portal, tab by tab) and **Entering details**, where the office enters everything about a scholar from one row: the personal details (entered and locked; the administrator and the staff correct), the **fee already paid** (Fee paid) and the **RAC** (Enter RAC). They change the register, the fee pages, the RAC menu, the reports and the exports at once.
+- **Supervisor register** also has **Supervisor information**: find a supervisor by name and read what the supervisor sees in the portal, tab by tab. **Scholar register** has two sub-menus: **Scholar information** (a search box: type a scholar's name, registration number or e-mail and read what the scholar sees in the portal, tab by tab) and **Scholar list** (every scholar, with batch cards, filters and the Excel / PDF export), where the office enters everything about a scholar from the scholar's row: the personal details (Enter details, then locked; the administrator and the staff correct), the **fee already paid** (Fee paid) and the **RAC** (RAC members). They change the register, the fee pages, the RAC menu, the reports and the exports at once.
 - **Registration numbers**: record the numbers the COE issues, batch by batch. A number is permanent.
 - **Supervisor register**: the list of supervisors with quota, vacancy and status; mark inactive or resigned; edit details.
 
@@ -43,7 +43,7 @@ Exam set-up, hall tickets and seating, invigilation duty, result approval and re
 
 ## RAC
 
-**Supervision, RAC decisions**: the nominations of the supervisors with the Dean and the Vice Chancellor. To enter a RAC yourself for a scholar press **Enter RAC details**: choose the scholar, give 1 to 3 internal members and 2 to 3 external candidates with all details (address, contact, area of research, five publications). The Dean selects one internal and one external member; the Vice Chancellor gives the final approval.
+**Supervision, RAC decisions**: the nominations of the supervisors with the Dean and the Vice Chancellor. To enter a RAC yourself for a scholar press **Enter RAC details**: choose the scholar, give 1 to 3 internal members and 2 to 3 external candidates with all details (address, contact, area of research, five publications). The Dean selects one internal and one external member; the Vice Chancellor gives the final approval. **Export Excel** (or PDF) above the list downloads the RAC members of the nominations shown: scholar, supervisor, status, and the selected internal member, external member and co-guide with all their details, plus every nominee.
 
 ## Invigilation duty
 

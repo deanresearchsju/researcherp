@@ -1,21 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
 
-import {
-  currentSiteSettings,
-  defaultSiteSettings,
-  subscribeSiteSettings,
-} from "@/lib/office";
+import { usePublicSettings } from "@/components/home/PublicSiteProvider";
 
 /** One line on the public pages: the admission window is coming, or a link to apply. */
 export function AdmissionNotice() {
-  const settings = useSyncExternalStore(
-    subscribeSiteSettings,
-    () => currentSiteSettings() ?? defaultSiteSettings,
-    () => defaultSiteSettings,
-  );
+  const settings = usePublicSettings();
 
   if (!settings.phdOpen) {
     return (

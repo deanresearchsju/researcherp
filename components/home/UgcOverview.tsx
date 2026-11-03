@@ -19,12 +19,10 @@ import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 import {
   ugcAdmission,
-  ugcDuration,
   ugcEligibility,
   ugcHighlights,
   ugcJourney,
   ugcSource,
-  ugcSupervision,
 } from "@/data/ugc-norms";
 import { university } from "@/lib/constants";
 
@@ -91,7 +89,7 @@ export function UgcOverview() {
           <p className="mt-3 text-justify hyphens-auto text-sm leading-6 text-muted-foreground">
             {ugcEligibility.intro}
           </p>
-          <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-6 grid gap-3 sm:grid-cols-2">
             {ugcEligibility.routes.map((route) => (
               <li
                 key={route.id}
@@ -206,31 +204,6 @@ export function UgcOverview() {
               );
             })}
           </ol>
-        </Container>
-      </section>
-
-      <section className="bg-card py-10 sm:py-12" aria-labelledby="ugc-rules-title">
-        <Container>
-          <h2 id="ugc-rules-title" className="sr-only">
-            Duration, leave and supervision
-          </h2>
-          <div className="grid gap-8 lg:grid-cols-2">
-            {[ugcDuration, ugcSupervision].map((block) => (
-              <div key={block.title}>
-                <SectionHeading compact eyebrow="Regulations" title={block.title} />
-                <dl className="mt-5 divide-y divide-border rounded-xl border border-border bg-background shadow-card">
-                  {block.items.map((item) => (
-                    <div key={item.label} className="px-4 py-3">
-                      <dt className="text-sm font-semibold text-primary">{item.label}</dt>
-                      <dd className="mt-1 text-justify text-sm leading-6 text-muted-foreground">
-                        {item.text}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ))}
-          </div>
         </Container>
       </section>
 

@@ -430,9 +430,10 @@ if (roles.includes("admin")) {
   await test("admin: Supervisor information finds a supervisor by name and shows the portal information tab by tab", async () => {
     seedRegister();
     const register = load("@/data/research-register");
-    const named = register.researchRegister.supervisors.find((s) => /^[A-Za-z]{4}/.test(s.name.trim()));
+    // Names carry a title ("Dr."), so the word typed is the first four letters of a name part.
+    const named = register.researchRegister.supervisors.find((s) => /[A-Za-z]{4}/.test(s.name));
     assert.ok(named, "the test register has a supervisor");
-    const word = named.name.trim().slice(0, 4);
+    const word = (named.name.match(/[A-Za-z]{4}/) ?? [""])[0];
     await send("Page.navigate", { url: base + "/admin/supervisors?tab=information" });
     await new Promise((r) => setTimeout(r, 300));
     await evaluate(settle);

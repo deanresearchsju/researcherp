@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Columns3 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
@@ -149,7 +149,18 @@ function parseExportIds(text: string | null) {
   return [...defaultExportIds];
 }
 
-export function ResearchRegister() {
+export function ResearchRegister({
+  embedded = false,
+  onOpen,
+  rowActions,
+}: {
+  /** Shown under Scholar list, which carries the page heading. */
+  embedded?: boolean;
+  /** Opens the scholar in Scholar information. */
+  onOpen?: (identifier: string) => void;
+  /** More buttons for each scholar (the entering of details, the fee and the RAC). */
+  rowActions?: (identifier: string, name: string) => ReactNode;
+} = {}) {
   const ready = useClientReady();
   const session = usePreviewSession();
   const canExport = useCanMenuAction("export");
@@ -363,7 +374,7 @@ export function ResearchRegister() {
 
   return (
     <div>
-      <PageTitle kicker="Administration" title="Scholar register" />
+      {embedded ? null : <PageTitle kicker="Administration" title="Scholar register" />}
       {stored?.detail ? (
         <p className="mt-4 text-sm leading-6 text-secondary">
           {stored.detail} {registerMigrationHint}
@@ -485,6 +496,15 @@ export function ResearchRegister() {
                           <span className="font-sans text-muted-foreground">
                             To be allotted
                           </span>
+                        ) : column.id === "name" && onOpen && value ? (
+                          <button
+                            type="button"
+                            data-readonly-allow=""
+                            className="text-left font-medium text-primary underline-offset-2 hover:underline"
+                            onClick={() => onOpen(scholarSignInId(scholar))}
+                          >
+                            {value}
+                          </button>
                         ) : column.id === "stage" ? (
                           <Badge variant={value === "Admitted" ? "outline" : "gold"}>
                             {value}
@@ -496,35 +516,37 @@ export function ResearchRegister() {
                     );
                   })}
                   <td className="px-3 py-3 text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      data-readonly-allow
-                      onClick={() => setOpenId(scholar.id)}
-                    >
-                      Details
-                    </Button>
-                    {canEnterRac ? (
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="ml-2"
-                        disabled={!scholar.guideName.trim()}
-                        title={
-                          scholar.guideName.trim()
-                            ? "Enter the RAC members of this scholar"
-                            : "Allot a guide first"
-                        }
-                        onClick={() => {
-                          setNotice(null);
-                          setRacId(scholar.id);
-                        }}
+                        data-readonly-allow
+                        onClick={() => setOpenId(scholar.id)}
                       >
-                        RAC members
+                        Details
                       </Button>
-                    ) : null}
+                      {rowActions?.(scholarSignInId(scholar), scholar.name)}
+                      {canEnterRac ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={!scholar.guideName.trim()}
+                          title={
+                            scholar.guideName.trim()
+                              ? "Enter the RAC members of this scholar"
+                              : "Allot a guide first"
+                          }
+                          onClick={() => {
+                            setNotice(null);
+                            setRacId(scholar.id);
+                          }}
+                        >
+                          RAC members
+                        </Button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))

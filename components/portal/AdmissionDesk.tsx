@@ -1,5 +1,8 @@
 "use client";
 
+import { checklistItems } from "@/lib/checklists";
+import { useChecklist } from "@/lib/use-checklist";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Lock } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -34,7 +37,6 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { applicationReviewCopy } from "@/data/application-review";
 import {
-  admissionChecklist,
   admissionLockCopy,
   archiveSessionOptions,
   defaultLetter,
@@ -270,7 +272,7 @@ function letterRef(letter: LetterConfig, row: AdmissionCase) {
 }
 
 function documentCount(row: AdmissionCase) {
-  const required = admissionChecklist.filter((item) => item.required);
+  const required = checklistItems("admission").filter((item) => item.required);
   const received = required.filter((item) => row.checks[item.id] === "Received").length;
   return `${received}/${required.length}`;
 }
@@ -301,6 +303,7 @@ export function AdmissionDesk({
   applications: StoredApplication[];
   vacancies: Vacancy[];
 }) {
+  useChecklist("admission");
   const ready = useClientReady();
   const store = useSyncExternalStore(subscribeAdmission, currentAdmission, () => null);
   const users = useSyncExternalStore(
@@ -4030,7 +4033,7 @@ export function AdmissionDesk({
             }}
             onTickAll={() => {
               const checks = { ...verifying.checks };
-              for (const item of admissionChecklist) {
+              for (const item of checklistItems("admission")) {
                 if (item.required && checks[item.id] !== "Not applicable") {
                   checks[item.id] = "Received";
                 } else if (checks[item.id] === "Submitted") {
@@ -5208,7 +5211,7 @@ function VerifyPanel({
         ) : null}
       </div>
       <div className="divide-y divide-border rounded-xl border border-border">
-        {admissionChecklist.map((item) => {
+        {checklistItems("admission").map((item) => {
           const upload = row.uploads[item.id];
           const mark = row.checks[item.id] ?? "";
           const box = (label: string, value: CheckMark) => (

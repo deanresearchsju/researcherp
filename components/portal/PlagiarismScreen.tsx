@@ -18,7 +18,9 @@ import { ProfileCell, profileColumnHeading } from "@/components/portal/ProfileCe
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { colloquiumCheck, synopsisChecklist, thesisChecklist } from "@/data/doctoral";
+import { colloquiumCheck } from "@/data/doctoral";
+import { checklistItems } from "@/lib/checklists";
+import { useChecklist } from "@/lib/use-checklist";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
   currentDoctoral,
@@ -47,8 +49,9 @@ const stageLabel: Record<PlagiarismStage, string> = {
   thesis: "Before thesis",
 };
 
-function checklistFor(stage: PlagiarismStage): readonly string[] {
-  return stage === "synopsis" ? synopsisChecklist : thesisChecklist;
+/** The checks of a stage, kept by the administrator under Checklists. */
+function checklistFor(stage: PlagiarismStage) {
+  return checklistItems(stage);
 }
 
 /** Scholars who reached the step before this stage, plus anyone already issued. */
@@ -84,7 +87,10 @@ function IssueDialog({
   onClose: () => void;
   onIssued: (message: string) => void;
 }) {
-  const checklist = checklistFor(stage);
+  useChecklist(stage);
+  const items = checklistFor(stage);
+  const checklist = items.map((item) => item.title);
+  const mandatory = items.filter((item) => item.required).map((item) => item.title);
   const doctoral = useSyncExternalStore(subscribeDoctoral, currentDoctoral, () => null);
   // The colloquium minimum is read here, at the checklist, and not on the colloquium pages.
   const mode = doctoral ? studyModeOf(scholar.identifier, doctoral) : null;
@@ -98,12 +104,12 @@ function IssueDialog({
   const [file, setFile] = useState<StoredFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const complete = checklist.every((item) => checks.includes(item));
+  const complete = mandatory.every((item) => checks.includes(item));
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!complete) {
-      setError("Tick every checklist item before issuing the certificate.");
+      setError("Tick every mandatory checklist item before issuing the certificate.");
       return;
     }
     const problem = fileError(file?.file ?? null, "pdfDocument", true);
@@ -166,6 +172,9 @@ function IssueDialog({
               />
               <span>
                 {item}
+                {mandatory.includes(item) ? null : (
+                  <span className="text-xs text-muted-foreground"> (optional)</span>
+                )}
                 {item === colloquiumCheck && standing && mode ? (
                   <span
                     className={

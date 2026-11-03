@@ -33,7 +33,7 @@ await test("the fee screens do not bring back a 'Mark …' button", () => {
   for (const file of [
     "components/portal/MarkFeePaidDialog.tsx",
     "components/portal/FeeCollectionScreen.tsx",
-    "components/portal/ScholarInfoScreen.tsx",
+    "components/portal/ScholarList.tsx",
   ]) {
     const source = fs.readFileSync(`${root}/${file}`, "utf8");
     assert.ok(!/>\s*Mark (selected )?(as )?paid|submitLabel="Mark /.test(source), file);

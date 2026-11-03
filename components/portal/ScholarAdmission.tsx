@@ -8,7 +8,9 @@ import { StatusPill, ViewFilesButton } from "@/components/portal/Desk";
 import { Button } from "@/components/ui/button";
 import { useClientReady } from "@/components/forms/ClientGate";
 import { FileUpload } from "@/components/forms/FileUpload";
-import { admissionChecklist, admissionLockCopy } from "@/data/admission";
+import { admissionLockCopy } from "@/data/admission";
+import { checklistItems } from "@/lib/checklists";
+import { useChecklist } from "@/lib/use-checklist";
 import {
   admissionCompleted,
   currentAdmission,
@@ -62,6 +64,7 @@ async function loadOwnApplication(
 }
 
 export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
+  useChecklist("admission");
   const ready = useClientReady();
   const session = usePortalSession();
   const payments = useSyncExternalStore(
@@ -352,11 +355,11 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
         </section>
       ) : null}
 
-      {admissionChecklist.some((item) => row.uploads[item.id]) ? (
+      {checklistItems("admission").some((item) => row.uploads[item.id]) ? (
         <section className="rounded-xl border border-border p-4">
           <h2 className="font-semibold">Submitted documents</h2>
           <ul className="mt-3 space-y-2">
-            {admissionChecklist.map((item) => {
+            {checklistItems("admission").map((item) => {
               const upload = row.uploads[item.id];
               if (!upload) return null;
               return (
@@ -405,7 +408,7 @@ export function ScholarAdmission({ embedded = false }: { embedded?: boolean }) {
                         const file = uploadFile.file;
                         void storeFile(file, "admission").then((fileData) => {
                           if (!fileData) return;
-                          const checklistItem = admissionChecklist.find(
+                          const checklistItem = checklistItems("admission").find(
                             (entry) => entry.id === item.id,
                           );
                           if (!checklistItem) return;

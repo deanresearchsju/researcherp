@@ -110,8 +110,8 @@ function FilterBox({ filters }: { filters: readonly ListFilter[] }) {
       >
         <Filter className="size-4 shrink-0 text-primary" aria-hidden="true" />
         {chips.length === 0 ? (
-          <span className="text-muted-foreground">
-            Filter by {filters.map((filter) => filter.label.toLowerCase()).join(", ")}
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            Filter{filters.length > 1 ? ` (${filters.length} fields)` : ` by ${filters[0]?.label.toLowerCase() ?? ""}`}
           </span>
         ) : (
           chips.map(({ filter, value }) => (
@@ -429,7 +429,7 @@ export function ListToolbar({
           filters.length > 0 && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]",
         )}
       >
-        <label className="relative block text-sm">
+        <label className="relative block self-start text-sm">
           <span className="sr-only">Search</span>
           <Search
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"

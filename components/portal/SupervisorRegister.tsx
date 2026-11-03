@@ -10,7 +10,7 @@ import {
 import { DeskTabs, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Button } from "@/components/ui/button";
-import { applicationReviewCopy, supervisorOfficeCopy } from "@/data/application-review";
+import { applicationReviewCopy } from "@/data/application-review";
 import { personFileCopy } from "@/data/person-file";
 import { researchRegister, type ResearchSupervisor } from "@/data/research-register";
 import { currentOffice, subscribeOffice } from "@/lib/office";
@@ -178,7 +178,6 @@ export function SupervisorRegister({
   const waiting = rows.filter(
     (row) => row.status !== "Approved" && row.status !== "Rejected",
   );
-  const pendingApproval = waiting.filter((row) => row.status === "Accepted");
   const decided = rows.filter(
     (row) => row.status === "Approved" || row.status === "Rejected",
   );
@@ -304,31 +303,21 @@ export function SupervisorRegister({
         </p>
       ) : null}
 
-      <RegisterImport kind="supervisors" onDone={setNotice} />
-
       <div className="mt-6">
         <DeskTabs
           tabs={[
-            { id: "active", label: supervisorOfficeCopy.activeTab },
-            { id: "inactive", label: supervisorOfficeCopy.inactiveTab },
+            { id: "active", label: `Active (${activeList.length})` },
+            { id: "inactive", label: `Inactive (${inactiveList.length})` },
+            { id: "recognition", label: `Recognition applications (${waiting.length})` },
           ]}
           value={listTab}
           onChange={setListTab}
         />
       </div>
 
-      <h2 className="mt-8 font-heading text-2xl text-primary">
-        {supervisorOfficeCopy.recognition}
-      </h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        {waiting.length} {supervisorOfficeCopy.waiting}. {pendingApproval.length}{" "}
-        {supervisorOfficeCopy.pendingApproval}. {decided.length} already decided.
-      </p>
-      {waiting.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          No recognition application is waiting.
-        </p>
-      ) : (
+      {listTab !== "recognition" ? null : waiting.length === 0 && decided.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">No recognition application.</p>
+      ) : waiting.length === 0 ? null : (
         <ul className="mt-4 space-y-3">
           {waiting.map((row) => (
             <li
@@ -370,7 +359,7 @@ export function SupervisorRegister({
         </ul>
       )}
 
-      {decided.length > 0 ? (
+      {listTab === "recognition" && decided.length > 0 ? (
         <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
           <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
             <thead className="bg-muted text-primary">
@@ -427,26 +416,8 @@ export function SupervisorRegister({
         </div>
       ) : null}
 
-      {canExport ? (
+      {listTab === "recognition" ? null : (
         <>
-          <h2 className="mt-10 font-heading text-2xl text-primary">Downloads</h2>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => downloadAllSupervisorDetails()}
-            >
-              {personFileCopy.downloadAllSupervisors}
-            </Button>
-          </div>
-        </>
-      ) : null}
-
-      <h2 className="mt-10 font-heading text-2xl text-primary">
-        {listTab === "inactive"
-          ? supervisorOfficeCopy.inactiveTab
-          : supervisorOfficeCopy.activeTab}
-      </h2>
       <ListToolbar
         query={query}
         onQuery={setQuery}
@@ -468,6 +439,18 @@ export function SupervisorRegister({
         total={listTab === "inactive" ? inactiveList.length : activeList.length}
         filename="supervisor-register.csv"
         downloadLabel="Download filtered supervisors"
+        extra={
+          canExport ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => downloadAllSupervisorDetails()}
+            >
+              {personFileCopy.downloadAllSupervisors}
+            </Button>
+          ) : null
+        }
         headers={supervisorWideHeaders()}
         rows={shownList.map((supervisor) => [
           ...supervisorDownloadRow(supervisor, quotas, allocations),
@@ -511,6 +494,9 @@ export function SupervisorRegister({
           )
         }
       />
+        </>
+      )}
+      <RegisterImport kind="supervisors" compact onDone={setNotice} />
       {editing ? (
         <SupervisorRegisterEditor
           key={editing.serialNo}

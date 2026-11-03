@@ -11,8 +11,11 @@ const maxBytes = 2 * 1024 * 1024;
 const privateBucket = "portal-private";
 const publicBucket = "portal-public";
 
-/** Who may upload without signing in: the public application forms, a few files at a time. */
-const anonymousFolders: readonly StoreFolder[] = ["applications"];
+/**
+ * Who may upload without signing in, a few files at a time: the public application forms and the
+ * evidence faculty attach to a publication or proposal on the open faculty page.
+ */
+const anonymousFolders: readonly StoreFolder[] = ["applications", "research"];
 const windowMs = 10 * 60 * 1000;
 const anonymousLimit = 40;
 

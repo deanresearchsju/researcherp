@@ -12,9 +12,14 @@ export const ugcSource = {
 
 export const ugcHighlights = [
   {
-    value: "3–6 years",
+    value: "3 / 4 years",
     label: "Duration",
-    detail: "At least 3 years including course work; at most 6 years from admission",
+    detail: "Full time: 3 years · Part time: 4 years, including course work",
+  },
+  {
+    value: "70 : 30",
+    label: "Selection",
+    detail: "Weightage of the entrance test to the interview",
   },
   {
     value: "12 credits",
@@ -25,22 +30,18 @@ export const ugcHighlights = [
   {
     value: "55%",
     label: "Course-work marks",
-    detail: "Minimum marks (or equivalent grade) to continue and submit the thesis",
+    detail: "Minimum marks (or equivalent grade) in course work",
   },
   {
-    value: "70 : 30",
-    label: "Selection",
-    detail: "Weightage of the entrance test to the interview",
+    value: "2 papers",
+    label: "Publications",
+    detail:
+      "Minimum two research papers in peer-reviewed journals before thesis submission",
   },
   {
-    value: "2 external",
-    label: "Thesis examiners",
-    detail: "Besides the supervisor; one from outside India wherever possible",
-  },
-  {
-    value: "6 months",
-    label: "Evaluation",
-    detail: "Thesis evaluation and viva-voce completed within six months of submission",
+    value: "Thesis",
+    label: "Thesis submission",
+    detail: "Thesis evaluation and viva-voce examination",
   },
 ] as const;
 
@@ -50,33 +51,27 @@ export const ugcEligibility = {
     "A candidate who has completed any one of the following, with the minimum marks in aggregate or the equivalent grade:",
   routes: [
     {
-      id: "master-3",
-      qualification: "Two-year (4-semester) Master's degree",
-      after: "after a 3-year bachelor's degree",
+      id: "master-2",
+      qualification: "2-year Master's degree",
+      after: "after a 3-year or 4-year Bachelor's degree",
       marks: "55%",
     },
     {
-      id: "master-4",
-      qualification: "One-year (2-semester) Master's degree",
-      after: "after a 4-year (8-semester) bachelor's degree",
+      id: "master-1",
+      qualification: "1-year Master's degree",
+      after: "after a 5-year Bachelor's degree",
       marks: "55%",
     },
     {
       id: "bachelor-4",
-      qualification: "Four-year (8-semester) bachelor's degree",
-      after: "seeking admission after the 4-year programme",
+      qualification: "4-year Bachelor's degree with a research component",
+      after: "Qualifying in GATE, NET or a similar national-level test is mandatory",
       marks: "75%",
     },
     {
-      id: "mphil",
-      qualification: "M.Phil. programme",
-      after: "completed earlier (M.Phil. is no longer offered)",
-      marks: "55%",
-    },
-    {
       id: "foreign",
-      qualification: "Equivalent qualification from a foreign institution",
-      after: "accredited by a recognised assessment and accreditation agency",
+      qualification: "Master's degree from a foreign institution",
+      after: "accredited by a recognised agency within its home country",
       marks: "Equivalent",
     },
   ],
@@ -122,8 +117,7 @@ export const ugcJourney = {
     },
     {
       title: "Course work",
-      detail:
-        "At least 12 credits; 55% to continue; includes Research & Publication Ethics",
+      detail: "At least 12 credits with 55%; includes Research & Publication Ethics",
     },
     {
       title: "Research Advisory Committee",
@@ -161,8 +155,8 @@ export const ugcDuration = {
   title: "Duration, leave and modes",
   items: [
     {
-      label: "Minimum and maximum",
-      text: "3 years including course work, and up to 6 years from the date of admission",
+      label: "Duration",
+      text: "Full time: 3 years · Part time: 4 years, including course work",
     },
     {
       label: "Re-registration",

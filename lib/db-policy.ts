@@ -190,7 +190,8 @@ const tables: Record<string, TableRule> = {
       if (context.op === "read" || !context.actor) return null;
       if (isOfficeRole(context.actor.role)) return null;
       // A person sets the own photo once (/api/db checks there is none); the office replaces it.
-      if (context.op !== "insert") return "The profile photo is changed by the research office.";
+      if (context.op !== "insert")
+        return "The profile photo is changed by the research office.";
       const rows = Array.isArray(context.request.body)
         ? context.request.body
         : [context.request.body];
@@ -344,6 +345,10 @@ const serverOnly = new Set([
   "portal_forms",
   "thesis_evaluation",
   "file_storage",
+  "faculty_research_records",
+  "erp_checklists",
+  "faculty_incentive_settings",
+  "faculty_incentive_claims",
 ]);
 
 const jsonBlobTables: Record<string, readonly Group[]> = {

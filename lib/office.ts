@@ -538,7 +538,7 @@ function mergeAllocations(
   ];
 }
 
-function settingsFromRow(row: {
+export function settingsFromRow(row: {
   hero_eyebrow: string;
   hero_title: string;
   hero_summary: string;

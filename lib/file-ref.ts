@@ -21,6 +21,7 @@ export const storeFolders = {
   records: "private",
   thesis: "private",
   documents: "private",
+  research: "private",
   news: "public",
   team: "public",
 } as const;

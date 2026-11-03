@@ -25,7 +25,33 @@ export const portalModules = {
   fees: "Fees",
   approvals: "Approvals",
   documents: "Documents",
+  facultyResearch: "Faculty research",
 } as const;
+
+/** Faculty publications and project proposals: the office lists, and each person's own records. */
+const facultyResearchItems = (role: Role) =>
+  role === "supervisor"
+    ? [
+        {
+          label: "Publication records",
+          href: `/${role}/faculty-publications`,
+          ready: true,
+        },
+        { label: "Project proposals", href: `/${role}/project-proposals`, ready: true },
+      ]
+    : [
+        {
+          label: "Faculty publications",
+          href: "/admin/faculty-publications",
+          ready: true,
+        },
+        { label: "Project proposals", href: "/admin/project-proposals", ready: true },
+        {
+          label: "Publication incentives",
+          href: "/admin/faculty-incentives",
+          ready: true,
+        },
+      ];
 
 export const menuRightsCopy = {
   title: "Submenu rights",
@@ -62,16 +88,17 @@ const requestItems = (role: Role) => [
   record(role, "phd-cancellation", "Ph.D. cancellation"),
 ];
 
+/** Doctoral progress in the order a scholar meets each step, from the RAC to completion. */
 const doctoralItems = (role: "admin" | "scholar") => [
-  // The scholar sees the Research Advisory Committee first: it is formed before the first meeting.
-  ...(role === "scholar"
-    ? [{ label: "RAC members", href: "/scholar/rac", ready: true }]
-    : []),
+  // The Research Advisory Committee comes first: it is formed before the first meeting.
+  role === "scholar"
+    ? { label: "RAC members", href: "/scholar/rac", ready: true }
+    : { label: "RAC", href: "/admin/rac", ready: true },
   { label: "First committee", href: `/${role}/dc-first`, ready: true },
   { label: "Ph.D. confirmation", href: `/${role}/confirmation`, ready: true },
+  { label: "Six-month report", href: `/${role}/reports`, ready: true },
   { label: "Colloquium", href: `/${role}/colloquium`, ready: true },
   record(role, "publications", "Publications"),
-  { label: "Six-month report", href: `/${role}/reports`, ready: true },
   { label: "Third committee", href: `/${role}/dc-third`, ready: true },
   { label: "Plagiarism check", href: `/${role}/plagiarism`, ready: true },
   { label: "Synopsis", href: `/${role}/synopsis`, ready: true },
@@ -87,6 +114,11 @@ const doctoralItems = (role: "admin" | "scholar") => [
   { label: "Completion", href: `/${role}/completion`, ready: true },
 ];
 
+/**
+ * The office menus in the order of the work: admission, the registers, supervision, fees, course
+ * work and examinations, doctoral progress, requests and records, faculty research, then the
+ * reports, the website and administration.
+ */
 const adminGroups: PortalNavGroup[] = [
   {
     heading: "",
@@ -97,18 +129,18 @@ const adminGroups: PortalNavGroup[] = [
     items: [
       { label: "Application window", href: "/admin/site", ready: true },
       { label: "Vacancies", href: "/admin/vacancies", ready: true },
+      { label: "Applications", href: "/admin/applications", ready: true },
       {
         label: incompleteApplicationsCopy.menu,
         href: "/admin/incomplete-applications",
         ready: true,
       },
-      { label: "Applications", href: "/admin/applications", ready: true },
-      { label: "Selection", href: "/admin/admission", ready: true },
       {
         label: "Entrance invigilation",
         href: "/admin/entrance-invigilation",
         ready: true,
       },
+      { label: "Selection", href: "/admin/admission", ready: true },
     ],
   },
   {
@@ -117,6 +149,21 @@ const adminGroups: PortalNavGroup[] = [
       { label: "Scholar register", href: "/admin/register", ready: true },
       { label: "Supervisor register", href: "/admin/supervisors", ready: true },
       { label: "Passed-out scholars", href: "/admin/passed-out", ready: true },
+    ],
+  },
+  {
+    heading: portalModules.supervision,
+    items: [
+      { label: "Scholar allotment", href: "/admin/allocations", ready: true },
+      { label: "Supervisor transfer", href: "/admin/transfers", ready: true },
+      { label: "Supervisor exit", href: "/admin/supervisor-exit", ready: true },
+    ],
+  },
+  {
+    heading: portalModules.fees,
+    items: [
+      { label: "Tuition fees", href: "/admin/fee", ready: true },
+      { label: "Fee approvals", href: "/admin/payments", ready: true },
     ],
   },
   {
@@ -129,14 +176,14 @@ const adminGroups: PortalNavGroup[] = [
       },
       { label: "Registration windows", href: "/admin/course-windows", ready: true },
       { label: "Course registrations", href: "/admin/course-work", ready: true },
-      { label: "Semester promotion", href: "/admin/promotions", ready: true },
       { label: "Exam setup", href: "/admin/exam-setup", ready: true },
       { label: "Hall tickets & seating", href: "/admin/exam-tickets", ready: true },
       { label: "Invigilation duty", href: "/admin/invigilation", ready: true },
-      { label: "Results", href: "/admin/results", ready: true },
       { label: "Mark entry", href: "/admin/coe/marks", ready: true },
       { label: "Verify & freeze marks", href: "/admin/coe/verify", ready: true },
       { label: "Result approval", href: "/admin/exam-results", ready: true },
+      { label: "Results", href: "/admin/results", ready: true },
+      { label: "Semester promotion", href: "/admin/promotions", ready: true },
     ],
   },
   {
@@ -144,32 +191,20 @@ const adminGroups: PortalNavGroup[] = [
     items: doctoralItems("admin"),
   },
   {
-    heading: portalModules.supervision,
-    items: [
-      { label: "Scholar allotment", href: "/admin/allocations", ready: true },
-      { label: "RAC", href: "/admin/rac", ready: true },
-      { label: "Supervisor transfer", href: "/admin/transfers", ready: true },
-      { label: "Supervisor exit", href: "/admin/supervisor-exit", ready: true },
-    ],
-  },
-  {
     heading: portalModules.requests,
     items: requestItems("admin"),
-  },
-  {
-    heading: portalModules.fees,
-    items: [
-      { label: "Tuition fees", href: "/admin/fee", ready: true },
-      { label: "Fee approvals", href: "/admin/payments", ready: true },
-    ],
   },
   {
     heading: portalModules.scholarRecords,
     items: [
       record("admin", "abc-id", "ABC ID"),
-      { label: "Approved documents", href: "/admin/approved", ready: true },
       { label: "Attendance sheets", href: "/admin/attendance", ready: true },
+      { label: "Approved documents", href: "/admin/approved", ready: true },
     ],
+  },
+  {
+    heading: portalModules.facultyResearch,
+    items: facultyResearchItems("admin"),
   },
   {
     heading: portalModules.reports,
@@ -183,10 +218,10 @@ const adminGroups: PortalNavGroup[] = [
     heading: portalModules.website,
     items: [
       { label: "News and events", href: "/admin/news", ready: true },
-      { label: "Helpdesk", href: "/admin/helpdesk", ready: true },
       { label: "Research areas", href: "/admin/research-areas", ready: true },
-      { label: "Our Team", href: "/admin/team", ready: true },
       { label: "Supervisor profiles", href: "/admin/supervisor-profiles", ready: true },
+      { label: "Our Team", href: "/admin/team", ready: true },
+      { label: "Helpdesk", href: "/admin/helpdesk", ready: true },
     ],
   },
   {
@@ -194,6 +229,7 @@ const adminGroups: PortalNavGroup[] = [
     items: [
       { label: "Users", href: "/admin/users", ready: true },
       { label: "Approval rules", href: "/admin/approval-rules", ready: true },
+      { label: "Checklists", href: "/admin/checklists", ready: true },
       { label: "Fee settings", href: "/admin/fee-settings", ready: true },
       { label: "Audit trail", href: "/admin/audit", ready: true },
       { label: "Clear test data", href: "/admin/test-data", ready: true },
@@ -202,7 +238,7 @@ const adminGroups: PortalNavGroup[] = [
 ];
 
 /** Menus only the administrator has, however rights are granted to the others. */
-const adminOnlyHrefs = new Set(["/admin/test-data", "/admin/audit"]);
+const adminOnlyHrefs = new Set(["/admin/test-data", "/admin/audit", "/admin/checklists"]);
 
 function officeGroups(withArchive: boolean, administrator = false): PortalNavGroup[] {
   return adminGroups.map((group) => {
@@ -224,6 +260,15 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: [{ label: "Dashboard", href: "/scholar/dashboard", ready: true }],
     },
     {
+      heading: portalModules.scholarRecords,
+      items: [
+        record("scholar", "personal-details", "My details"),
+        record("scholar", "abc-id", "ABC ID"),
+        { label: "Vidwan ID", href: "/scholar/vidwan-id", ready: true },
+        { label: "Fee", href: "/scholar/fee", ready: true },
+      ],
+    },
+    {
       heading: portalModules.courseWork,
       items: [
         { label: "Registration", href: "/scholar/course-work", ready: true },
@@ -240,12 +285,8 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       items: requestItems("scholar"),
     },
     {
-      heading: portalModules.scholarRecords,
+      heading: portalModules.documents,
       items: [
-        record("scholar", "personal-details", "My details"),
-        record("scholar", "abc-id", "ABC ID"),
-        { label: "Vidwan ID", href: "/scholar/vidwan-id", ready: true },
-        { label: "Fee", href: "/scholar/fee", ready: true },
         { label: "Approved documents", href: "/scholar/approved", ready: true },
         { label: "Forms & formats", href: "/scholar/forms", ready: true },
         { label: "Helpdesk", href: "/scholar/helpdesk", ready: true },
@@ -265,20 +306,22 @@ export const portalGroups: Record<Role, PortalNavGroup[]> = {
       ],
     },
     {
-      heading: portalModules.approvals,
+      heading: portalModules.doctoralProgress,
       items: [
-        { label: "Scholar requests", href: "/supervisor/reviews", ready: true },
+        { label: "RAC proposal", href: "/supervisor/rac", ready: true },
         { label: "Doctoral committees", href: "/supervisor/committees", ready: true },
+        { label: "Colloquium", href: "/supervisor/colloquium", ready: true },
         { label: "Synopsis & thesis", href: "/supervisor/submissions", ready: true },
+        { label: "Thesis evaluators", href: "/supervisor/evaluators", ready: true },
       ],
     },
     {
-      heading: portalModules.supervision,
-      items: [
-        { label: "RAC proposal", href: "/supervisor/rac", ready: true },
-        { label: "Thesis evaluators", href: "/supervisor/evaluators", ready: true },
-        { label: "Colloquium", href: "/supervisor/colloquium", ready: true },
-      ],
+      heading: portalModules.requests,
+      items: [{ label: "Scholar requests", href: "/supervisor/reviews", ready: true }],
+    },
+    {
+      heading: portalModules.facultyResearch,
+      items: facultyResearchItems("supervisor"),
     },
     {
       heading: portalModules.documents,

@@ -3,24 +3,15 @@
 import { ArrowRight, FlaskConical } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { researchPage } from "@/data/research-home";
 import { heroCopy } from "@/data/sections";
-import {
-  currentSiteSettings,
-  defaultSiteSettings,
-  subscribeSiteSettings,
-} from "@/lib/office";
+import { usePublicSettings } from "@/components/home/PublicSiteProvider";
 import { cn } from "@/lib/utils";
 
 export function Hero() {
-  const settings = useSyncExternalStore(
-    subscribeSiteSettings,
-    () => currentSiteSettings() ?? defaultSiteSettings,
-    () => defaultSiteSettings,
-  );
+  const settings = usePublicSettings();
   const applyHref = settings.phdOpen ? heroCopy.primaryHref : "/admission";
   const applyLabel = settings.phdOpen ? heroCopy.primaryCta : "Applications closed";
 

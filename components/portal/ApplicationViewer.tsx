@@ -19,7 +19,8 @@ import {
   supervisorApplicationEditFields,
 } from "@/data/application-review";
 import type { AdmissionCase } from "@/lib/admission";
-import { admissionChecklist } from "@/data/admission";
+import { checklistItems } from "@/lib/checklists";
+import { useChecklist } from "@/lib/use-checklist";
 import { downloadPhdApplications } from "@/lib/phd-application-pdf";
 import { compressImage, fileToDataUrl } from "@/lib/files";
 import {
@@ -306,6 +307,7 @@ export function ApplicationViewer({
   saving?: boolean;
   onSave?: (next: { applicantName: string; email: string; payload: Json }) => void;
 }) {
+  useChecklist("admission");
   const canDownload = useCanMenuAction("export");
   const canEdit = Boolean(editable && onSave && isStoredApplication(application.id));
   const isPhd = application.kind === "phd";
@@ -574,7 +576,7 @@ export function ApplicationViewer({
             </li>
           ))}
           {admission
-            ? admissionChecklist.flatMap((item) => {
+            ? checklistItems("admission").flatMap((item) => {
                 const upload = admission.uploads[item.id];
                 if (!upload) return [];
                 return [

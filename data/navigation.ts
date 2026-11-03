@@ -16,6 +16,7 @@ export const footerExplore: NavLink[] = [
   { label: "Supervisors", href: "/supervisors" },
   { label: "Our team", href: "/our-team" },
   { label: "Downloads", href: "/downloads" },
+  { label: "Faculty publications", href: "/faculty-research" },
 ];
 
 export const footerPortals: NavLink[] = [

@@ -1,5 +1,5 @@
+import { checklistItems } from "@/lib/checklists";
 import {
-  admissionChecklist,
   admissionLockCopy,
   defaultLetter,
   emptyEntranceSchedule,
@@ -1063,7 +1063,7 @@ export function modeLabel(studyMode: string) {
 }
 
 export function missingItems(row: AdmissionCase) {
-  return admissionChecklist.filter((item) => row.checks[item.id] === "Missing");
+  return checklistItems("admission").filter((item) => row.checks[item.id] === "Missing");
 }
 
 export function verificationBlock(row: AdmissionCase) {
@@ -1073,7 +1073,7 @@ export function verificationBlock(row: AdmissionCase) {
   // The tuition fee is paid after the first sign-in, under Fee.
   // A document that is missing does not hold the file: the scholar brings it within
   // MISSING_DOCUMENT_DAYS days. Every item must still be marked.
-  const open = admissionChecklist.filter((item) => {
+  const open = checklistItems("admission").filter((item) => {
     const mark = row.checks[item.id];
     if (item.required) return mark !== "Received" && mark !== "Missing";
     return !mark || mark === "Submitted";

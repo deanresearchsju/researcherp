@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/apply/status",
     "/supervisor-recognition/apply",
     "/supervisor-recognition/status",
+    "/faculty-research",
     "/terms",
     "/privacy",
   ];

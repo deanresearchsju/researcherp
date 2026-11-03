@@ -461,6 +461,125 @@ export type Database = {
         Update: { payload?: Json; updated_at?: string };
         Relationships: [];
       };
+      faculty_research_records: {
+        Row: {
+          id: string;
+          kind: string;
+          created_at: string;
+          updated_at: string;
+          source: string;
+          owner_role: string;
+          owner_identifier: string;
+          faculty_name: string;
+          mobile: string;
+          dob: string | null;
+          record_date: string | null;
+          record_year: number | null;
+          details: Json;
+          title_key: string;
+          doi_key: string;
+          patent_key: string;
+          approved_at: string | null;
+          approved_by: string;
+        };
+        Insert: {
+          id?: string;
+          kind: string;
+          created_at?: string;
+          updated_at?: string;
+          source?: string;
+          owner_role?: string;
+          owner_identifier?: string;
+          faculty_name?: string;
+          mobile?: string;
+          dob?: string | null;
+          record_date?: string | null;
+          record_year?: number | null;
+          details?: Json;
+          title_key?: string;
+          doi_key?: string;
+          patent_key?: string;
+          approved_at?: string | null;
+          approved_by?: string;
+        };
+        Update: {
+          updated_at?: string;
+          faculty_name?: string;
+          mobile?: string;
+          dob?: string | null;
+          record_date?: string | null;
+          record_year?: number | null;
+          details?: Json;
+          title_key?: string;
+          doi_key?: string;
+          patent_key?: string;
+          approved_at?: string | null;
+          approved_by?: string;
+        };
+        Relationships: [];
+      };
+      erp_checklists: {
+        Row: { id: string; items: Json; updated_at: string; updated_by: string };
+        Insert: { id: string; items: Json; updated_at?: string; updated_by?: string };
+        Update: { items?: Json; updated_at?: string; updated_by?: string };
+        Relationships: [];
+      };
+      faculty_incentive_settings: {
+        Row: { id: string; payload: Json; updated_at: string; updated_by: string };
+        Insert: { id: string; payload: Json; updated_at?: string; updated_by?: string };
+        Update: { payload?: Json; updated_at?: string; updated_by?: string };
+        Relationships: [];
+      };
+      faculty_incentive_claims: {
+        Row: {
+          id: string;
+          record_id: string;
+          faculty_key: string;
+          faculty_name: string;
+          designation: string;
+          academic_year: string;
+          basis: string;
+          computed: number;
+          claimed: number;
+          approved: number;
+          status: string;
+          remarks: string;
+          created_at: string;
+          updated_at: string;
+          updated_by: string;
+        };
+        Insert: {
+          id?: string;
+          record_id: string;
+          faculty_key: string;
+          faculty_name?: string;
+          designation?: string;
+          academic_year: string;
+          basis?: string;
+          computed?: number;
+          claimed?: number;
+          approved?: number;
+          status?: string;
+          remarks?: string;
+          created_at?: string;
+          updated_at?: string;
+          updated_by?: string;
+        };
+        Update: {
+          faculty_name?: string;
+          designation?: string;
+          academic_year?: string;
+          basis?: string;
+          computed?: number;
+          claimed?: number;
+          approved?: number;
+          status?: string;
+          remarks?: string;
+          updated_at?: string;
+          updated_by?: string;
+        };
+        Relationships: [];
+      };
       audit_log: {
         Row: {
           id: string;

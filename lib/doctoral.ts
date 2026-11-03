@@ -1,3 +1,4 @@
+import { checklistTitles } from "@/lib/checklists";
 import {
   courseSemesters,
   courseWorkFee,
@@ -9,8 +10,6 @@ import {
   nptelCopy,
   nptelKinds,
   nptelMax,
-  synopsisChecklist,
-  thesisChecklist,
   type NptelKind,
   thesisWindowMonths,
 } from "@/data/doctoral";
@@ -3137,8 +3136,8 @@ export async function issuePlagiarism(input: {
   const next = snapshot();
   const blocked = plagiarismBlocked(next, input.scholarIdentifier, input.stage);
   if (blocked) return { ok: false as const, message: blocked };
-  const checklist: readonly string[] =
-    input.stage === "synopsis" ? synopsisChecklist : thesisChecklist;
+  // The mandatory checks of the stage, as kept by the administrator under Checklists.
+  const checklist = checklistTitles(input.stage, true);
   const missing = checklist.filter((item) => !input.checks.includes(item));
   if (missing.length > 0) {
     return {

@@ -53,7 +53,7 @@ function parsePhotos(value: unknown) {
   });
 }
 
-function parseItems(value: unknown): NewsItem[] {
+export function parseItems(value: unknown): NewsItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];

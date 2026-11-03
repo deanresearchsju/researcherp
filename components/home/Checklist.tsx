@@ -1,13 +1,17 @@
+"use client";
+
 import { Reveal } from "@/components/home/Reveal";
 import { Badge } from "@/components/ui/badge";
 import { Container } from "@/components/ui/container";
 import { SectionHeading } from "@/components/ui/section-heading";
 
-import { checklist } from "@/data/checklist";
+import { useChecklist } from "@/lib/use-checklist";
 import { sectionCopy } from "@/data/sections";
 
 export function Checklist() {
   const documents = sectionCopy.documents;
+  // The list is kept by the administrator under Checklists.
+  const checklist = useChecklist("application");
   const requiredCount = checklist.filter((item) => item.required).length;
   const optionalCount = checklist.length - requiredCount;
 

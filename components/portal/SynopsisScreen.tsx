@@ -1,5 +1,7 @@
 "use client";
 
+import { checklistTitles } from "@/lib/checklists";
+
 import { useState } from "react";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
@@ -25,7 +27,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   hardcopyNotice,
   schoolNeedsIndexedPair,
-  synopsisChecklist,
 } from "@/data/doctoral";
 import { processFlows } from "@/data/portal-desk";
 import { fileError, type StoredFile } from "@/lib/files";
@@ -156,7 +157,7 @@ export function SynopsisScreen({ mode }: { mode: "admin" | "scholar" }) {
     const saved = await saveSynopsis({
       scholarIdentifier: session.identifier,
       scholarName: session.name,
-      checks: certificate.checks.length ? certificate.checks : [...synopsisChecklist],
+      checks: certificate.checks.length ? certificate.checks : checklistTitles("synopsis"),
       fileName: file.file.name,
       fileData: data || null,
     });

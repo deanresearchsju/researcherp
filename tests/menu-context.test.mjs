@@ -60,7 +60,26 @@ await test("a sign-in that had only the Scholar register keeps its register sub-
   assert.ok(moved.includes("/admin/register#tab:register"));
   assert.ok(!moved.includes("/admin/register#tab:information"));
   assert.equal(access.canOpenSection(moved, "/admin/register", "register"), true);
-  assert.equal(access.canOpenSection(moved, "/admin/register", "information"), false);
+});
+
+await test("a sign-in with only the old Scholar information sub-menu opens the merged page", () => {
+  const moved = access.parseMenuRights([
+    "/admin/register",
+    "/admin/register#tab:information",
+    access.rightsMarker,
+    access.sectionsMarker,
+  ]);
+  assert.equal(access.canOpenSection(moved, "/admin/register", "register"), true);
+});
+
+await test("a sign-in with only inactive supervisors opens the Supervisor register", () => {
+  const moved = access.parseMenuRights([
+    "/admin/supervisors",
+    "/admin/supervisors#tab:inactive",
+    access.rightsMarker,
+    access.sectionsMarker,
+  ]);
+  assert.equal(access.canOpenSection(moved, "/admin/supervisors", "active"), true);
 });
 
 summary();

@@ -1,11 +1,13 @@
 "use client";
 
-import { ChevronDown, IndianRupee, PencilLine, Search, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, ChevronDown, IndianRupee, PencilLine, Search, UserPlus, Users } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PersonalDetailsPanel } from "@/components/portal/PersonalDetailsPanel";
+import { RacMemberDetails, racMemberName } from "@/components/portal/RacMemberDetails";
 import { ProfileCard } from "@/components/portal/ProfileCard";
+import { ResearchRegister } from "@/components/portal/ResearchRegister";
 import { useScholarEntry } from "@/components/portal/ScholarEntryDialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,7 +110,7 @@ const when = (iso: string) => (iso ? formatIsoDate(iso.slice(0, 10)) : "");
  * research office enters the personal details, the fee already paid and the RAC from the tabs
  * they belong to.
  */
-export function ScholarInformationViewer() {
+export function ScholarInformationViewer({ withRegister = false }: { withRegister?: boolean }) {
   const session = usePreviewSession();
   const data = useScholarReports();
   const profiles = useScholarProfiles();
@@ -180,6 +182,17 @@ export function ScholarInformationViewer() {
   const personalRecord =
     mine(data.sources.personal ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ??
     null;
+
+  function openScholar(identifier: string) {
+    const item = candidates.find((candidate) => sameId(candidate.identifier, identifier));
+    if (item) choose(item);
+  }
+
+  function backToList() {
+    setPicked("");
+    setText("");
+    setNotice(null);
+  }
 
   function choose(item: Candidate) {
     setPicked(item.identifier);
@@ -294,13 +307,27 @@ export function ScholarInformationViewer() {
       ) : null}
 
       {!scholar ? (
-        <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-card">
-          Type at least two letters of a scholar&apos;s name, registration number or e-mail,
-          then choose the scholar from the list to see what the scholar sees in the portal.
-        </p>
+        withRegister ? (
+          <ResearchRegister embedded onOpen={openScholar} />
+        ) : (
+          <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-card">
+            Type a scholar&apos;s name, registration number or e-mail.
+          </p>
+        )
       ) : (
         <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
           <nav aria-label="Scholar information" className="space-y-1">
+            {withRegister ? (
+              <button
+                type="button"
+                data-readonly-allow=""
+                onClick={backToList}
+                className="mb-2 flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm font-semibold text-primary hover:bg-muted"
+              >
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                All scholars
+              </button>
+            ) : null}
             {tabs.map((item) => (
               <button
                 key={item.id}
@@ -452,6 +479,10 @@ export function ScholarInformationViewer() {
                 <p className="text-sm">
                   RAC: <span className="font-semibold text-primary">{report?.rac ?? "—"}</span>
                 </p>
+                <RacMemberDetails
+                  proposals={data.sources.proposals}
+                  scholarIdentifier={scholar.identifier}
+                />
                 <Table
                   headers={["Kind", "Status", "Internal member", "External member", "Decided on", "Entered by"]}
                   rows={mine(data.sources.proposals).map((item) => [
@@ -461,10 +492,8 @@ export function ScholarInformationViewer() {
                       : item.status === "With VC"
                         ? "With the Vice Chancellor"
                         : item.status,
-                    item.selectedInternal ||
-                      item.nominees.filter((n) => n.side === "internal").map((n) => n.name).join(", "),
-                    item.selectedExternal ||
-                      item.nominees.filter((n) => n.side === "external").map((n) => n.name).join(", "),
+                    racMemberName(item, item.selectedInternal, "internal"),
+                    racMemberName(item, item.selectedExternal, "external"),
                     when(item.vcOn || item.decidedOn),
                     item.officeEntry ? item.enteredBy : item.supervisorName,
                   ])}

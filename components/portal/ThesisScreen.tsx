@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { thesisChecklist } from "@/data/doctoral";
+import { checklistTitles } from "@/lib/checklists";
 import { clientToday, formatIsoDate } from "@/lib/dates";
 import {
   currentDoctoral,
@@ -119,7 +119,7 @@ function ScholarThesis({ identifier, name }: { identifier: string; name: string 
       scholarName: name,
       title: lockedTitle || values.title,
       domain: values.domain,
-      checks: certificate.checks.length ? certificate.checks : [...thesisChecklist],
+      checks: certificate.checks.length ? certificate.checks : checklistTitles("thesis"),
       fileName: file.file.name,
       fileData: data || null,
       local: [],

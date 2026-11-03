@@ -7,6 +7,7 @@ import { useForm, type FieldPath, type UseFormRegister } from "react-hook-form";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
+import { RacMemberDetails } from "@/components/portal/RacMemberDetails";
 import { DeskModal, FormDialog, PageTitle } from "@/components/portal/Desk";
 import { ListToolbar, filterMatches, textMatches } from "@/components/portal/ListToolbar";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,6 @@ import {
   enterRacByOffice,
   normaliseNominee,
   nomineeProblem,
-  presentRac,
   racExternalMax,
   racMemberProblem,
   racExternalMin,
@@ -187,62 +187,57 @@ type Target = {
   editing: boolean;
 };
 
-function MemberCard({
-  role,
-  name,
-  detail,
-}: {
-  role: string;
-  name: string;
-  detail: string;
-}) {
-  return (
-    <li className="rounded-xl border border-border bg-card p-4 shadow-card">
-      <p className="text-[11px] font-semibold tracking-[0.16em] text-secondary uppercase">
-        {role}
-      </p>
-      <p className="mt-1 font-semibold text-primary">{name}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-    </li>
-  );
+/** The members a RAC download lists: the selected internal and external member, and the co-guide. */
+function racMembersOf(proposal: RacProposal) {
+  const nominees = proposal.nominees.map(normaliseNominee);
+  return {
+    internal: nominees.find(
+      (item) => item.side === "internal" && item.key === proposal.selectedInternal,
+    ),
+    external: nominees.find(
+      (item) => item.side === "external" && item.key === proposal.selectedExternal,
+    ),
+    coguide: nominees.find((item) => item.side === "coguide"),
+  };
 }
 
-function PresentMembers({
-  proposals,
-  scholarIdentifier,
-}: {
-  proposals: RacProposal[];
-  scholarIdentifier: string;
-}) {
-  const present = presentRac(proposals, scholarIdentifier);
-  if (!present) {
-    return <p className="text-sm text-muted-foreground">No RAC has been approved yet.</p>;
-  }
-  return (
-    <div>
-      <ul className="grid gap-3 sm:grid-cols-3">
-        <MemberCard
-          role="Guide / Supervisor"
-          name={present.guide}
-          detail="Present supervisor"
-        />
-        <MemberCard
-          role="Internal member"
-          name={present.internal.name}
-          detail={`${present.internal.designation}, ${present.internal.department}`}
-        />
-        <MemberCard
-          role="External member"
-          name={present.external.name}
-          detail={`${present.external.designation}, ${present.external.institution}`}
-        />
-      </ul>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Constituted on {formatIsoDate(present.approvedOn)}
-        {present.selectedBy ? ` · selected by ${present.selectedBy}` : ""}
-      </p>
-    </div>
-  );
+function memberHeaders(label: string) {
+  return [
+    `${label}`,
+    `${label} designation`,
+    `${label} department`,
+    `${label} institution`,
+    `${label} address`,
+    `${label} email`,
+    `${label} phone`,
+    `${label} area of research`,
+  ];
+}
+
+function memberCells(member: RacNominee | undefined) {
+  if (!member) return ["", "", "", "", "", "", "", ""];
+  return [
+    member.name,
+    member.designation,
+    member.department,
+    member.institution,
+    member.address,
+    member.email,
+    member.phone,
+    member.specialization,
+  ];
+}
+
+function memberSummary(member: RacNominee) {
+  return [member.name, member.designation, member.institution, member.email, member.phone]
+    .filter((part) => part.trim() !== "")
+    .join(", ");
+}
+
+function nomineeLine(member: RacNominee) {
+  const side =
+    member.side === "internal" ? "Internal" : member.side === "external" ? "External" : "Co-guide";
+  return `${side}: ${memberSummary(member)}`;
 }
 
 function NominationMemo({
@@ -896,7 +891,7 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
 
       {mode === "scholar" && session?.role === "scholar" ? (
         <div className="mt-6">
-          <PresentMembers
+          <RacMemberDetails
             proposals={office.proposals}
             scholarIdentifier={session.identifier}
           />
@@ -944,7 +939,7 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
                   </div>
                   {standing.approved ? (
                     <div className="mt-3">
-                      <PresentMembers
+                      <RacMemberDetails
                         proposals={office.proposals}
                         scholarIdentifier={scholar.identifier}
                       />
@@ -1089,16 +1084,62 @@ export function RacScreen({ mode }: { mode: "scholar" | "supervisor" | "admin" }
             ]}
             shown={filtered.length}
             total={office.proposals.length}
-            filename="rac-nominations.csv"
-            headers={["scholar", "supervisor", "kind", "status", "selected by", ...profile.headers]}
-            rows={filtered.map((proposal) => [
-              proposal.scholarName,
-              proposal.supervisorName,
-              proposal.kind,
-              proposal.status,
-              proposal.decidedBy,
-              ...profile.cells(proposal.scholarIdentifier),
-            ])}
+            filename="rac-members.xlsx"
+            title="RAC members"
+            headers={[
+              "scholar",
+              "scholar ID",
+              "supervisor",
+              "kind",
+              "status",
+              "selected by",
+              "selected on",
+              "approved by VC",
+              "approved on",
+              ...memberHeaders("internal member"),
+              ...memberHeaders("external member"),
+              ...memberHeaders("co-guide"),
+              "all nominees",
+              ...profile.headers,
+            ]}
+            rows={filtered.map((proposal) => {
+              const members = racMembersOf(proposal);
+              return [
+                proposal.scholarName,
+                proposal.scholarIdentifier,
+                proposal.supervisorName,
+                proposal.kind,
+                proposal.status,
+                proposal.decidedBy,
+                proposal.decidedOn ? formatIsoDate(proposal.decidedOn) : "",
+                proposal.vcBy,
+                proposal.vcOn ? formatIsoDate(proposal.vcOn) : "",
+                ...memberCells(members.internal),
+                ...memberCells(members.external),
+                ...memberCells(members.coguide),
+                proposal.nominees.map(nomineeLine).join("\n"),
+                ...profile.cells(proposal.scholarIdentifier),
+              ];
+            })}
+            pdfHeaders={[
+              "Scholar",
+              "Supervisor",
+              "Status",
+              "Internal member",
+              "External member",
+              "Co-guide",
+            ]}
+            pdfRows={filtered.map((proposal) => {
+              const members = racMembersOf(proposal);
+              return [
+                proposal.scholarName,
+                proposal.supervisorName,
+                proposal.status,
+                members.internal ? memberSummary(members.internal) : "Not selected yet",
+                members.external ? memberSummary(members.external) : "Not selected yet",
+                members.coguide ? memberSummary(members.coguide) : "",
+              ];
+            })}
           />
           {filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground">No RAC nominations yet.</p>

@@ -2,20 +2,14 @@
 
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
 
-import { newsBoardCopy, newsSeed } from "@/data/announcements";
+import { usePublicNews } from "@/components/home/PublicSiteProvider";
+import { newsBoardCopy } from "@/data/announcements";
 import { clientToday } from "@/lib/dates";
-import {
-  currentNewsLoad,
-  isNewNewsItem,
-  newestNewsFirst,
-  subscribeNews,
-} from "@/lib/news";
+import { isNewNewsItem, newestNewsFirst } from "@/lib/news";
 
 export function AnnouncementTicker() {
-  const stored = useSyncExternalStore(subscribeNews, currentNewsLoad, currentNewsLoad);
-  const items = stored?.items ?? newsSeed;
+  const items = usePublicNews();
   const rows = newestNewsFirst(items.filter((item) => item.kind === "Announcement"));
   if (rows.length === 0) return null;
 

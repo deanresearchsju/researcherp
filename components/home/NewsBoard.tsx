@@ -1,18 +1,14 @@
 "use client";
 
 import { Calendar, MapPin, X } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { newsBoardCopy, newsSeed } from "@/data/announcements";
+import { usePublicNews } from "@/components/home/PublicSiteProvider";
+import { newsBoardCopy } from "@/data/announcements";
 import { clientToday, formatIsoDate } from "@/lib/dates";
-import {
-  currentNewsLoad,
-  isNewNewsItem,
-  newestNewsFirst,
-  subscribeNews,
-} from "@/lib/news";
+import { isNewNewsItem, newestNewsFirst } from "@/lib/news";
 import { cn } from "@/lib/utils";
 import type { NewsItem, NewsKind } from "@/types";
 
@@ -32,8 +28,7 @@ function eventGallery(item: NewsItem) {
 }
 
 export function NewsBoard() {
-  const stored = useSyncExternalStore(subscribeNews, currentNewsLoad, currentNewsLoad);
-  const items = stored?.items ?? newsSeed;
+  const items = usePublicNews();
   const [tab, setTab] = useState<NewsKind>("Announcement");
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const openEvent =

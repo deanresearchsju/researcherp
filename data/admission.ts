@@ -242,7 +242,8 @@ export const admissionChecklist = [
   },
 ] as const;
 
-export type ChecklistId = (typeof admissionChecklist)[number]["id"];
+/** Admission checklist items are kept by the administrator, so any id may appear. */
+export type ChecklistId = string;
 
 export const defaultLetter = {
   programme: "Ph.D. Degree Programme",

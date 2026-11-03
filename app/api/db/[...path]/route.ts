@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { requestSession } from "@/lib/api-session";
@@ -5,6 +6,7 @@ import { ensureRegisterSeed, scholarBySignIn } from "@/lib/register";
 import { decideDbRequest, type DbActor } from "@/lib/db-policy";
 import { projectRegisterRows } from "@/lib/db-projection";
 import { profileLockRefusal } from "@/lib/profile-lock-server";
+import { publicSiteTag, touchesPublicSite } from "@/lib/public-site";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 
 /**
@@ -231,6 +233,10 @@ async function handle(
     }
   }
   if (!upstream) return fail(502, "The database did not answer.");
+  // The public pages keep the application window and the news for a minute; a save clears it.
+  if (!reading && upstream.ok && touchesPublicSite(path.join("/"), body)) {
+    revalidateTag(publicSiteTag, { expire: 0 });
+  }
 
   const out = new Headers(jsonHeaders);
   for (const name of [

@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local agent tooling (git-ignored), not part of the app.
+    ".agents/**",
   ]),
 ]);
 

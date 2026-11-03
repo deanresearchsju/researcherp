@@ -59,9 +59,12 @@ const actionWord = {
 export function RegisterImport({
   kind,
   onDone,
+  compact = false,
 }: {
   kind: ImportKind;
   onDone?: (message: string) => void;
+  /** Folded behind one "Import from Excel" line, without the explanations. */
+  compact?: boolean;
 }) {
   const session = usePreviewSession();
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
@@ -134,8 +137,20 @@ export function RegisterImport({
     filter === "all" ? row.action !== "same" : row.action === filter,
   );
 
-  return (
-    <section className="mt-6 space-y-4 rounded-xl border border-border bg-card p-4 shadow-card">
+  const body = (
+    <>
+      {compact ? (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => download(copy.file, templateCsv(kind))}
+          >
+            Download the blank sheet
+          </Button>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-primary">
@@ -155,12 +170,15 @@ export function RegisterImport({
           Download the blank sheet
         </Button>
       </div>
+      )}
+      {compact ? null : (
       <p className="rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
         Take a backup first (see the backup guide). The first row of the sheet holds the
         headings; the headings of your own University sheet are understood as they are.
         Dates may be typed or formatted as dates in Excel. Nothing is saved until you
         press Save.
       </p>
+      )}
       <input
         type="file"
         accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -292,6 +310,24 @@ export function RegisterImport({
           )}
         </div>
       ) : null}
+    </>
+  );
+
+  if (compact) {
+    return (
+      <details className="group mt-6 rounded-xl border border-border bg-card shadow-card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-primary">
+          <FileSpreadsheet className="size-4" aria-hidden="true" />
+          {copy.title}
+        </summary>
+        <div className="space-y-4 border-t border-border p-4">{body}</div>
+      </details>
+    );
+  }
+
+  return (
+    <section className="mt-6 space-y-4 rounded-xl border border-border bg-card p-4 shadow-card">
+      {body}
     </section>
   );
 }

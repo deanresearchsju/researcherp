@@ -94,6 +94,8 @@ const uploadMenus = new Set([
   "/admin/applications",
   "/admin/team",
   "/admin/registration-numbers",
+  "/admin/faculty-publications",
+  "/admin/project-proposals",
 ]);
 
 const skipExportMenus = new Set([
@@ -215,16 +217,47 @@ function moveLegacyMenus(menus: string[]) {
       }
     }
   }
+  // Active and inactive supervisors are one section (the register) now.
+  if (
+    result.includes(sectionKey("/admin/supervisors", "inactive")) &&
+    !result.includes(sectionKey("/admin/supervisors", "active"))
+  ) {
+    result.push(sectionKey("/admin/supervisors", "active"));
+  }
+  // Scholar information and the Scholar register are one section now.
+  if (
+    result.includes(sectionKey("/admin/register", "information")) &&
+    !result.includes(sectionKey("/admin/register", "register"))
+  ) {
+    result.push(sectionKey("/admin/register", "register"));
+  }
   return result;
+}
+
+/**
+ * Menus the Dean always has, with their export, whatever rights were saved: the Dean reviews the
+ * faculty publications and project proposals and reports them to the Vice Chancellor.
+ */
+export const deanStandingHrefs = [
+  "/admin/faculty-publications",
+  "/admin/project-proposals",
+  "/admin/faculty-incentives",
+] as const;
+
+function withStandingMenus(role: Role, menus: string[]) {
+  if (role !== "dean") return menus;
+  const extra = deanStandingHrefs.flatMap((href) => [href, menuActionKey(href, "export")]);
+  return [...new Set([...menus, ...extra])];
 }
 
 export function resolvedMenus(user: MenuHolder | null | undefined): string[] | null {
   if (!user) return [];
   if (isPrincipalAdmin(user)) return null;
-  if (Array.isArray(user.menus)) return moveLegacyMenus(user.menus);
+  if (Array.isArray(user.menus))
+    return withStandingMenus(user.role, moveLegacyMenus(user.menus));
   if (user.role === "scholar" || user.role === "supervisor") return menuHrefs(user.role);
   if (fixedMenuRole(user.role)) return fixedMenus(user.role);
-  return dashboardHrefs(user.role);
+  return withStandingMenus(user.role, dashboardHrefs(user.role));
 }
 
 export function effectiveMenus(user: MenuHolder | undefined) {

@@ -21,9 +21,9 @@ export const researchPage = {
       id: "duration",
       label: "Duration",
       points: [
-        "Full Time: 3 to 6 years",
-        "Part-Time Internal: 4 to 7 years",
-        "Part-Time External: 4 to 7 years",
+        "Full Time: 3 years",
+        "Part-Time Internal: 4 years",
+        "Part-Time External: 4 years",
       ],
     },
     {
@@ -57,15 +57,15 @@ export const researchPage = {
   ],
   durationLabel: "Duration",
   duration: [
-    "Full Time: 3 to 6 years",
-    "Part-Time Internal: 4 to 7 years",
-    "Part-Time External: 4 to 7 years",
+    "Full Time: 3 years",
+    "Part-Time Internal: 4 years",
+    "Part-Time External: 4 years",
   ],
   programmeModes: [
     {
       id: "full-time",
       title: "Full Time",
-      duration: "3 to 6 years",
+      duration: "3 years",
       points: [
         "The doctorate is the primary academic commitment.",
         "Regular contact with the allotted supervisor.",
@@ -74,7 +74,7 @@ export const researchPage = {
     {
       id: "part-time-internal",
       title: "Part-Time Internal",
-      duration: "4 to 7 years",
+      duration: "4 years",
       points: [
         "For candidates associated with the University.",
         "Work experience and a no-objection certificate from the present employer.",
@@ -83,7 +83,7 @@ export const researchPage = {
     {
       id: "part-time-external",
       title: "Part-Time External",
-      duration: "4 to 7 years",
+      duration: "4 years",
       points: [
         "For candidates based outside the University.",
         "Work experience and a no-objection certificate from the present employer.",

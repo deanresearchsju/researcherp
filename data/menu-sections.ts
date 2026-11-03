@@ -7,9 +7,8 @@ export type MenuSection = { id: string; label: string };
 
 export const menuSections: Record<string, readonly MenuSection[]> = {
   "/admin/register": [
-    { id: "register", label: "Scholar register" },
-    { id: "information", label: "Scholar information" },
-    { id: "entry", label: "Entering details" },
+    { id: "register", label: "Scholar information" },
+    { id: "entry", label: "Scholar list" },
   ],
   "/admin/course-work": [
     { id: "registrations", label: "Registrations & COE" },
@@ -59,8 +58,7 @@ export const menuSections: Record<string, readonly MenuSection[]> = {
     { id: "reminders", label: "Reminders" },
   ],
   "/admin/supervisors": [
-    { id: "active", label: "Active supervisors" },
-    { id: "inactive", label: "Inactive supervisors" },
+    { id: "active", label: "Supervisor list" },
     { id: "information", label: "Supervisor information" },
   ],
   "/admin/supervisor-exit": [
