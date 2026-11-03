@@ -4,7 +4,8 @@ import { createAdminSupabase } from "@/lib/supabase/admin";
 
 /**
  * The bank account a faculty member's publication incentives are credited to. Faculty enter it
- * on the open faculty page; it is shown back to them with only the last four digits. The
+ * once, on the open faculty page, after an incentive has been approved for them; it cannot be
+ * changed there afterwards. It is shown back to them with only the last four digits. The
  * administrator and the Dean read it in full under Publication incentives.
  */
 export type BankAccount = {
@@ -98,6 +99,27 @@ export async function allBanks(): Promise<Record<string, BankAccount>> {
   );
 }
 
+/** True once the office has approved (or paid) an incentive claim for this faculty member. */
+export async function incentiveEligible(facultyKey: string) {
+  const supabase = createAdminSupabase();
+  if (!supabase || !facultyKey) return false;
+  const { data, error } = await supabase
+    .from("faculty_incentive_claims")
+    .select("id")
+    .eq("faculty_key", facultyKey)
+    .in("status", ["Approved", "Paid"])
+    .limit(1);
+  if (error) {
+    console.error(error);
+    return false;
+  }
+  return (data ?? []).length > 0;
+}
+
+export const bankAlreadySaved =
+  "Your bank account is already saved and cannot be changed here. To correct it, contact the research office.";
+
+/** Saves the account the first time only: a second save for the same faculty member is refused. */
 export async function saveBank(
   facultyKey: string,
   input: unknown,
@@ -107,7 +129,7 @@ export async function saveBank(
   if (!check.ok) return check;
   const supabase = createAdminSupabase();
   if (!supabase) return { ok: false as const, errors: { form: "Not saved. Try again." } };
-  const { error } = await supabase.from("faculty_bank_accounts").upsert({
+  const { error } = await supabase.from("faculty_bank_accounts").insert({
     faculty_key: facultyKey,
     faculty_name: who.name.slice(0, 120),
     email: who.email.slice(0, 200),
@@ -120,6 +142,8 @@ export async function saveBank(
     updated_by: who.actorIdentifier,
   });
   if (error) {
+    if (error.code === "23505")
+      return { ok: false as const, errors: { form: bankAlreadySaved } };
     console.error(error);
     return { ok: false as const, errors: { form: "Not saved. Try again." } };
   }

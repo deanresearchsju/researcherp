@@ -53,6 +53,8 @@ type Faculty = {
   linked: number;
   /** The account incentives are credited to, with the number masked. */
   bank: Bank | null;
+  /** True when an incentive has been approved and no account is saved yet: it can be entered once. */
+  bankOpen: boolean;
   /** Where the faculty member stands among the research toppers. */
   standing: Standing | null;
   profile: ResearchValues | null;
@@ -84,6 +86,7 @@ function Identify({ onOpen }: { onOpen: (faculty: Faculty) => void }) {
         dob,
         linked: Number(data.linked) || 0,
         bank: (data.bank as Bank | null) ?? null,
+        bankOpen: data.bankOpen === true,
         standing: (data.standing as Standing | null) ?? null,
         profile: (data.profile as ResearchValues | null) ?? null,
         records: (data.records as ResearchRecord[]) ?? [],
@@ -169,7 +172,10 @@ const bankFields: [keyof Bank, string, string][] = [
   ["branch", "Branch", "off"],
 ];
 
-/** The bank account publication incentives are credited to; saved once, changed when needed. */
+/**
+ * The bank account publication incentives are credited to. It is entered once, after an
+ * incentive has been approved; the research office corrects it if needed.
+ */
 function BankCard({
   faculty,
   onSaved,
@@ -177,14 +183,12 @@ function BankCard({
   faculty: Faculty;
   onSaved: (bank: Bank) => void;
 }) {
-  const [editing, setEditing] = useState(!faculty.bank);
   const [values, setValues] = useState<Bank>({
-    holderName:
-      faculty.bank?.holderName ?? faculty.profile?.facultyName?.toString() ?? "",
+    holderName: faculty.profile?.facultyName?.toString() ?? "",
     accountNo: "",
-    ifsc: faculty.bank?.ifsc ?? "",
-    bankName: faculty.bank?.bankName ?? "",
-    branch: faculty.bank?.branch ?? "",
+    ifsc: "",
+    bankName: "",
+    branch: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -204,8 +208,6 @@ function BankCard({
     setBusy(false);
     if (ok) {
       onSaved(data.bank as Bank);
-      setEditing(false);
-      setValues((current) => ({ ...current, accountNo: "" }));
       setErrors({});
       return;
     }
@@ -219,26 +221,29 @@ function BankCard({
         <h3 className="text-[0.68rem] font-bold tracking-[0.16em] text-secondary uppercase">
           Bank account for incentive credit
         </h3>
-        {faculty.bank && !editing ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing(true)}
-          >
-            Change
-          </Button>
-        ) : null}
       </div>
-      {faculty.bank && !editing ? (
-        <p className="mt-2 text-sm">
-          <strong className="text-primary">{faculty.bank.holderName}</strong> ·{" "}
-          {faculty.bank.bankName}
-          {faculty.bank.branch ? `, ${faculty.bank.branch}` : ""} · IFSC{" "}
-          {faculty.bank.ifsc} · Account {faculty.bank.accountNo}
+      {faculty.bank ? (
+        <>
+          <p className="mt-2 text-sm">
+            <strong className="text-primary">{faculty.bank.holderName}</strong> ·{" "}
+            {faculty.bank.bankName}
+            {faculty.bank.branch ? `, ${faculty.bank.branch}` : ""} · IFSC{" "}
+            {faculty.bank.ifsc} · Account {faculty.bank.accountNo}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Saved. To correct these details, contact the research office.
+          </p>
+        </>
+      ) : !faculty.bankOpen ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          You can enter your bank account here once an incentive has been approved for you.
         </p>
       ) : (
         <form noValidate onSubmit={save} className="mt-3 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            An incentive has been approved for you. Enter the account it is to be credited to.
+            Check the details carefully: they can be entered only once.
+          </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {bankFields.map(([key, label, auto]) => (
               <FormField
@@ -270,17 +275,6 @@ function BankCard({
             <Button type="submit" size="sm" variant="gold" disabled={busy}>
               {busy ? "Saving…" : "Save bank account"}
             </Button>
-            {faculty.bank ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => setEditing(false)}
-              >
-                Cancel
-              </Button>
-            ) : null}
           </div>
         </form>
       )}
@@ -543,7 +537,7 @@ export function PublicResearchDesk({ toppers }: { toppers: PublicToppers }) {
         <BankCard
           faculty={faculty}
           onSaved={(bank) => {
-            setFaculty({ ...faculty, bank });
+            setFaculty({ ...faculty, bank, bankOpen: false });
             setNotice("Bank account saved.");
           }}
         />

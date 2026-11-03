@@ -10,7 +10,13 @@ import {
 import { cleanValues, identityFields, isEmail, valueText } from "@/lib/faculty-research";
 import { serverChecklist } from "@/lib/checklists-server";
 import { evidenceList } from "@/lib/faculty-evidence";
-import { bankOf, maskedBank, saveBank } from "@/lib/faculty-bank";
+import {
+  bankAlreadySaved,
+  bankOf,
+  incentiveEligible,
+  maskedBank,
+  saveBank,
+} from "@/lib/faculty-bank";
 import { facultyToppers, standingOf } from "@/lib/faculty-toppers";
 import { linkReport } from "@/lib/link-report";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
@@ -93,6 +99,7 @@ export async function POST(request: Request) {
       profile: file.value.profile,
       linked: file.value.linked,
       bank: bank ? maskedBank(bank) : null,
+      bankOpen: !bank && (await incentiveEligible(mobile)),
     });
   }
 
@@ -186,10 +193,19 @@ export async function POST(request: Request) {
   if (body.action === "save-bank") {
     // The account incentives are credited to; saved under the mobile number.
     const saves = rateLimit(`research-bank:${address}`, 30, 60 * 60_000);
-    if (!saves.allowed) return limited(saves.retryAfterSeconds);
+    const savesByMobile = rateLimit(`research-bank-mobile:${mobile}`, 5, 60 * 60_000);
+    if (!saves.allowed || !savesByMobile.allowed)
+      return limited(Math.max(saves.retryAfterSeconds, savesByMobile.retryAfterSeconds));
     const file = await facultyFile(mobile, dob, email);
     if (!file.ok) return fail(file.message, file.status);
     if (file.value.otherBirthDate) return fail(otherBirthDate, 409);
+    // Entered once, and only after an incentive has been approved: never changed from this page.
+    if (await bankOf(mobile)) return fail(bankAlreadySaved, 409);
+    if (!(await incentiveEligible(mobile)))
+      return fail(
+        "The bank account can be entered once an incentive has been approved for you.",
+        403,
+      );
     const name = file.value.profile ? valueText(file.value.profile, "facultyName") : "";
     const saved = await saveBank(mobile, body.bank, {
       name,
