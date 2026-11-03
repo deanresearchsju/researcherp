@@ -8,6 +8,7 @@ import {
   duplicateMessages,
   facultyChecks,
   identityOf,
+  isEmail,
   maskAccount,
   recordDate,
   recordTitle,
@@ -29,8 +30,33 @@ import type { Database, Json } from "@/types/database";
 type Row = Database["public"]["Tables"]["faculty_research_records"]["Row"];
 
 const table = "faculty_research_records";
-const columns =
+type Admin = NonNullable<ReturnType<typeof createAdminSupabase>>;
+
+const baseColumns =
   "id, kind, created_at, updated_at, source, owner_role, owner_identifier, faculty_name, mobile, dob, record_date, record_year, details, approved_at, approved_by";
+const newerColumns = "rejected_at, review_note, email";
+const columns =
+  "id, kind, created_at, updated_at, source, owner_role, owner_identifier, faculty_name, mobile, dob, record_date, record_year, details, approved_at, approved_by, rejected_at, review_note, email";
+
+/**
+ * Until migration 20261103140000 is run, the table has no email, rejected_at or review_note
+ * columns. The server looks once every five minutes and leaves them out while they are missing,
+ * so the pages keep working; rejecting and matching by email wait for the migration.
+ */
+let newerSchema: { ok: boolean; at: number } | null = null;
+
+export async function hasNewerColumns(supabase: Admin) {
+  if (newerSchema && Date.now() - newerSchema.at < 5 * 60_000) return newerSchema.ok;
+  const { error } = await supabase.from(table).select(newerColumns).limit(1);
+  const ok = !error || error.code !== "42703";
+  newerSchema = { ok, at: Date.now() };
+  return ok;
+}
+
+async function columnsFor(supabase: Admin) {
+  // Read the same way either way: missing columns come back empty (toRecord fills them in).
+  return (await hasNewerColumns(supabase)) ? columns : (baseColumns as typeof columns);
+}
 
 export type Result<T> =
   | { ok: true; value: T }
@@ -95,6 +121,8 @@ function toRecord(row: Row): ResearchRecord {
     values: details,
     approvedAt: row.approved_at ?? null,
     approvedBy: row.approved_by ?? "",
+    rejectedAt: row.rejected_at ?? null,
+    reviewNote: row.review_note ?? "",
   };
 }
 
@@ -106,12 +134,13 @@ export function publicCopy(record: ResearchRecord): ResearchRecord {
   return { ...record, ownerIdentifier: "", ownerRole: "", values };
 }
 
-function columnsOf(kind: ResearchKind, values: ResearchValues) {
+function columnsOf(kind: ResearchKind, values: ResearchValues, newer = true) {
   const keys = duplicateKeys(kind, values);
   const year = Number(recordYear(kind, values));
   return {
     faculty_name: valueText(values, "facultyName"),
     mobile: valueText(values, "mobile"),
+    ...(newer ? { email: valueText(values, "email").toLowerCase() } : {}),
     dob: valueText(values, "dob") || null,
     record_date: recordDate(kind, values) || null,
     record_year: Number.isFinite(year) && year > 0 ? year : null,
@@ -121,8 +150,6 @@ function columnsOf(kind: ResearchKind, values: ResearchValues) {
     patent_key: keys.patent,
   };
 }
-
-type Admin = NonNullable<ReturnType<typeof createAdminSupabase>>;
 
 /**
  * The fields of a record whose title, DOI or patent number is already saved (other than the
@@ -178,7 +205,10 @@ export async function listRecords(
 ): Promise<Result<ResearchRecord[]>> {
   const supabase = createAdminSupabase();
   if (!supabase) return { ok: false, status: 503, message: unreadable };
-  let query = supabase.from(table).select(columns).eq("kind", kind);
+  let query = supabase
+    .from(table)
+    .select(await columnsFor(supabase))
+    .eq("kind", kind);
   if (owner)
     query = query.eq("owner_role", owner.role).ilike(
       "owner_identifier",
@@ -204,7 +234,7 @@ export async function lookupRecords(
   if (!supabase) return { ok: false, status: 503, message: unreadable };
   const { data, error } = await supabase
     .from(table)
-    .select(columns)
+    .select(await columnsFor(supabase))
     .eq("kind", kind)
     .eq("mobile", mobile)
     .eq("dob", dob)
@@ -218,27 +248,56 @@ export async function lookupRecords(
 }
 
 /**
- * Everything saved under a mobile number and date of birth, both kinds, with the personal
- * details of the latest record (the profile shown back so the faculty member need not type it
- * again). `otherBirthDate` is true when the mobile number is saved with a different date of
- * birth, so that a second person cannot add records under the same number.
+ * Records saved without the date of birth or the mobile (uploaded by the office) belong to a
+ * faculty member when the email matches and whatever the record does have (the mobile, the
+ * date of birth) matches too.
+ */
+export function canLink(
+  record: ResearchRecord,
+  who: { mobile: string; dob: string; email: string },
+) {
+  const email = valueText(record.values, "email").toLowerCase();
+  const mobile = valueText(record.values, "mobile");
+  const dob = valueText(record.values, "dob");
+  if (!who.email || email !== who.email) return false;
+  if (mobile && mobile !== who.mobile) return false;
+  if (dob && dob !== who.dob) return false;
+  return Boolean(!mobile || !dob);
+}
+
+/**
+ * Everything a faculty member has saved, both kinds, found by the mobile number and date of
+ * birth; records the office uploaded without them are found by the email (canLink) and are then
+ * completed with the mobile number, the date of birth and the email, so they stay with the
+ * faculty member. The personal details of the latest record come back as the profile, so they
+ * need not be typed again. `otherBirthDate` is true when the mobile number is saved with a
+ * different date of birth, so that a second person cannot add records under the same number.
  */
 export async function facultyFile(
   mobile: string,
   dob: string,
+  email = "",
 ): Promise<
   Result<{
     records: ResearchRecord[];
     profile: ResearchValues | null;
     otherBirthDate: boolean;
+    linked: number;
   }>
 > {
   const supabase = createAdminSupabase();
   if (!supabase) return { ok: false, status: 503, message: unreadable };
+  const who = { mobile, dob, email: email.toLowerCase() };
+  // The email is checked by isEmail before it gets here, so it is safe inside the filter.
+  const newer = await hasNewerColumns(supabase);
+  const filter =
+    newer && who.email && isEmail(who.email)
+      ? `mobile.eq.${mobile},email.eq.${who.email}`
+      : `mobile.eq.${mobile}`;
   const { data, error } = await supabase
     .from(table)
-    .select(columns)
-    .eq("mobile", mobile)
+    .select(await columnsFor(supabase))
+    .or(filter)
     .order("updated_at", { ascending: false })
     .limit(1000);
   if (error) {
@@ -246,20 +305,62 @@ export async function facultyFile(
     return { ok: false, status: 500, message: unreadable };
   }
   const rows = (data ?? []).map((row) => toRecord(row as Row));
-  const own = rows.filter((record) => valueText(record.values, "dob") === dob);
+  const own = rows.filter(
+    (record) =>
+      valueText(record.values, "mobile") === mobile &&
+      valueText(record.values, "dob") === dob,
+  );
+  const linkable = rows.filter((record) => !own.includes(record) && canLink(record, who));
+  let linked = 0;
+  for (const record of linkable) {
+    const values: ResearchValues = {
+      ...record.values,
+      mobile,
+      dob,
+      email: valueText(record.values, "email") || who.email,
+    };
+    const { error: linkError } = await supabase
+      .from(table)
+      .update({
+        mobile,
+        dob,
+        ...(newer ? { email: who.email } : {}),
+        owner_identifier: record.ownerIdentifier || mobile,
+        details: values as unknown as Json,
+      })
+      .eq("id", record.id);
+    if (linkError) {
+      console.error(linkError);
+      continue;
+    }
+    linked += 1;
+    record.values = values;
+    own.push(record);
+    await auditServer({
+      actorRole: "public",
+      actorIdentifier: mobile,
+      action: actionName(record.kind, "linked"),
+      subject: record.id,
+      detail: `Uploaded record "${recordTitle(record.kind, values)}" linked to ${valueText(values, "facultyName")} at sign-in (email ${who.email})`,
+    });
+  }
   const records = own
     .map(publicCopy)
     .sort((a, b) =>
       recordDate(b.kind, b.values).localeCompare(recordDate(a.kind, a.values)),
     );
-  return {
-    ok: true,
-    value: {
-      records,
-      profile: own[0] ? identityOf(own[0].values) : null,
-      otherBirthDate: own.length === 0 && rows.length > 0,
-    },
-  };
+  // The profile: the latest record the faculty member added, else the latest uploaded one.
+  const profileSource =
+    own.find((record) => record.source === "public") ?? own[0] ?? null;
+  const profile = profileSource ? identityOf(profileSource.values) : null;
+  if (profile && !valueText(profile, "email") && who.email) profile.email = who.email;
+  const otherBirthDate =
+    own.length === 0 &&
+    rows.some(
+      (record) =>
+        valueText(record.values, "mobile") === mobile && valueText(record.values, "dob"),
+    );
+  return { ok: true, value: { records, profile, otherBirthDate, linked } };
 }
 
 export type Actor = { role: string; identifier: string; name: string };
@@ -331,9 +432,9 @@ export async function createRecord(
       source: actor.role,
       owner_role: owner.role,
       owner_identifier: owner.identifier,
-      ...columnsOf(kind, cleaned.values),
+      ...columnsOf(kind, cleaned.values, await hasNewerColumns(supabase)),
     })
-    .select(columns)
+    .select(await columnsFor(supabase))
     .single();
   if (isUniqueViolation(error))
     return duplicateFailure({
@@ -364,22 +465,23 @@ export async function updateRecord(
   input: unknown,
   actor: Actor,
   ownerOnly: { role: string; identifier: string } | null,
+  /**
+   * A faculty member changing their own record: who owns it (the open page checks the mobile and
+   * the date of birth), and the evidence checklist. An approved record cannot be changed; a
+   * rejected one goes back to waiting for review.
+   */
+  faculty?: {
+    owns?: (record: ResearchRecord) => boolean;
+    evidence: readonly ChecklistItem[];
+  },
 ): Promise<Result<ResearchRecord>> {
   if (!/^[0-9a-f-]{36}$/i.test(id))
     return { ok: false, status: 400, message: "Unknown record." };
-  const cleaned = cleanValues(kind, input, indiaToday());
-  if (!cleaned.ok)
-    return {
-      ok: false,
-      status: 400,
-      message: "Check the highlighted fields.",
-      errors: cleaned.errors,
-    };
   const supabase = createAdminSupabase();
   if (!supabase) return { ok: false, status: 503, message: unsaved };
   const { data: found, error: readError } = await supabase
     .from(table)
-    .select(columns)
+    .select(await columnsFor(supabase))
     .eq("id", id)
     .eq("kind", kind)
     .maybeSingle();
@@ -389,6 +491,26 @@ export async function updateRecord(
   }
   if (!found) return { ok: false, status: 404, message: "The record was not found." };
   const before = toRecord(found as Row);
+  // The open page shows the bank account masked (••••1234); sent back unchanged, it keeps the
+  // number saved.
+  const sentValues =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? { ...(input as Record<string, unknown>) }
+      : {};
+  if (
+    typeof sentValues.bankAccountNo === "string" &&
+    sentValues.bankAccountNo.includes("•")
+  )
+    sentValues.bankAccountNo = valueText(before.values, "bankAccountNo");
+  // The office may correct an uploaded record that has no date of birth or mobile yet.
+  const cleaned = cleanValues(kind, sentValues, indiaToday(), { upload: !faculty });
+  if (!cleaned.ok)
+    return {
+      ok: false,
+      status: 400,
+      message: "Check the highlighted fields.",
+      errors: cleaned.errors,
+    };
   if (
     ownerOnly &&
     (before.ownerRole !== ownerOnly.role ||
@@ -397,6 +519,29 @@ export async function updateRecord(
   ) {
     return { ok: false, status: 403, message: "You can change only your own records." };
   }
+  if (faculty) {
+    if (faculty.owns && !faculty.owns(before))
+      return { ok: false, status: 403, message: "You can change only your own records." };
+    if (before.approvedAt)
+      return {
+        ok: false,
+        status: 409,
+        message: "This record is Checked & Approved and can no longer be changed.",
+      };
+    const problems = {
+      ...facultyChecks(kind, cleaned.values),
+      ...(await verifyLinks(cleaned.values)),
+    };
+    const missing = missingEvidence(kind, cleaned.values, faculty.evidence);
+    if (missing.length > 0) problems.evidence = `Upload: ${missing.join(", ")}.`;
+    if (Object.keys(problems).length > 0)
+      return {
+        ok: false,
+        status: 400,
+        message: Object.values(problems)[0],
+        errors: problems,
+      };
+  }
   const changes = describeChanges(kind, before.values, cleaned.values);
   if (changes.length === 0) return { ok: true, value: before };
   const duplicates = await findDuplicates(supabase, kind, cleaned.values, id);
@@ -404,9 +549,16 @@ export async function updateRecord(
   if (Object.keys(duplicates).length > 0) return duplicateFailure(duplicates);
   const { data, error } = await supabase
     .from(table)
-    .update({ ...columnsOf(kind, cleaned.values), updated_at: new Date().toISOString() })
+    .update({
+      ...columnsOf(kind, cleaned.values, await hasNewerColumns(supabase)),
+      updated_at: new Date().toISOString(),
+      // A rejected record changed by the faculty member is reviewed again.
+      ...(faculty && before.rejectedAt && (await hasNewerColumns(supabase))
+        ? { rejected_at: null, review_note: "" }
+        : {}),
+    })
     .eq("id", id)
-    .select(columns)
+    .select(await columnsFor(supabase))
     .single();
   if (isUniqueViolation(error))
     return duplicateFailure({
@@ -478,7 +630,8 @@ export async function importRecords(
   }[] = [];
   for (let at = 0; at < rows.length; at += 1) {
     const { row, values } = rows[at];
-    const cleaned = cleanValues(kind, values, today);
+    // Uploaded rows may lack the date of birth or the mobile; the email then matches them.
+    const cleaned = cleanValues(kind, values, today, { upload: true });
     if (!cleaned.ok) {
       const fields = Object.entries(cleaned.errors).map(
         ([field, message]) => `${field}: ${message}`,
@@ -504,7 +657,8 @@ export async function importRecords(
       outcomes.push({ row, status: "duplicate", message: Object.values(duplicates)[0] });
       continue;
     }
-    const mobile = valueText(cleaned.values, "mobile");
+    const mobile =
+      valueText(cleaned.values, "mobile") || valueText(cleaned.values, "email");
     const { data, error } = await supabase
       .from(table)
       .insert({
@@ -512,7 +666,7 @@ export async function importRecords(
         source: "import",
         owner_role: "public",
         owner_identifier: mobile,
-        ...columnsOf(kind, cleaned.values),
+        ...columnsOf(kind, cleaned.values, await hasNewerColumns(supabase)),
       })
       .select("id")
       .single();
@@ -551,14 +705,19 @@ export async function importRecords(
   return { ok: true, value: outcomes };
 }
 
+export type ReviewAction = "approve" | "reject" | "reset";
+
 /**
- * The Dean or the administrator approves records ("Checked & Approved"), or takes an approval
- * back. Each change is written to the audit trail.
+ * The Dean or the administrator reviews records: approves them ("Checked & Approved"), rejects
+ * them with the reason, or sets them back to waiting. A rejected record frees its title, DOI and
+ * patent number so that a corrected record can be added; approving or resetting takes them back
+ * (refused if a newer record has them now). Each change is written to the audit trail.
  */
-export async function setApproval(
+export async function setReview(
   kind: ResearchKind,
   ids: readonly unknown[],
-  approve: boolean,
+  action: ReviewAction,
+  note: string,
   actor: Actor,
 ): Promise<Result<number>> {
   const valid = ids.filter(
@@ -566,40 +725,118 @@ export async function setApproval(
   );
   if (valid.length === 0 || valid.length > 500)
     return { ok: false, status: 400, message: "Choose the records first." };
+  const reason = note.trim().slice(0, 1000);
+  if (action === "reject" && reason.length < 3)
+    return { ok: false, status: 400, message: "Give the reason for rejecting." };
   const supabase = createAdminSupabase();
   if (!supabase) return { ok: false, status: 503, message: unsaved };
-  const { data, error } = await supabase
+  const newer = await hasNewerColumns(supabase);
+  if (!newer && action === "reject")
+    return {
+      ok: false,
+      status: 503,
+      message: "Rejecting needs the database update 20261103140000 to be run first.",
+    };
+  const { data: rows, error: readError } = await supabase
     .from(table)
-    .update(
-      approve
-        ? { approved_at: new Date().toISOString(), approved_by: actor.name }
-        : { approved_at: null, approved_by: "" },
-    )
+    .select(await columnsFor(supabase))
     .eq("kind", kind)
-    .in("id", valid)
-    .select("id, details");
-  if (error) {
-    console.error(error);
+    .in("id", valid);
+  if (readError) {
+    console.error(readError);
     return { ok: false, status: 500, message: unsaved };
   }
-  const rows = data ?? [];
-  if (rows.length > 0) {
-    const { error: auditError } = await supabase.from("audit_log").insert(
-      rows.map((row) => ({
-        actor_role: actor.role.slice(0, 40),
-        actor_identifier: actor.identifier.slice(0, 200),
-        action: actionName(kind, approve ? "approved" : "approval-withdrawn"),
-        subject: row.id,
-        detail:
-          `${actor.name} ${approve ? "checked and approved" : "withdrew the approval of"} "${recordTitle(kind, (row.details ?? {}) as ResearchValues)}"`.slice(
-            0,
-            2000,
-          ),
-      })),
-    );
-    if (auditError) console.error(auditError);
+  const now = new Date().toISOString();
+  const audit: {
+    actor_role: string;
+    actor_identifier: string;
+    action: string;
+    subject: string;
+    detail: string;
+  }[] = [];
+  let done = 0;
+  for (const row of rows ?? []) {
+    const record = toRecord(row as Row);
+    const keys = duplicateKeys(kind, record.values);
+    const change =
+      action === "approve"
+        ? {
+            approved_at: now,
+            approved_by: actor.name,
+            rejected_at: null,
+            review_note: reason,
+            title_key: keys.title,
+            doi_key: keys.doi,
+            patent_key: keys.patent,
+          }
+        : action === "reject"
+          ? {
+              approved_at: null,
+              approved_by: "",
+              rejected_at: now,
+              review_note: reason,
+              title_key: "",
+              doi_key: "",
+              patent_key: "",
+            }
+          : {
+              approved_at: null,
+              approved_by: "",
+              rejected_at: null,
+              review_note: "",
+              title_key: keys.title,
+              doi_key: keys.doi,
+              patent_key: keys.patent,
+            };
+    // Before the database update, the rejection columns are left out.
+    const { rejected_at: _rejected, review_note: _note, ...older } = change;
+    void _rejected;
+    void _note;
+    const { error } = await supabase
+      .from(table)
+      .update(newer ? change : older)
+      .eq("id", record.id);
+    if (isUniqueViolation(error))
+      return {
+        ok: false,
+        status: 409,
+        message: `"${recordTitle(kind, record.values)}" is saved again in a newer record; review that one instead.`,
+      };
+    if (error) {
+      console.error(error);
+      return { ok: false, status: 500, message: unsaved };
+    }
+    done += 1;
+    const verb =
+      action === "approve"
+        ? "checked and approved"
+        : action === "reject"
+          ? "rejected"
+          : "set back to waiting";
+    audit.push({
+      actor_role: actor.role.slice(0, 40),
+      actor_identifier: actor.identifier.slice(0, 200),
+      action: actionName(
+        kind,
+        action === "approve"
+          ? "approved"
+          : action === "reject"
+            ? "rejected"
+            : "review-reset",
+      ),
+      subject: record.id,
+      detail:
+        `${actor.name} ${verb} "${recordTitle(kind, record.values)}"${reason ? `: ${reason}` : ""}`.slice(
+          0,
+          2000,
+        ),
+    });
   }
-  return { ok: true, value: rows.length };
+  if (audit.length > 0) {
+    const { error } = await supabase.from("audit_log").insert(audit);
+    if (error) console.error(error);
+  }
+  return { ok: true, value: done };
 }
 
 export type HistoryLine = { at: string; who: string; action: string; detail: string };
@@ -630,9 +867,12 @@ export async function recordHistory(id: string): Promise<Result<HistoryLine[]>> 
         ? "Added"
         : line.action.endsWith(":approved")
           ? "Checked & Approved"
-          : line.action.endsWith(":approval-withdrawn")
-            ? "Approval withdrawn"
-            : "Changed",
+          : line.action.endsWith(":rejected")
+            ? "Rejected"
+            : line.action.endsWith(":approval-withdrawn") ||
+                line.action.endsWith(":review-reset")
+              ? "Set back to waiting"
+              : "Changed",
       detail: line.detail,
     })),
   };

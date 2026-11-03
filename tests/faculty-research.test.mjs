@@ -927,6 +927,7 @@ await test("faculty must give the joining date and confirm the university affili
     ...article,
     joinedOn: "2020-06-01",
     sjuAffiliation: "Yes",
+    email: "kumar@sju.ac.in",
   });
   assert.deepEqual(done, {});
   assert.equal(
@@ -1111,6 +1112,252 @@ await test("HTTPS only: live answers carry HSTS and plain-http requests are sent
   assert.ok(!host.test("localhost"), "a local computer keeps http");
   assert.ok(!host.test("127.0.0.1"));
   process.env.NODE_ENV = before;
+});
+
+await test("uploads may lack the date of birth or the mobile, if the email or the mobile is there", () => {
+  const base = { ...article };
+  delete base.dob;
+  delete base.mobile;
+  delete base.designation;
+  const withEmail = model.cleanValues(
+    "publication",
+    { ...base, email: "Kumar@SJU.ac.in" },
+    today,
+    { upload: true },
+  );
+  assert.equal(withEmail.ok, true, JSON.stringify(withEmail.errors));
+  assert.equal(withEmail.values.email, "kumar@sju.ac.in", "email kept in small letters");
+  const neither = model.cleanValues("publication", base, today, { upload: true });
+  assert.equal(neither.ok, false);
+  assert.match(neither.errors.mobile, /email or the mobile/);
+  const onForm = model.cleanValues(
+    "publication",
+    { ...base, email: "k@sju.ac.in" },
+    today,
+  );
+  assert.equal(onForm.ok, false, "the form still needs the mobile and the date of birth");
+  assert.equal(model.isEmail("a@b.co"), true);
+  assert.equal(
+    model.isEmail("a,b@c.co"),
+    false,
+    "no commas (kept out of the database filter)",
+  );
+  assert.equal(model.isEmail("a@b"), false);
+});
+
+await test("sign-in matching: an uploaded record joins the faculty member by email", () => {
+  const who = { mobile: "9876543210", dob: "1985-06-15", email: "kumar@sju.ac.in" };
+  const uploaded = (values) => ({
+    ...rec2("publication", { title: "x", ...values }),
+    source: "import",
+  });
+  assert.equal(server.canLink(uploaded({ email: "kumar@sju.ac.in" }), who), true);
+  assert.equal(
+    server.canLink(uploaded({ email: "kumar@sju.ac.in", mobile: "9876543210" }), who),
+    true,
+    "email and mobile match, no date of birth",
+  );
+  assert.equal(
+    server.canLink(uploaded({ email: "kumar@sju.ac.in", mobile: "9000000000" }), who),
+    false,
+    "another mobile: not this person",
+  );
+  assert.equal(
+    server.canLink(uploaded({ email: "kumar@sju.ac.in", dob: "1990-01-01" }), who),
+    false,
+    "another date of birth: not this person",
+  );
+  assert.equal(server.canLink(uploaded({ email: "other@sju.ac.in" }), who), false);
+  assert.equal(
+    server.canLink(uploaded({ mobile: "9876543210" }), who),
+    false,
+    "no email: no link",
+  );
+  assert.equal(
+    server.canLink(
+      uploaded({ email: "kumar@sju.ac.in", mobile: "9876543210", dob: "1985-06-15" }),
+      who,
+    ),
+    false,
+    "already complete: found the normal way",
+  );
+});
+
+await test("review: Rejected stays apart from waiting, and shows its reason", () => {
+  const rejected = {
+    approvedAt: null,
+    rejectedAt: "2026-11-03T10:00:00Z",
+    reviewNote: "No DOI",
+  };
+  assert.equal(model.reviewLabel(rejected), "Rejected");
+  assert.equal(model.isRejected(rejected), true);
+  assert.equal(
+    model.reviewLabel({ approvedAt: "2026-11-03", rejectedAt: null }),
+    "Checked & Approved",
+  );
+  assert.equal(
+    model.reviewLabel({ approvedAt: null, rejectedAt: null }),
+    "Waiting for approval",
+  );
+  const records = [
+    rec2("publication", { type: "Journal article", year: "2026" }),
+    { ...rec2("publication", { type: "Book", year: "2026" }), rejectedAt: "2026-11-01" },
+  ];
+  const summary = dashboard.facultySummary(records);
+  assert.equal(summary.waiting, 1);
+  assert.equal(summary.rejected, 1);
+  assert.equal(
+    dashboard.filterRecords(records, { year: "", category: { kind: "rejected" } }).length,
+    1,
+  );
+});
+
+await test("faculty page: records in sections by type, year, status and indexing", () => {
+  const records = [
+    rec2("publication", {
+      type: "Journal article",
+      year: "2025",
+      indexing: ["Scopus", "PubMed"],
+    }),
+    rec2("publication", { type: "Patent", year: "2026" }, "2026-10-01"),
+    rec2("proposal", { submittedOn: "2026-02-01" }),
+  ];
+  const labels = (by) => dashboard.groupRecords(records, by).map((group) => group.label);
+  assert.deepEqual(labels("type"), ["Journal article", "Patent", "Project proposals"]);
+  assert.deepEqual(labels("year"), ["2026", "2025"], "newest year first");
+  assert.deepEqual(labels("status"), ["Waiting for approval", "Checked & Approved"]);
+  assert.deepEqual(labels("indexing"), [
+    "Scopus",
+    "PubMed",
+    "Not indexed",
+    "Project proposals",
+  ]);
+  const scopus = dashboard
+    .groupRecords(records, "indexing")
+    .find((group) => group.label === "Scopus");
+  assert.equal(scopus.records.length, 1);
+});
+
+await test("faculty page: project money overall and year by year", () => {
+  const records = [
+    rec2("proposal", {
+      submittedOn: "2025-03-01",
+      status: "Accepted",
+      amountProposed: "1000000",
+      amountSanctioned: "800000",
+      instalments: [{ amount: "300000", receivedOn: "2025-06-01" }],
+    }),
+    rec2("proposal", {
+      submittedOn: "2026-01-10",
+      status: "Rejected",
+      amountProposed: "500000",
+      amountSanctioned: "500000",
+    }),
+    rec2("proposal", {
+      submittedOn: "2026-02-10",
+      status: "Submitted",
+      amountProposed: "200000",
+    }),
+  ];
+  const summary = dashboard.facultySummary(records);
+  assert.equal(summary.proposed, 1700000);
+  assert.equal(summary.sanctioned, 800000, "only accepted projects count as sanctioned");
+  assert.equal(summary.received, 300000);
+  assert.deepEqual(
+    summary.funding.map((item) => [
+      item.year,
+      item.count,
+      item.proposed,
+      item.sanctioned,
+      item.received,
+    ]),
+    [
+      ["2025", 1, 1000000, 800000, 300000],
+      ["2026", 2, 700000, 0, 0],
+    ],
+  );
+  assert.equal(summary.largestYear, 1000000);
+});
+
+const bank = load("@/lib/faculty-bank.ts");
+
+await test("bank account for incentives: checked, and shown back masked", () => {
+  const good = bank.cleanBank({
+    holderName: " Dr. A. Kumar ",
+    accountNo: "1234 5678 9012",
+    ifsc: "sbin0001234",
+    bankName: "State Bank of India",
+  });
+  assert.equal(good.ok, true, JSON.stringify(good.errors));
+  assert.equal(good.value.accountNo, "123456789012");
+  assert.equal(good.value.ifsc, "SBIN0001234");
+  const masked = bank.maskedBank(good.value);
+  assert.ok(masked.accountNo.endsWith("9012") && !masked.accountNo.includes("5678"));
+  const bad = bank.cleanBank({
+    holderName: "",
+    accountNo: "12ab",
+    ifsc: "SBIN123",
+    bankName: "",
+  });
+  assert.equal(bad.ok, false);
+  assert.ok(
+    bad.errors.holderName &&
+      bad.errors.accountNo &&
+      bad.errors.ifsc &&
+      bad.errors.bankName,
+  );
+});
+
+const toppersLib = load("@/lib/faculty-toppers.ts");
+
+await test("toppers: approved work ranked, equal counts share a rank, department toppers apart", () => {
+  const row = (mobile, name, department) => ({
+    mobile,
+    faculty_name: name,
+    details: { department },
+  });
+  const records = [
+    row("9000000001", "Asha", "Chemistry"),
+    row("9000000001", "Asha", "Chemistry"),
+    row("9000000001", "Asha", "Chemistry"),
+    row("9000000002", "Bala", "Physics"),
+    row("9000000002", "Bala", "Physics"),
+    row("9000000003", "Chitra", "Chemistry"),
+    row("9000000003", "Chitra", "Chemistry"),
+    row("9000000004", "Devi", "Physics"),
+    row("9000000005", "Elan", "Commerce"),
+  ];
+  const board = toppersLib.buildToppers(records);
+  assert.deepEqual(
+    board.overall.map((person) => [person.name, person.rank]),
+    [
+      ["Asha", 1],
+      ["Bala", 2],
+      ["Chitra", 2],
+    ],
+    "equal counts share rank 2; nobody is third",
+  );
+  const physics = board.departments.find((item) => item.department === "Physics");
+  assert.deepEqual(
+    physics.toppers.map((person) => [person.name, person.rank]),
+    [
+      ["Bala", 1],
+      ["Devi", 2],
+    ],
+  );
+  const chitra = toppersLib.standingOf(board, "9000000003");
+  assert.deepEqual(
+    {
+      overall: chitra.overall,
+      department: chitra.department,
+      count: chitra.count,
+      of: chitra.of,
+    },
+    { overall: 2, department: 2, count: 2, of: 5 },
+  );
+  assert.equal(toppersLib.standingOf(board, "9999999999"), null);
+  const shown = JSON.stringify(toppersLib.publicToppers(board));
+  assert.ok(!shown.includes("9000000001"), "no mobile numbers on the open page");
 });
 
 summary("faculty research");

@@ -481,6 +481,9 @@ export type Database = {
           patent_key: string;
           approved_at: string | null;
           approved_by: string;
+          rejected_at: string | null;
+          review_note: string;
+          email: string;
         };
         Insert: {
           id?: string;
@@ -501,8 +504,12 @@ export type Database = {
           patent_key?: string;
           approved_at?: string | null;
           approved_by?: string;
+          rejected_at?: string | null;
+          review_note?: string;
+          email?: string;
         };
         Update: {
+          owner_identifier?: string;
           updated_at?: string;
           faculty_name?: string;
           mobile?: string;
@@ -515,6 +522,47 @@ export type Database = {
           patent_key?: string;
           approved_at?: string | null;
           approved_by?: string;
+          rejected_at?: string | null;
+          review_note?: string;
+          email?: string;
+        };
+        Relationships: [];
+      };
+      faculty_bank_accounts: {
+        Row: {
+          faculty_key: string;
+          faculty_name: string;
+          email: string;
+          holder_name: string;
+          account_no: string;
+          ifsc: string;
+          bank_name: string;
+          branch: string;
+          updated_at: string;
+          updated_by: string;
+        };
+        Insert: {
+          faculty_key: string;
+          faculty_name?: string;
+          email?: string;
+          holder_name: string;
+          account_no: string;
+          ifsc: string;
+          bank_name?: string;
+          branch?: string;
+          updated_at?: string;
+          updated_by?: string;
+        };
+        Update: {
+          faculty_name?: string;
+          email?: string;
+          holder_name?: string;
+          account_no?: string;
+          ifsc?: string;
+          bank_name?: string;
+          branch?: string;
+          updated_at?: string;
+          updated_by?: string;
         };
         Relationships: [];
       };

@@ -27,12 +27,24 @@ export type ResearchRecord = {
   /** Set when the Dean or the administrator approved the record ("Checked & Approved"). */
   approvedAt?: string | null;
   approvedBy?: string;
+  /** Set when the Dean or the administrator rejected the record; reviewNote gives the reason. */
+  rejectedAt?: string | null;
+  reviewNote?: string;
 };
 
 export const approvedLabel = "Checked & Approved";
 export const pendingLabel = "Waiting for approval";
 export const isApproved = (record: Pick<ResearchRecord, "approvedAt">) =>
   Boolean(record.approvedAt);
+export const rejectedLabel = "Rejected";
+export const isRejected = (record: Pick<ResearchRecord, "rejectedAt" | "approvedAt">) =>
+  !record.approvedAt && Boolean(record.rejectedAt);
+/** Where a record stands with the Dean and the administrator. */
+export function reviewLabel(record: Pick<ResearchRecord, "approvedAt" | "rejectedAt">) {
+  if (record.approvedAt) return approvedLabel;
+  if (record.rejectedAt) return rejectedLabel;
+  return pendingLabel;
+}
 
 type FieldType =
   | "text"
@@ -232,6 +244,14 @@ export const identityFields: readonly ResearchField[] = [
     required: always,
     check: (value) =>
       /^[6-9]\d{9}$/.test(value) ? null : "Enter a 10-digit mobile number.",
+  },
+  {
+    // Faculty give it when they sign in on the open page; uploaded records are matched by it.
+    key: "email",
+    label: "Email",
+    type: "text",
+    max: 200,
+    check: (value) => (isEmail(value) ? null : "Enter a valid email address."),
   },
   { key: "dob", label: "Date of birth", type: "date", required: always, check: ageCheck },
   {
@@ -591,10 +611,28 @@ function cleanText(value: unknown, max: number) {
  * cut to size. Fields hidden by the current choices (patent fields on a journal article, funding
  * fields on a rejected proposal) are dropped so that no stale value is kept.
  */
+/** An email address as the ERP accepts it (no spaces, commas or brackets). */
+export function isEmail(value: string) {
+  return (
+    value.length <= 200 && /^[^\s@,;()<>"']+@[^\s@,;()<>"']+\.[a-z]{2,}$/i.test(value)
+  );
+}
+
+/** Personal details an uploaded record may lack: it needs a name and an email or a mobile. */
+const optionalOnUpload = new Set([
+  "designation",
+  "department",
+  "school",
+  "campus",
+  "mobile",
+  "dob",
+]);
+
 export function cleanValues(
   kind: ResearchKind,
   input: unknown,
   today: string,
+  options: { upload?: boolean } = {},
 ): CleanResult {
   const raw =
     input && typeof input === "object" && !Array.isArray(input)
@@ -636,6 +674,7 @@ export function cleanValues(
           .replace(/^(\+91|0)(?=\d{10}$)/, "")
           .slice(0, 13);
       if (field.type === "money") value = value.replace(/[,₹\s]/g, "");
+      if (field.key === "email") value = value.toLowerCase();
       values[field.key] = value;
     }
   }
@@ -644,7 +683,10 @@ export function cleanValues(
   for (const field of fields) {
     if (!isShown(field, values)) continue;
     const value = values[field.key];
-    const needed = field.required?.(values) ?? false;
+    const needed =
+      options.upload && optionalOnUpload.has(field.key)
+        ? false
+        : (field.required?.(values) ?? false);
     if (field.type === "multi") {
       const chosen = value as string[];
       if (needed && chosen.length === 0)
@@ -707,6 +749,13 @@ export function cleanValues(
     )
       errors.instalments = "An instalment cannot be before the sanction date.";
   }
+  if (
+    options.upload &&
+    !text(result, "email") &&
+    !text(result, "mobile") &&
+    !errors.mobile
+  )
+    errors.mobile = "Give the email or the mobile number, so the record can be matched.";
   // Work done before joining the university is not counted.
   const joined = text(result, "joinedOn");
   if (joined && !errors.joinedOn) {
@@ -928,6 +977,7 @@ export function identityOf(values: ResearchValues): ResearchValues {
 export function facultyChecks(kind: ResearchKind, values: ResearchValues) {
   const errors: Record<string, string> = {};
   if (!text(values, "joinedOn")) errors.joinedOn = "Enter your date of joining SJU.";
+  if (!text(values, "email")) errors.email = "Enter your email.";
   if (kind === "publication" && text(values, "sjuAffiliation") !== "Yes")
     errors.sjuAffiliation =
       "Only work with the St. Joseph University affiliation is counted: tick to confirm.";

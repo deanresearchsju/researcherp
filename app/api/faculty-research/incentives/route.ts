@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { canMenuAction, canOpenMenu, isOfficeRole, resolvedMenus } from "@/lib/access";
 import { requestSession } from "@/lib/api-session";
+import { allBanks } from "@/lib/faculty-bank";
 import { academicYearOf, isAcademicYear } from "@/lib/faculty-incentives";
 import {
   actOnClaim,
@@ -41,7 +42,9 @@ export async function GET(request: NextRequest) {
   const year = isAcademicYear(asked) ? asked : academicYearOf(indiaToday());
   const board = await incentiveBoard(year);
   if (!board.ok) return fail(board.message, board.status);
-  return NextResponse.json({ ok: true, year, ...board.value, rights });
+  // Bank accounts for crediting the incentives (in full: this list is for the office only).
+  const banks = await allBanks();
+  return NextResponse.json({ ok: true, year, ...board.value, rights, banks });
 }
 
 const actions: readonly ClaimAction[] = ["claim", "approve", "pay", "reject", "reopen"];

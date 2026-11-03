@@ -349,6 +349,7 @@ const serverOnly = new Set([
   "erp_checklists",
   "faculty_incentive_settings",
   "faculty_incentive_claims",
+  "faculty_bank_accounts",
 ]);
 
 const jsonBlobTables: Record<string, readonly Group[]> = {

@@ -42,6 +42,16 @@ type Board = {
   rulesFrom: string;
   claims: IncentiveClaim[];
   rights: { view: boolean; act: boolean; rules: boolean };
+  banks: Record<
+    string,
+    {
+      holderName: string;
+      accountNo: string;
+      ifsc: string;
+      bankName: string;
+      branch: string;
+    }
+  >;
 };
 
 async function call(input: string, init?: RequestInit) {
@@ -134,6 +144,13 @@ function ClaimDialog({
       ceiling > 0 ? money(Math.max(0, ceiling - approvedSoFar)) : "—",
     ],
   ];
+  const bank = board.banks?.[key];
+  facts.push([
+    "Bank account",
+    bank
+      ? `${bank.holderName} · ${bank.bankName}${bank.branch ? `, ${bank.branch}` : ""} · IFSC ${bank.ifsc} · ${bank.accountNo}`
+      : "Not given yet (the faculty member adds it on the faculty page)",
+  ]);
   if (claim)
     facts.push([
       "Claim",
@@ -461,12 +478,14 @@ export function FacultyIncentivesScreen() {
       approved: number;
       paid: number;
       count: number;
+      key: string;
     }
   >();
   for (const row of rows) {
     const v = row.record.values;
     const key = valueText(v, "mobile") || valueText(v, "facultyName").toLowerCase();
     const entry = people.get(key) ?? {
+      key,
       name: valueText(v, "facultyName"),
       designation: valueText(v, "designation"),
       department: valueText(v, "department"),
@@ -502,6 +521,11 @@ export function FacultyIncentivesScreen() {
         money(person.paid),
         ceiling > 0 ? money(ceiling) : "Not set",
         ceiling > 0 ? money(Math.max(0, ceiling - person.approved)) : "—",
+        // Where the incentive is credited (entered by the faculty member).
+        board?.banks?.[person.key]
+          ? `${board.banks[person.key].bankName} · ${board.banks[person.key].ifsc}`
+          : "Not given",
+        board?.banks?.[person.key]?.accountNo ?? "",
       ];
     });
   const claimHeaders = [
@@ -541,6 +565,8 @@ export function FacultyIncentivesScreen() {
     "Paid",
     "Ceiling",
     "Left",
+    "Bank · IFSC",
+    "Account no.",
   ];
   const distinct = (pick: (row: Row) => string) =>
     [...new Set(rows.map(pick).filter(Boolean))].sort().map(option);

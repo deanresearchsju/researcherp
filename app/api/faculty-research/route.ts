@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -8,7 +9,7 @@ import {
   isResearchKind,
   listRecords,
   recordHistory,
-  setApproval,
+  setReview,
   researchAccess,
   updateRecord,
 } from "@/lib/faculty-research-server";
@@ -16,6 +17,7 @@ import { canMenuAction } from "@/lib/access";
 import { researchMenus } from "@/lib/faculty-research";
 import { serverChecklist } from "@/lib/checklists-server";
 import { evidenceList } from "@/lib/faculty-evidence";
+import { toppersTag } from "@/lib/faculty-toppers";
 import { linkReport } from "@/lib/link-report";
 import { rateLimit } from "@/lib/rate-limit";
 import { fail, readBody, sameOrigin } from "@/lib/request-body";
@@ -92,18 +94,35 @@ export async function POST(request: NextRequest) {
   const errorsOf = (result: { errors?: Record<string, string> }) =>
     result.errors ? { errors: result.errors } : {};
 
-  if (body.action === "approve" || body.action === "withdraw-approval") {
-    // The Dean and the administrator approve; another office sign-in needs the Approve right.
+  if (
+    body.action === "approve" ||
+    body.action === "reject" ||
+    body.action === "reset-review" ||
+    body.action === "withdraw-approval"
+  ) {
+    // The Dean and the administrator review; another office sign-in needs the Approve right.
     const mayApprove =
       access.scope === "all" &&
       (session.role === "admin" ||
         session.role === "dean" ||
         canMenuAction(session, researchMenus[kind].adminHref, "approve"));
     if (!mayApprove)
-      return fail("Only the Dean or the administrator approves records.", 403);
+      return fail("Only the Dean or the administrator reviews records.", 403);
     const ids = Array.isArray(body.ids) ? body.ids : [];
-    const done = await setApproval(kind, ids, body.action === "approve", actor);
+    const done = await setReview(
+      kind,
+      ids,
+      body.action === "approve"
+        ? "approve"
+        : body.action === "reject"
+          ? "reject"
+          : "reset",
+      typeof body.note === "string" ? body.note : "",
+      actor,
+    );
     if (!done.ok) return fail(done.message, done.status);
+    // The toppers count approved work only: refresh them now.
+    revalidateTag(toppersTag, { expire: 0 });
     return NextResponse.json({ ok: true, count: done.value });
   }
   if (body.action === "check-links") {
@@ -129,14 +148,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, record: made.value });
   }
   if (body.action === "update") {
-    // Faculty only add records; a correction is made by the research office.
-    if (access.scope !== "all")
-      return fail(
-        "Records can only be added. Ask the research office to correct one.",
-        403,
-      );
+    // Faculty change their own records until the Dean or the administrator approves them.
     const id = typeof body.id === "string" ? body.id : "";
-    const saved = await updateRecord(kind, id, body.record, actor, null);
+    const saved =
+      access.scope === "all"
+        ? await updateRecord(kind, id, body.record, actor, null)
+        : await updateRecord(kind, id, body.record, actor, owner, {
+            evidence: await serverChecklist(evidenceList(kind)),
+          });
     if (!saved.ok) return fail(saved.message, saved.status, errorsOf(saved));
     return NextResponse.json({ ok: true, record: saved.value });
   }

@@ -6,16 +6,25 @@ import {
   CalendarDays,
   Clock,
   FolderKanban,
+  IndianRupee,
+  PencilLine,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
 
+import { MedalBadge } from "@/components/forms/ToppersBoard";
+import type { Standing } from "@/components/forms/PublicResearchDesk";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   allRecords,
   facultySummary,
   filterRecords,
+  groupRecords,
+  groupingLabel,
+  groupings,
+  type Grouping,
   sameCategory,
   type Category,
   type DashboardFilter,
@@ -27,12 +36,14 @@ import {
   formatDay,
   fundingStage,
   isApproved,
+  isRejected,
   isShown,
   pendingLabel,
   receivedTotal,
   recordDate,
   recordFields,
   recordTitle,
+  rejectedLabel,
   rupees,
   valueText,
   type ResearchRecord,
@@ -63,6 +74,8 @@ function categoryLabel(category: Category) {
       return approvedLabel;
     case "waiting":
       return pendingLabel;
+    case "rejected":
+      return rejectedLabel;
   }
 }
 
@@ -111,7 +124,14 @@ function Tile({
   );
 }
 
-export function RecordCard({ record }: { record: ResearchRecord }) {
+export function RecordCard({
+  record,
+  onEdit,
+}: {
+  record: ResearchRecord;
+  /** Given while the record can still be changed (not yet Checked & Approved). */
+  onEdit?: (record: ResearchRecord) => void;
+}) {
   const v = record.values;
   const kind = record.kind;
   const fields = recordFields(kind).filter(
@@ -131,18 +151,41 @@ export function RecordCard({ record }: { record: ResearchRecord }) {
             {recordTitle(kind, v)}
           </span>
         </span>
-        {isApproved(record) ? (
-          <Badge variant="gold">
-            <BadgeCheck className="mr-1 size-3.5" aria-hidden="true" />
-            {approvedLabel}
-          </Badge>
-        ) : (
-          <Badge variant="outline">
-            <Clock className="mr-1 size-3.5" aria-hidden="true" />
-            {pendingLabel}
-          </Badge>
-        )}
+        <span className="flex flex-wrap items-center gap-2">
+          {onEdit && !isApproved(record) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={(event) => {
+                // The button sits in the card's heading: it must not open or close the card.
+                event.preventDefault();
+                onEdit(record);
+              }}
+            >
+              <PencilLine className="size-4" aria-hidden="true" /> Edit
+            </Button>
+          ) : null}
+          {isRejected(record) ? (
+            <Badge variant="maroon">{rejectedLabel}</Badge>
+          ) : isApproved(record) ? (
+            <Badge variant="gold">
+              <BadgeCheck className="mr-1 size-3.5" aria-hidden="true" />
+              {approvedLabel}
+            </Badge>
+          ) : (
+            <Badge variant="outline">
+              <Clock className="mr-1 size-3.5" aria-hidden="true" />
+              {pendingLabel}
+            </Badge>
+          )}
+        </span>
       </summary>
+      {isRejected(record) && record.reviewNote ? (
+        <p className="mt-3 rounded-lg border border-secondary/30 bg-secondary/5 px-3 py-2 text-sm text-secondary">
+          Rejected by the research office: {record.reviewNote}
+        </p>
+      ) : null}
       <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
         {fields.map((field) => (
           <div
@@ -173,11 +216,17 @@ export function RecordCard({ record }: { record: ResearchRecord }) {
 export function FacultyDashboard({
   profile,
   records,
+  onEdit,
+  standing,
 }: {
   profile: ResearchValues;
   records: readonly ResearchRecord[];
+  onEdit?: (record: ResearchRecord) => void;
+  /** Where the faculty member stands among the research toppers (approved work only). */
+  standing?: Standing | null;
 }) {
   const [filter, setFilter] = useState<DashboardFilter>(allRecords);
+  const [grouping, setGrouping] = useState<Grouping>("type");
   const summary = facultySummary(records);
   const shown = filterRecords(records, filter);
   const setCategory = (category: Category) =>
@@ -232,6 +281,28 @@ export function FacultyDashboard({
             ? `Joined SJU on ${formatDay(joined)}`
             : "Date of joining SJU: give it with your next record"}
         </p>
+        {standing ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {standing.overall <= 3 ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-primary-foreground/15 py-1 pr-3 pl-1 text-xs font-semibold">
+                <MedalBadge rank={standing.overall} size="sm" /> University topper · rank{" "}
+                {standing.overall}
+              </span>
+            ) : null}
+            {standing.department <= 3 ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-primary-foreground/15 py-1 pr-3 pl-1 text-xs font-semibold">
+                <MedalBadge rank={standing.department} size="sm" /> Department topper ·
+                rank {standing.department} in {standing.departmentName}
+              </span>
+            ) : null}
+            {standing.overall > 3 && standing.department > 3 ? (
+              <span className="rounded-full bg-primary-foreground/15 px-3 py-1 text-xs font-semibold">
+                Rank {standing.overall} of {standing.of} in the university ·{" "}
+                {standing.count} approved
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -253,6 +324,7 @@ export function FacultyDashboard({
           icon={Clock}
           label={pendingLabel}
           value={String(summary.waiting)}
+          detail={summary.rejected ? `${summary.rejected} rejected` : undefined}
           active={is({ kind: "waiting" })}
           onClick={() => setCategory({ kind: "waiting" })}
         />
@@ -270,6 +342,21 @@ export function FacultyDashboard({
         />
       </ul>
 
+      {summary.rejected ? (
+        <button
+          type="button"
+          aria-pressed={is({ kind: "rejected" })}
+          onClick={() => setCategory({ kind: "rejected" })}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-semibold transition",
+            is({ kind: "rejected" })
+              ? "border-secondary bg-secondary text-secondary-foreground"
+              : "border-secondary/40 text-secondary hover:bg-secondary/10",
+          )}
+        >
+          {rejectedLabel} ({summary.rejected}): see the reasons
+        </button>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <section className="rounded-2xl border border-border bg-card p-4 shadow-card sm:p-5">
           <h3 className="text-[0.68rem] font-bold tracking-[0.16em] text-secondary uppercase">
@@ -397,6 +484,95 @@ export function FacultyDashboard({
         </section>
       </div>
 
+      {summary.proposals > 0 ? (
+        <section className="rounded-2xl border border-border bg-card p-4 shadow-card sm:p-5">
+          <h3 className="flex items-center gap-2 text-[0.68rem] font-bold tracking-[0.16em] text-secondary uppercase">
+            <IndianRupee className="size-3.5" aria-hidden="true" /> Project funding
+          </h3>
+          <ul className="mt-3 grid gap-3 sm:grid-cols-3">
+            {(
+              [
+                ["Proposed", summary.proposed, "bg-primary/25"],
+                ["Sanctioned", summary.sanctioned, "bg-primary"],
+                ["Received", summary.received, "bg-accent"],
+              ] as const
+            ).map(([label, value, colour]) => (
+              <li key={label} className="rounded-xl bg-muted/50 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  <span
+                    className={cn("size-2.5 rounded-sm", colour)}
+                    aria-hidden="true"
+                  />
+                  {label}
+                </p>
+                <p className="mt-1 font-heading text-2xl font-semibold text-primary tabular-nums">
+                  {rupees(value) || "₹0"}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <ul className="mt-4 space-y-3" aria-label="Project funding by year">
+            {summary.funding
+              .slice()
+              .reverse()
+              .map((item) => {
+                const width = (value: number) =>
+                  `${summary.largestYear ? Math.max(value ? 2 : 0, (value / summary.largestYear) * 100) : 0}%`;
+                return (
+                  <li key={item.year}>
+                    <button
+                      type="button"
+                      aria-pressed={
+                        filter.year === item.year && is({ kind: "proposals" })
+                      }
+                      onClick={() =>
+                        setFilter({ year: item.year, category: { kind: "proposals" } })
+                      }
+                      className="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-muted"
+                    >
+                      <span className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                        <span className="font-semibold text-primary tabular-nums">
+                          {item.year}{" "}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            · {item.count} proposal(s)
+                          </span>
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          Proposed {rupees(item.proposed) || "₹0"} · Sanctioned{" "}
+                          <strong className="text-primary">
+                            {rupees(item.sanctioned) || "₹0"}
+                          </strong>{" "}
+                          · Received {rupees(item.received) || "₹0"}
+                        </span>
+                      </span>
+                      <span className="mt-1.5 block space-y-1">
+                        <span className="block h-1.5 overflow-hidden rounded-full bg-muted">
+                          <span
+                            className="block h-full rounded-full bg-primary/25 transition-all duration-500"
+                            style={{ width: width(item.proposed) }}
+                          />
+                        </span>
+                        <span className="block h-1.5 overflow-hidden rounded-full bg-muted">
+                          <span
+                            className="block h-full rounded-full bg-primary transition-all duration-500"
+                            style={{ width: width(item.sanctioned) }}
+                          />
+                        </span>
+                        <span className="block h-1.5 overflow-hidden rounded-full bg-muted">
+                          <span
+                            className="block h-full rounded-full bg-accent transition-all duration-500"
+                            style={{ width: width(item.received) }}
+                          />
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-heading text-xl text-primary">
@@ -414,14 +590,55 @@ export function FacultyDashboard({
             </button>
           ) : null}
         </div>
+        <div role="tablist" aria-label="Show records" className="flex flex-wrap gap-1.5">
+          {groupings.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={grouping === id}
+              onClick={() => setGrouping(id)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-semibold transition",
+                grouping === id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-primary hover:border-primary/40",
+              )}
+            >
+              {groupingLabel[id]}
+            </button>
+          ))}
+        </div>
         {shown.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
             No record here.
           </p>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {shown.map((record) => (
-              <RecordCard key={record.id} record={record} />
+          <div className="space-y-5">
+            {groupRecords(shown, grouping).map((group) => (
+              <section key={group.label} className="space-y-2">
+                <h4 className="flex items-center gap-2 border-b border-border pb-1 text-sm font-semibold text-primary">
+                  {grouping === "type" && partColour[group.label] ? (
+                    <span
+                      className={cn("size-2.5 rounded-sm", partColour[group.label])}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {group.label}
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground tabular-nums">
+                    {group.records.length}
+                  </span>
+                </h4>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {group.records.map((record) => (
+                    <RecordCard
+                      key={`${group.label}-${record.id}`}
+                      record={record}
+                      onEdit={onEdit}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

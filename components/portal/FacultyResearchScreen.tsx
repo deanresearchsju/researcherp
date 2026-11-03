@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeskPage, DeskTable, DeskTabs, FormDialog } from "@/components/portal/Desk";
 import { filterMatches, ListToolbar, textMatches } from "@/components/portal/ListToolbar";
 import { ResearchImport } from "@/components/portal/ResearchImport";
+import { ResearchReviewDialog } from "@/components/portal/ResearchReviewDialog";
 import { ResearchRecordForm } from "@/components/portal/ResearchRecordForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,13 @@ import {
   agencyOf,
   allFields,
   approvedLabel,
+  indexingOf,
   isApproved,
+  isRejected,
   pendingLabel,
+  recordTitle,
+  rejectedLabel,
+  reviewLabel,
   balanceOf,
   campuses,
   designations,
@@ -158,6 +164,9 @@ function Editor({
               by {record.approvedBy || "the office"} on {stamp(record.approvedAt)}
             </span>
           ) : null}
+          {isRejected(record) && record.reviewNote ? (
+            <span className="text-secondary">Reason: {record.reviewNote}</span>
+          ) : null}
         </p>
       ) : null}
       {message ? (
@@ -266,21 +275,26 @@ function screenRow(kind: ResearchKind, record: ResearchRecord) {
   ];
 }
 
-const approvalText = (record: ResearchRecord) =>
-  isApproved(record) ? approvedLabel : pendingLabel;
+const approvalText = (record: ResearchRecord) => reviewLabel(record);
 
 /** The approval of a record as a badge: gold once the Dean or the administrator approved it. */
 export function ApprovalBadge({ record }: { record: ResearchRecord }) {
-  return isApproved(record) ? (
-    <Badge
-      variant="gold"
-      title={record.approvedBy ? `by ${record.approvedBy}` : undefined}
-    >
-      {approvedLabel}
-    </Badge>
-  ) : (
-    <Badge variant="outline">{pendingLabel}</Badge>
-  );
+  if (isApproved(record))
+    return (
+      <Badge
+        variant="gold"
+        title={record.approvedBy ? `by ${record.approvedBy}` : undefined}
+      >
+        {approvedLabel}
+      </Badge>
+    );
+  if (isRejected(record))
+    return (
+      <Badge variant="maroon" title={record.reviewNote || undefined}>
+        {rejectedLabel}
+      </Badge>
+    );
+  return <Badge variant="outline">{pendingLabel}</Badge>;
 }
 
 /** Every field, for the Excel and PDF downloads. */
@@ -481,20 +495,16 @@ export function FacultyResearchOffice({ kind }: { kind: ResearchKind }) {
   const menu = researchMenus[kind];
   const { records, canEdit, canUpload, canApprove, failed, load } = useRecords(kind);
   const [approval, setApproval] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [approving, setApproving] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
   /** The Dean or the administrator approves records, or takes an approval back. */
   async function approve(ids: string[], yes: boolean) {
-    setApproving(true);
     const { ok, data } = await call("/api/faculty-research", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: yes ? "approve" : "withdraw-approval", kind, ids }),
     });
-    setApproving(false);
     if (ok) {
-      setSelected([]);
       setEditing(null);
       setNotice(
         yes
@@ -568,7 +578,7 @@ export function FacultyResearchOffice({ kind }: { kind: ResearchKind }) {
       id: "approval",
       label: "Approval",
       value: approval,
-      options: [pendingLabel, approvedLabel].map(option),
+      options: [pendingLabel, approvedLabel, rejectedLabel].map(option),
       onChange: setApproval,
     },
     ...(kind === "publication"
@@ -872,108 +882,98 @@ export function FacultyResearchOffice({ kind }: { kind: ResearchKind }) {
           ))}
         </DeskTable>
       ) : null}
-      {records !== null && view === "date" && canApprove ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              setSelected(
-                shown.filter((record) => !isApproved(record)).map((record) => record.id),
-              )
-            }
-          >
-            Select all waiting ({shown.filter((record) => !isApproved(record)).length})
-          </Button>
-          {selected.length > 0 ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="gold"
-                disabled={approving}
-                onClick={() => void approve(selected, true)}
-              >
-                {approving ? "Saving…" : `Approve selected (${selected.length})`}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setSelected([])}
-              >
-                Clear selection
-              </Button>
-            </>
-          ) : null}
+      {records !== null && view === "date" ? (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
+          <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
+            <thead className="bg-muted text-xs text-primary">
+              <tr>
+                {(kind === "publication"
+                  ? ["Date", "Faculty", "Type", "Title", "Indexing", "Status", ""]
+                  : ["Submitted", "Faculty", "Agency", "Project", "Stage", "Status", ""]
+                ).map((header) => (
+                  <th key={header} className="px-3 py-2 font-semibold whitespace-nowrap">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                    No record matches.
+                  </td>
+                </tr>
+              ) : (
+                shown.map((record) => {
+                  const v = record.values;
+                  const waiting = !isApproved(record) && !isRejected(record);
+                  return (
+                    <tr
+                      key={record.id}
+                      className="border-t border-border align-top hover:bg-muted/40"
+                    >
+                      <td className="px-3 py-2 text-xs whitespace-nowrap tabular-nums">
+                        {formatDay(recordDate(kind, v))}
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="font-semibold text-primary">
+                          {valueText(v, "facultyName")}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {valueText(v, "department")}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {kind === "publication" ? valueText(v, "type") : agencyOf(v)}
+                      </td>
+                      <td className="max-w-sm px-3 py-2">
+                        <p className="line-clamp-2">{recordTitle(kind, v)}</p>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {kind === "publication"
+                          ? indexingOf(v).join(", ") || "—"
+                          : fundingStage(v)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <ApprovalBadge record={record} />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={waiting && canApprove ? "gold" : "outline"}
+                          data-readonly-allow
+                          onClick={() => setReviewing(record.id)}
+                        >
+                          {waiting && canApprove ? "Review" : "Open"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       ) : null}
-      {records !== null && view === "date" ? (
-        <DeskTable headers={columns} empty={shown.length === 0}>
-          {shown.map((record) => (
-            <tr key={record.id} className="border-t border-border align-top">
-              {screenRow(kind, record).map((cell, index) => (
-                <td
-                  key={index}
-                  className={
-                    index === 1
-                      ? "px-4 py-3 font-semibold text-primary"
-                      : index === 4
-                        ? "max-w-xs px-4 py-3"
-                        : "px-4 py-3 whitespace-nowrap"
-                  }
-                >
-                  {cell === approvedLabel || cell === pendingLabel ? (
-                    <ApprovalBadge record={record} />
-                  ) : kind === "proposal" && index === 6 ? (
-                    <Badge
-                      variant={
-                        cell === "Rejected"
-                          ? "maroon"
-                          : cell === "Submitted" || cell === "Under process"
-                            ? "purple"
-                            : "gold"
-                      }
-                    >
-                      {cell}
-                    </Badge>
-                  ) : (
-                    cell
-                  )}
-                </td>
-              ))}
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  {canApprove && !isApproved(record) ? (
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      aria-label={`Select ${valueText(record.values, "facultyName")} for approval`}
-                      checked={selected.includes(record.id)}
-                      onChange={(event) =>
-                        setSelected((current) =>
-                          event.target.checked
-                            ? [...current, record.id]
-                            : current.filter((id) => id !== record.id),
-                        )
-                      }
-                    />
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    data-readonly-allow
-                    onClick={() => setEditing(record)}
-                  >
-                    {canEdit ? "Edit" : "View"}
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </DeskTable>
+      {reviewing ? (
+        <ResearchReviewDialog
+          kind={kind}
+          records={shown}
+          startId={reviewing}
+          canReview={canApprove}
+          canEdit={canEdit}
+          onEdit={(record) => {
+            setReviewing(null);
+            setEditing(record);
+          }}
+          onReviewed={(message) => {
+            setNotice(message);
+            void load();
+          }}
+          onClose={() => setReviewing(null)}
+        />
       ) : null}
       {uploading ? (
         <ResearchImport
@@ -1009,11 +1009,11 @@ export function FacultyResearchOffice({ kind }: { kind: ResearchKind }) {
 export function FacultyResearchMine({ kind }: { kind: ResearchKind }) {
   const menu = researchMenus[kind];
   const { records, failed, load } = useRecords(kind);
-  const [editing, setEditing] = useState<"new" | null>(null);
+  const [editing, setEditing] = useState<ResearchRecord | "new" | null>(null);
   const [notice, setNotice] = useState("");
   const all = records ?? [];
-  // Faculty add records; a correction is made by the research office.
-  const columns = screenColumns(kind).slice(0, -1);
+  // Faculty change a record until it is Checked & Approved.
+  const columns = screenColumns(kind);
   // A new record starts with the personal details of the last one.
   const start = emptyValues(kind);
   if (all[0])
@@ -1053,13 +1053,22 @@ export function FacultyResearchMine({ kind }: { kind: ResearchKind }) {
                     index === 4 ? "max-w-xs px-4 py-3" : "px-4 py-3 whitespace-nowrap"
                   }
                 >
-                  {cell === approvedLabel || cell === pendingLabel ? (
+                  {cell === approvedLabel ||
+                  cell === pendingLabel ||
+                  cell === rejectedLabel ? (
                     <ApprovalBadge record={record} />
                   ) : (
                     cell
                   )}
                 </td>
               ))}
+              <td className="px-4 py-3">
+                {isApproved(record) ? null : (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setEditing(record)}>
+                    Edit
+                  </Button>
+                )}
+              </td>
             </tr>
           ))}
         </DeskTable>
@@ -1067,7 +1076,7 @@ export function FacultyResearchMine({ kind }: { kind: ResearchKind }) {
       {editing ? (
         <Editor
           kind={kind}
-          record={null}
+          record={editing === "new" ? null : editing}
           start={start}
           office={false}
           onClose={() => setEditing(null)}

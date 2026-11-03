@@ -23,6 +23,7 @@ const aliases: Record<string, readonly string[]> = {
   ],
   mobile: ["mobile", "mobileno", "phone", "phonenumber", "contactnumber", "mobilenumber"],
   dob: ["dob", "dateofbirth", "birthdate"],
+  email: ["email", "emailid", "mailid", "emailaddress", "mail", "officialemail"],
   joinedOn: ["doj", "dateofjoining", "joiningdate", "dateofjoiningsju", "joinedon"],
   sjuAffiliation: ["affiliation", "sjuaffiliation", "universityaffiliation"],
   type: ["publicationtype", "typeofpublication", "category"],

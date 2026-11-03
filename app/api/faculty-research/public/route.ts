@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 
-import { createRecord, facultyFile, indiaToday, isResearchKind } from "@/lib/faculty-research-server";
-import { cleanValues, identityFields } from "@/lib/faculty-research";
+import {
+  createRecord,
+  facultyFile,
+  indiaToday,
+  isResearchKind,
+  updateRecord,
+} from "@/lib/faculty-research-server";
+import { cleanValues, identityFields, isEmail, valueText } from "@/lib/faculty-research";
 import { serverChecklist } from "@/lib/checklists-server";
 import { evidenceList } from "@/lib/faculty-evidence";
+import { bankOf, maskedBank, saveBank } from "@/lib/faculty-bank";
+import { facultyToppers, standingOf } from "@/lib/faculty-toppers";
 import { linkReport } from "@/lib/link-report";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 import { fail, readBody, sameOrigin } from "@/lib/request-body";
@@ -27,13 +35,21 @@ function limited(retryAfterSeconds: number) {
 
 /** The mobile number and date of birth, checked with the same rules as the form. */
 function identityFrom(body: Record<string, unknown>) {
-  const probe = cleanValues("publication", { mobile: body.mobile, dob: body.dob }, indiaToday());
-  const errors = probe.ok ? {} : probe.errors;
-  if (errors.mobile || errors.dob) return { errors: { mobile: errors.mobile, dob: errors.dob } };
+  const probe = cleanValues(
+    "publication",
+    { mobile: body.mobile, dob: body.dob, email: body.email },
+    indiaToday(),
+  );
+  const errors: Record<string, string | undefined> = probe.ok ? {} : { ...probe.errors };
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (!email) errors.email = "Enter your email.";
+  else if (!isEmail(email)) errors.email = "Enter a valid email address.";
+  if (errors.mobile || errors.dob || errors.email)
+    return { errors: { mobile: errors.mobile, dob: errors.dob, email: errors.email } };
   const mobile = String(body.mobile)
     .replace(/[\s-]/g, "")
     .replace(/^(\+91|0)(?=\d{10}$)/, "");
-  return { mobile, dob: String(body.dob) };
+  return { mobile, dob: String(body.dob), email };
 }
 
 export async function POST(request: Request) {
@@ -51,17 +67,33 @@ export async function POST(request: Request) {
   const who = identityFrom(body);
   if (!("mobile" in who))
     return fail("Enter the mobile number and date of birth.", 400, { errors: who.errors });
-  const { mobile, dob } = who as { mobile: string; dob: string };
+  const { mobile, dob, email } = who as { mobile: string; dob: string; email: string };
 
   if (body.action === "lookup") {
     const byAddress = rateLimit(`research-lookup:${address}`, 15, 15 * 60_000);
     const byMobile = rateLimit(`research-lookup-mobile:${mobile}`, 10, 15 * 60_000);
-    if (!byAddress.allowed || !byMobile.allowed)
-      return limited(Math.max(byAddress.retryAfterSeconds, byMobile.retryAfterSeconds));
-    const file = await facultyFile(mobile, dob);
+    const byEmail = rateLimit(`research-lookup-email:${email}`, 10, 15 * 60_000);
+    if (!byAddress.allowed || !byMobile.allowed || !byEmail.allowed)
+      return limited(
+        Math.max(
+          byAddress.retryAfterSeconds,
+          byMobile.retryAfterSeconds,
+          byEmail.retryAfterSeconds,
+        ),
+      );
+    const file = await facultyFile(mobile, dob, email);
     if (!file.ok) return fail(file.message, file.status);
     if (file.value.otherBirthDate) return fail(otherBirthDate, 409);
-    return NextResponse.json({ ok: true, records: file.value.records, profile: file.value.profile });
+    const bank = await bankOf(mobile);
+    const standing = standingOf(await facultyToppers(), mobile);
+    return NextResponse.json({
+      standing,
+      ok: true,
+      records: file.value.records,
+      profile: file.value.profile,
+      linked: file.value.linked,
+      bank: bank ? maskedBank(bank) : null,
+    });
   }
 
   if (body.action === "submit") {
@@ -75,7 +107,7 @@ export async function POST(request: Request) {
     const byMobile = rateLimit(`research-submit-mobile:${mobile}`, 300, 24 * 60 * 60_000);
     if (!bySubmitter.allowed || !byMobile.allowed)
       return limited(Math.max(bySubmitter.retryAfterSeconds, byMobile.retryAfterSeconds));
-    const before = await facultyFile(mobile, dob);
+    const before = await facultyFile(mobile, dob, email);
     if (!before.ok) return fail(before.message, before.status);
     if (before.value.otherBirthDate) return fail(otherBirthDate, 409);
     const sent =
@@ -83,7 +115,7 @@ export async function POST(request: Request) {
         ? (body.record as Record<string, unknown>)
         : {};
     // The personal details are the saved ones once a record exists; the first record brings them.
-    const record: Record<string, unknown> = { ...sent, mobile, dob };
+    const record: Record<string, unknown> = { ...sent, mobile, dob, email };
     // A detail missing from the saved ones (the date of joining, for records saved before it was
     // asked) is taken from this record once.
     if (before.value.profile)
@@ -101,12 +133,72 @@ export async function POST(request: Request) {
     );
     if (!made.ok)
       return fail(made.message, made.status, made.errors ? { errors: made.errors } : {});
-    const after = await facultyFile(mobile, dob);
+    const after = await facultyFile(mobile, dob, email);
     return NextResponse.json({
       ok: true,
       records: after.ok ? after.value.records : [],
       profile: after.ok ? after.value.profile : null,
     });
+  }
+
+  if (body.action === "update") {
+    // A faculty member changes a record of their own until it is approved.
+    const kind = body.kind;
+    if (!isResearchKind(kind)) return fail("Unknown record type.");
+    const changes = rateLimit(`research-update:${address}`, 200, 60 * 60_000);
+    if (!changes.allowed) return limited(changes.retryAfterSeconds);
+    const before = await facultyFile(mobile, dob, email);
+    if (!before.ok) return fail(before.message, before.status);
+    if (before.value.otherBirthDate) return fail(otherBirthDate, 409);
+    const sent =
+      body.record && typeof body.record === "object" && !Array.isArray(body.record)
+        ? (body.record as Record<string, unknown>)
+        : {};
+    const record: Record<string, unknown> = { ...sent, mobile, dob, email };
+    if (before.value.profile)
+      for (const field of identityFields) {
+        const saved = before.value.profile[field.key];
+        if (typeof saved === "string" && saved) record[field.key] = saved;
+      }
+    const name = String(record.facultyName ?? "").slice(0, 120);
+    const saved = await updateRecord(
+      kind,
+      typeof body.id === "string" ? body.id : "",
+      record,
+      { role: "public", identifier: mobile, name: name || "A faculty member" },
+      null,
+      {
+        owns: (item) =>
+          valueText(item.values, "mobile") === mobile && valueText(item.values, "dob") === dob,
+        evidence: await serverChecklist(evidenceList(kind)),
+      },
+    );
+    if (!saved.ok)
+      return fail(saved.message, saved.status, saved.errors ? { errors: saved.errors } : {});
+    const after = await facultyFile(mobile, dob, email);
+    return NextResponse.json({
+      ok: true,
+      records: after.ok ? after.value.records : [],
+      profile: after.ok ? after.value.profile : null,
+    });
+  }
+
+  if (body.action === "save-bank") {
+    // The account incentives are credited to; saved under the mobile number.
+    const saves = rateLimit(`research-bank:${address}`, 30, 60 * 60_000);
+    if (!saves.allowed) return limited(saves.retryAfterSeconds);
+    const file = await facultyFile(mobile, dob, email);
+    if (!file.ok) return fail(file.message, file.status);
+    if (file.value.otherBirthDate) return fail(otherBirthDate, 409);
+    const name = file.value.profile ? valueText(file.value.profile, "facultyName") : "";
+    const saved = await saveBank(mobile, body.bank, {
+      name,
+      email,
+      actorRole: "public",
+      actorIdentifier: mobile,
+    });
+    if (!saved.ok) return fail(Object.values(saved.errors)[0] ?? "Not saved.", 400, { errors: saved.errors });
+    return NextResponse.json({ ok: true, bank: maskedBank(saved.value) });
   }
 
   return fail("Unknown action.");
