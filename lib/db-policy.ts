@@ -152,6 +152,19 @@ const recordColumns = [
 ] as const;
 
 /** A scholar only submits; a supervisor only passes a record on or returns it; the office decides. */
+/** Does a scholar record sent to the database carry a fee concession? */
+export function carriesConcession(body: unknown) {
+  const rows = Array.isArray(body) ? body : [body];
+  return rows.some((row) => {
+    const payload = singleObject(row)?.payload;
+    return Boolean(
+      payload &&
+      typeof payload === "object" &&
+      "concession" in (payload as Record<string, unknown>),
+    );
+  });
+}
+
 function recordStatus(context: Context, status: unknown) {
   if (status === undefined) return null;
   const role = context.actor?.role;
@@ -259,6 +272,15 @@ const tables: Record<string, TableRule> = {
       return [];
     },
     guard: (context) => {
+      // A fee concession lowers what a scholar owes: only the administrator or the Dean records
+      // one. Nobody else may file or change a record that carries it.
+      if (
+        (context.op === "insert" || context.op === "update") &&
+        carriesConcession(context.request.body) &&
+        context.actor?.role !== "admin" &&
+        context.actor?.role !== "dean"
+      )
+        return "Only the administrator or the Dean records a fee concession.";
       if (!context.actor || isOfficeRole(context.actor.role)) return null;
       if (context.op === "insert") {
         const rows = Array.isArray(context.request.body)

@@ -153,3 +153,62 @@ export function ToppersBoard({ toppers }: { toppers: PublicToppers }) {
     </section>
   );
 }
+
+/**
+ * The toppers in one compact strip, for the top of a signed-in faculty member's page: the
+ * university's top three, and the top three of the faculty member's own department.
+ */
+export function ToppersStrip({
+  toppers,
+  department,
+}: {
+  toppers: PublicToppers;
+  department?: string;
+}) {
+  if (toppers.overall.length === 0) return null;
+  const own = toppers.departments.find(
+    (item) => item.department.toLowerCase() === (department ?? "").trim().toLowerCase(),
+  );
+  const row = (people: PublicTopper[]) =>
+    people.slice(0, 3).map((person) => (
+      <li
+        key={`${person.rank}-${person.name}`}
+        className="flex min-w-0 items-center gap-2 rounded-lg border border-amber-300/40 bg-card/80 py-1 pr-2.5 pl-1"
+      >
+        <MedalBadge rank={person.rank} size="sm" />
+        <span className="min-w-0">
+          <span className="block max-w-40 truncate text-xs font-semibold text-primary">
+            {person.name}
+          </span>
+          <span className="text-[0.65rem] text-muted-foreground tabular-nums">
+            {person.count} approved
+          </span>
+        </span>
+      </li>
+    ));
+
+  return (
+    <section
+      aria-label="Research toppers"
+      className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-card px-3 py-2 shadow-card dark:from-amber-950/20"
+    >
+      <h2 className="flex items-center gap-1.5 font-heading text-sm font-semibold text-primary">
+        <Award className="size-4 text-amber-500" aria-hidden="true" /> Research toppers
+      </h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[0.68rem] font-semibold text-muted-foreground uppercase">
+          University
+        </span>
+        <ol className="flex flex-wrap gap-2">{row(toppers.overall)}</ol>
+      </div>
+      {own && own.toppers.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[0.68rem] font-semibold text-muted-foreground uppercase">
+            Department
+          </span>
+          <ol className="flex flex-wrap gap-2">{row(own.toppers)}</ol>
+        </div>
+      ) : null}
+    </section>
+  );
+}

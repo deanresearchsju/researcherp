@@ -1360,4 +1360,246 @@ await test("toppers: approved work ranked, equal counts share a rank, department
   assert.ok(!shown.includes("9000000001"), "no mobile numbers on the open page");
 });
 
+await test("online courses: agency first, then registration, session, year and title", () => {
+  const course = { ...person, type: "Online course" };
+  const first = model.cleanValues("publication", course, today);
+  assert.equal(first.ok, false);
+  assert.deepEqual(
+    Object.keys(first.errors),
+    ["courseAgency"],
+    "only the agency is asked first",
+  );
+  const details = model.cleanValues(
+    "publication",
+    { ...course, courseAgency: "NPTEL" },
+    today,
+  );
+  assert.ok(details.errors.courseRegNo && details.errors.courseMonth);
+  assert.ok(details.errors.title && details.errors.year);
+  assert.equal(details.errors.authorRole, undefined, "no author fields for a course");
+  assert.equal(details.errors.source, undefined, "no journal for a course");
+  const done = model.cleanValues(
+    "publication",
+    {
+      ...course,
+      courseAgency: "NPTEL",
+      courseRegNo: "NOC24CS12S3456",
+      courseMonth: "July",
+      year: "2025",
+      title: "Deep Learning",
+      doi: "10.1000/should-be-dropped",
+    },
+    today,
+  );
+  assert.equal(done.ok, true, JSON.stringify(done.errors));
+  assert.equal(done.values.doi, undefined);
+  assert.equal(model.recordDate("publication", done.values), "2025-07-01");
+  assert.equal(model.courseAgencyOf(done.values), "NPTEL");
+  assert.deepEqual(
+    model.facultyChecks("publication", {
+      ...done.values,
+      joinedOn: "2020-01-01",
+      email: "a@b.co",
+    }),
+    {},
+    "no affiliation tick for a course",
+  );
+});
+
+await test("online courses: one record per agency and registration, whatever the title", () => {
+  const a = model.duplicateKeys("publication", {
+    type: "Online course",
+    courseAgency: "NPTEL",
+    courseRegNo: "NOC1",
+    title: "Deep Learning",
+  });
+  const b = model.duplicateKeys("publication", {
+    type: "Online course",
+    courseAgency: "NPTEL",
+    courseRegNo: "NOC2",
+    title: "Deep Learning",
+  });
+  assert.notEqual(a.title, b.title, "two faculty can take the same course");
+  const again = model.duplicateKeys("publication", {
+    type: "Online course",
+    courseAgency: "NPTEL",
+    courseRegNo: "noc1",
+    title: "Other",
+  });
+  assert.equal(a.title, again.title, "the same registration twice is one record");
+});
+
+await test("online courses ask for the passing certificate and do not count for toppers", () => {
+  const items = lists.checklistCatalog["publication-evidence"].defaults;
+  assert.deepEqual(
+    evidence.missingEvidence("publication", { type: "Online course" }, items),
+    ["Passing certificate (online course)"],
+  );
+  const board = toppersLib.buildToppers([
+    {
+      mobile: "9000000001",
+      faculty_name: "Asha",
+      details: { type: "Online course", department: "X" },
+    },
+    {
+      mobile: "9000000002",
+      faculty_name: "Bala",
+      details: { type: "Journal article", department: "X" },
+    },
+  ]);
+  assert.deepEqual(
+    board.ranked.map((person) => person.name),
+    ["Bala"],
+  );
+});
+
+const fees = load("@/lib/fees.ts");
+
+await test("fee concession: lowers the year's due and balance, and is not counted as paid", () => {
+  const record = (payload, status = "Approved") => ({
+    id: Math.random().toString(36),
+    kind: "payment",
+    scholarIdentifier: "s@x",
+    scholarName: "S",
+    status,
+    createdAt: "2025-08-01T00:00:00Z",
+    payload,
+  });
+  const fullFee = fees.annualFeeFor("Full time");
+  const plan = fees.feePlan({
+    start: "2025-07-01",
+    studyMode: "Full time",
+    today: "2025-12-01",
+    records: [
+      record({
+        purpose: fees.concessionPurpose,
+        concession: "yes",
+        feeYear: "1",
+        amount: "5000",
+        reason: "Merit",
+      }),
+      record({
+        purpose: fees.annualFeePurpose,
+        feeYear: "1",
+        amount: "3000",
+        paidOn: "2025-08-02",
+      }),
+      record(
+        {
+          purpose: fees.concessionPurpose,
+          concession: "yes",
+          feeYear: "1",
+          amount: "999",
+        },
+        "Submitted",
+      ),
+    ],
+  });
+  const year = plan[0];
+  assert.equal(year.fullFee, fullFee);
+  assert.equal(year.concession, 5000, "only an approved concession counts");
+  assert.equal(year.concessionReason, "Merit");
+  assert.equal(year.amount, fullFee - 5000, "the due is the fee less the concession");
+  assert.equal(year.paid, 3000);
+  assert.equal(year.balance, Math.max(0, fullFee - 5000 - 3000));
+  assert.equal(year.installments.length, 1, "a concession is not an instalment");
+  const waived = fees.feePlan({
+    start: "2025-07-01",
+    studyMode: "Full time",
+    today: "2025-12-01",
+    records: [record({ concession: "yes", feeYear: "1", amount: String(fullFee + 100) })],
+  })[0];
+  assert.equal(waived.concession, fullFee, "never more than the fee");
+  assert.equal(waived.balance, 0);
+});
+
+await test("security: only the administrator or the Dean can record a fee concession", () => {
+  const ask = (actor, method, body) =>
+    decideDbRequest({
+      method,
+      path: "rest/v1/scholar_records",
+      query: new URLSearchParams(method === "PATCH" ? "id=eq.1" : ""),
+      prefer: "",
+      actor,
+      body,
+    });
+  const concession = {
+    kind: "payment",
+    scholar_identifier: "s@x.org",
+    status: "Submitted",
+    payload: { concession: "yes", amount: "50000", feeYear: "1" },
+  };
+  const scholar = { role: "scholar", identifier: "s@x.org" };
+  const staff = { role: "staff", identifier: "staff@x.org" };
+  assert.equal(
+    ask(scholar, "POST", concession).action,
+    "deny",
+    "a scholar cannot file one",
+  );
+  assert.equal(ask(staff, "POST", concession).action, "deny", "staff cannot file one");
+  assert.equal(ask(staff, "PATCH", { payload: { concession: "yes" } }).action, "deny");
+  assert.notEqual(
+    ask({ role: "admin", identifier: "admin" }, "POST", {
+      ...concession,
+      status: "Approved",
+    }).action,
+    "deny",
+  );
+  assert.notEqual(
+    ask({ role: "dean", identifier: "dean@x.org" }, "POST", {
+      ...concession,
+      status: "Approved",
+    }).action,
+    "deny",
+  );
+  const payment = { ...concession, payload: { amount: "1000", feeYear: "1" } };
+  assert.notEqual(
+    ask(scholar, "POST", payment).action,
+    "deny",
+    "a normal payment still works",
+  );
+});
+
+await test("bank account: open to faculty with approved work that earns an incentive", () => {
+  const paper = (values, approvedAt) => rec2("publication", values, approvedAt);
+  const scopusFirst = {
+    type: "Journal article",
+    indexing: ["Scopus"],
+    authorPosition: "1",
+  };
+  assert.equal(bank.hasEligibleWork([paper(scopusFirst, "2026-10-01")]), true);
+  assert.equal(
+    bank.hasEligibleWork([paper(scopusFirst, null)]),
+    false,
+    "not yet approved",
+  );
+  assert.equal(
+    bank.hasEligibleWork([
+      paper(
+        { type: "Journal article", indexing: ["UGC-CARE"], authorPosition: "1" },
+        "2026-10-01",
+      ),
+    ]),
+    false,
+    "outside the policy",
+  );
+  assert.equal(
+    bank.hasEligibleWork([
+      paper({ type: "Online course", courseAgency: "NPTEL" }, "2026-10-01"),
+    ]),
+    false,
+    "a course earns no incentive",
+  );
+  assert.equal(
+    bank.hasEligibleWork([
+      paper({ type: "Patent", patentStatus: "Granted" }, "2026-10-01"),
+    ]),
+    true,
+  );
+  assert.equal(
+    bank.hasEligibleWork([rec2("proposal", { status: "Accepted" }, "2026-10-01")]),
+    false,
+  );
+});
+
 summary("faculty research");

@@ -144,7 +144,10 @@ export function columnMap(kind: ResearchKind, headers: readonly string[]) {
     for (const field of fields) {
       if (map.has(field.key)) continue;
       const header = headers.find(
-        (item) => !used.has(item) && test(key(item.replace(/\(.*\)\s*$/, "")), field),
+        (item) =>
+          !used.has(item) &&
+          // "Indexing (separate with ;)" is read as "Indexing"; "Session (month)" as it stands.
+          (test(key(item), field) || test(key(item.replace(/\(.*\)\s*$/, "")), field)),
       );
       if (header) {
         map.set(field.key, header);

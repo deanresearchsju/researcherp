@@ -267,7 +267,11 @@ function YearCard({
         <div>
           <h2 className="font-semibold text-primary">{year.label}</h2>
           <p className="text-xs text-muted-foreground">
-            Annual fee ₹{formatInr(year.amount)} · paid ₹{formatInr(year.paid)}
+            Annual fee ₹{formatInr(year.fullFee)}
+            {year.concession
+              ? ` · concession ₹${formatInr(year.concession)}${year.concessionReason ? ` (${year.concessionReason})` : ""}`
+              : ""}{" "}
+            · paid ₹{formatInr(year.paid)}
             {year.pending ? ` · under verification ₹${formatInr(year.pending)}` : ""}
           </p>
         </div>

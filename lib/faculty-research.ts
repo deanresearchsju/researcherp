@@ -125,6 +125,32 @@ export const publicationTypes = [
   "Book chapter",
   "Conference proceedings",
   "Patent",
+  "Online course",
+] as const;
+
+/** Online courses (MOOCs) faculty complete: the agency is chosen first, then the details. */
+export const courseType = "Online course";
+export const courseAgencies = [
+  "NPTEL",
+  "SWAYAM",
+  "Coursera",
+  "edX",
+  "Udemy",
+  "Other",
+] as const;
+export const months = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ] as const;
 
 export const indexingOptions = [
@@ -191,7 +217,14 @@ export const instalmentsOf = (values: ResearchValues): Instalment[] => {
 
 const always = () => true;
 const isPatent = (values: ResearchValues) => text(values, "type") === "Patent";
-const notPatent = (values: ResearchValues) => !isPatent(values);
+export const isCourse = (values: ResearchValues) => text(values, "type") === courseType;
+/** A paper, book or chapter (not a patent, not an online course). */
+const notPatent = (values: ResearchValues) => !isPatent(values) && !isCourse(values);
+/** An online course whose agency is chosen: its details are asked only then. */
+const courseReady = (values: ResearchValues) =>
+  isCourse(values) && Boolean(text(values, "courseAgency"));
+const unlessWaitingForAgency = (values: ResearchValues) =>
+  !isCourse(values) || courseReady(values);
 const accepted = (values: ResearchValues) => text(values, "status") === "Accepted";
 
 function isIsoDate(value: string) {
@@ -284,7 +317,47 @@ export const publicationFields: readonly ResearchField[] = [
     options: publicationTypes,
     required: always,
   },
-  { key: "title", label: "Title", type: "text", max: 500, required: always, wide: true },
+  {
+    key: "courseAgency",
+    label: "Agency",
+    type: "select",
+    options: courseAgencies,
+    show: isCourse,
+    required: isCourse,
+  },
+  {
+    key: "courseAgencyOther",
+    label: "Agency name",
+    type: "text",
+    max: 120,
+    show: (values) => courseReady(values) && text(values, "courseAgency") === "Other",
+    required: (values) => courseReady(values) && text(values, "courseAgency") === "Other",
+  },
+  {
+    key: "courseRegNo",
+    label: "Registration number",
+    type: "text",
+    max: 60,
+    show: courseReady,
+    required: courseReady,
+  },
+  {
+    key: "courseMonth",
+    label: "Session (month)",
+    type: "select",
+    options: months,
+    show: courseReady,
+    required: courseReady,
+  },
+  {
+    key: "title",
+    label: "Title",
+    type: "text",
+    max: 500,
+    required: unlessWaitingForAgency,
+    show: unlessWaitingForAgency,
+    wide: true,
+  },
   {
     key: "source",
     label: "Journal / book / proceedings name",
@@ -344,13 +417,15 @@ export const publicationFields: readonly ResearchField[] = [
     label: "Author position",
     type: "select",
     options: authorRoles,
-    required: always,
+    show: (values) => !isCourse(values),
+    required: (values) => !isCourse(values),
   },
   {
     key: "authorPosition",
     label: "Position number",
     type: "number",
-    required: always,
+    show: (values) => !isCourse(values),
+    required: (values) => !isCourse(values),
     check: (value) =>
       /^\d{1,3}$/.test(value) && Number(value) >= 1
         ? null
@@ -360,7 +435,8 @@ export const publicationFields: readonly ResearchField[] = [
     key: "authorCount",
     label: "Number of authors",
     type: "number",
-    required: always,
+    show: (values) => !isCourse(values),
+    required: (values) => !isCourse(values),
     check: (value, values) => {
       if (!/^\d{1,3}$/.test(value) || Number(value) < 1)
         return "Enter the number of authors.";
@@ -373,6 +449,7 @@ export const publicationFields: readonly ResearchField[] = [
     key: "sjuAffiliation",
     label: "This work carries the St. Joseph University affiliation",
     type: "confirm",
+    show: (values) => !isCourse(values),
     wide: true,
   },
   {
@@ -390,6 +467,7 @@ export const publicationFields: readonly ResearchField[] = [
     key: "publishedOn",
     label: "Date of publication",
     type: "date",
+    show: (values) => !isCourse(values),
     required: notPatent,
     check: notFuture,
   },
@@ -397,7 +475,8 @@ export const publicationFields: readonly ResearchField[] = [
     key: "year",
     label: "Year",
     type: "number",
-    required: always,
+    show: unlessWaitingForAgency,
+    required: unlessWaitingForAgency,
     check: (value, values, today) => {
       const year = Number(value);
       if (!/^\d{4}$/.test(value) || year < 1950 || year > Number(today.slice(0, 4)) + 1)
@@ -824,6 +903,13 @@ export function fundingStage(values: ResearchValues) {
 /** The date a record is filed under in date-wise lists. */
 export function recordDate(kind: ResearchKind, values: ResearchValues) {
   if (kind === "proposal") return text(values, "submittedOn");
+  if (isCourse(values)) {
+    const month =
+      months.indexOf(text(values, "courseMonth") as (typeof months)[number]) + 1;
+    return text(values, "year")
+      ? `${text(values, "year")}-${String(month || 1).padStart(2, "0")}-01`
+      : "";
+  }
   return (
     text(values, "publishedOn") ||
     text(values, "filedOn") ||
@@ -937,6 +1023,15 @@ const squash = (value: string) =>
 export function duplicateKeys(kind: ResearchKind, values: ResearchValues) {
   const title = squash(recordTitle(kind, values));
   if (kind === "proposal") return { title, doi: "", patent: "" };
+  // Many faculty complete the same course: a course is one record per agency and registration.
+  if (isCourse(values))
+    return {
+      title: squash(
+        `course ${text(values, "courseAgency")} ${text(values, "courseAgencyOther")} ${text(values, "courseRegNo")}`,
+      ),
+      doi: "",
+      patent: "",
+    };
   const doi = text(values, "doi")
     .trim()
     .toLowerCase()
@@ -978,8 +1073,18 @@ export function facultyChecks(kind: ResearchKind, values: ResearchValues) {
   const errors: Record<string, string> = {};
   if (!text(values, "joinedOn")) errors.joinedOn = "Enter your date of joining SJU.";
   if (!text(values, "email")) errors.email = "Enter your email.";
-  if (kind === "publication" && text(values, "sjuAffiliation") !== "Yes")
+  if (
+    kind === "publication" &&
+    !isCourse(values) &&
+    text(values, "sjuAffiliation") !== "Yes"
+  )
     errors.sjuAffiliation =
       "Only work with the St. Joseph University affiliation is counted: tick to confirm.";
   return errors;
+}
+
+/** The agency of an online course, as shown in lists ("NPTEL", or the name given for Other). */
+export function courseAgencyOf(values: ResearchValues) {
+  const agency = text(values, "courseAgency");
+  return agency === "Other" ? text(values, "courseAgencyOther") || "Other" : agency;
 }

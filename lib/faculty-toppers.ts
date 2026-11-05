@@ -54,6 +54,8 @@ export function buildToppers(
   >();
   for (const record of records) {
     const values = (record.details ?? {}) as ResearchValues;
+    // Online courses are kept on the record but are not research output.
+    if (valueText(values, "type") === "Online course") continue;
     const name = record.faculty_name || valueText(values, "facultyName");
     const key = record.mobile || name.toLowerCase();
     if (!key) continue;

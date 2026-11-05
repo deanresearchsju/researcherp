@@ -566,6 +566,11 @@ export function FeeCollectionScreen() {
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">
                           ₹{formatInr(row.year.amount)}
+                          {row.year.concession ? (
+                            <span className="block text-xs text-muted-foreground">
+                              after ₹{formatInr(row.year.concession)} concession
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">
                           ₹{formatInr(row.year.paid)}

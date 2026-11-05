@@ -261,7 +261,14 @@ export function approvedDocuments(
                 { label: "Paid on", value: record.payload.paidOn ?? "" },
                 { label: "Transaction", value: record.payload.transactionNumber ?? "" },
               ]
-            : [],
+            : // A request without an attachment shows what was asked on its approval record.
+              (menu?.fields ?? [])
+                .map((field) => ({
+                  label: field.label,
+                  value: String(record.payload[field.name] ?? "").trim(),
+                }))
+                .filter((item) => item.value)
+                .slice(0, 12),
         steps: [
           {
             label: "Submitted by the scholar",

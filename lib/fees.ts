@@ -39,7 +39,14 @@ export type FeeYear = {
   label: string;
   from: string;
   to: string;
+  /** What is due for the year: the annual fee less any concession. */
   amount: number;
+  /** The annual fee before any concession. */
+  fullFee: number;
+  /** Fee concession granted for the year (by the administrator or the Dean). */
+  concession: number;
+  /** Why the concession was given (the latest one, when there are several). */
+  concessionReason: string;
   /** Approved by the office. */
   paid: number;
   /** Submitted, waiting for the office. */
@@ -86,6 +93,13 @@ export function programmeStart(batchId: string, fallbackYear: number) {
 function amountOf(record: ScholarRecord) {
   const value = Number(String(record.payload.amount ?? "").replace(/[^0-9.]/g, ""));
   return Number.isFinite(value) ? value : 0;
+}
+
+export const concessionPurpose = "Annual research fee concession";
+
+/** A fee concession saved by the office (not a payment). */
+export function isConcession(record: ScholarRecord) {
+  return record.payload.concession === "yes";
 }
 
 function isAnnualFee(record: ScholarRecord) {
@@ -136,21 +150,32 @@ export function feePlan(input: {
           right.payload.paidOn ?? right.createdAt,
         ),
       );
-    const installments = mine.map((record, position) => ({
-      record,
-      number: Number(record.payload.installment) || position + 1,
-      amount: amountOf(record),
-      paidOn: record.payload.paidOn ?? "",
-      mode: record.payload.mode ?? "",
-      reference: record.payload.transactionNumber ?? "",
-    }));
+    // A concession lowers what is due for the year; it is not an instalment.
+    const concessions = mine.filter(
+      (record) => isConcession(record) && record.status === "Approved",
+    );
+    const concession = Math.min(
+      amount,
+      concessions.reduce((sum, record) => sum + amountOf(record), 0),
+    );
+    const due = amount - concession;
+    const installments = mine
+      .filter((record) => !isConcession(record))
+      .map((record, position) => ({
+        record,
+        number: Number(record.payload.installment) || position + 1,
+        amount: amountOf(record),
+        paidOn: record.payload.paidOn ?? "",
+        mode: record.payload.mode ?? "",
+        reference: record.payload.transactionNumber ?? "",
+      }));
     const paid = installments
       .filter((item) => item.record.status === "Approved")
       .reduce((sum, item) => sum + item.amount, 0);
     const pending = installments
       .filter((item) => item.record.status !== "Approved")
       .reduce((sum, item) => sum + item.amount, 0);
-    const balance = Math.max(0, amount - paid);
+    const balance = Math.max(0, due - paid);
     const status: FeeYearStatus =
       balance === 0
         ? "Paid"
@@ -164,7 +189,10 @@ export function feePlan(input: {
       label: `Year ${index} · ${shortMonth(from)} – ${shortMonth(to)}`,
       from,
       to,
-      amount,
+      amount: due,
+      fullFee: amount,
+      concession,
+      concessionReason: concessions.at(-1)?.payload.reason ?? "",
       paid,
       pending,
       balance,

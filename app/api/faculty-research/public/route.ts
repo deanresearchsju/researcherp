@@ -99,7 +99,8 @@ export async function POST(request: Request) {
       profile: file.value.profile,
       linked: file.value.linked,
       bank: bank ? maskedBank(bank) : null,
-      bankOpen: !bank && (await incentiveEligible(mobile)),
+      // Eligible faculty enter the account once; it is not changed from this page.
+      bankOpen: !bank && (await incentiveEligible(mobile, file.value.records)),
     });
   }
 
@@ -199,11 +200,11 @@ export async function POST(request: Request) {
     const file = await facultyFile(mobile, dob, email);
     if (!file.ok) return fail(file.message, file.status);
     if (file.value.otherBirthDate) return fail(otherBirthDate, 409);
-    // Entered once, and only after an incentive has been approved: never changed from this page.
+    // Entered once, after the faculty member is eligible for an incentive: never changed here.
     if (await bankOf(mobile)) return fail(bankAlreadySaved, 409);
-    if (!(await incentiveEligible(mobile)))
+    if (!(await incentiveEligible(mobile, file.value.records)))
       return fail(
-        "The bank account can be entered once an incentive has been approved for you.",
+        "The bank account can be entered once you have a Checked & Approved publication or patent that earns an incentive.",
         403,
       );
     const name = file.value.profile ? valueText(file.value.profile, "facultyName") : "";

@@ -1,5 +1,6 @@
 import { auditServer } from "@/lib/audit-server";
-import { maskAccount } from "@/lib/faculty-research";
+import { computeIncentive, policyRules } from "@/lib/faculty-incentives";
+import { isApproved, maskAccount, type ResearchRecord } from "@/lib/faculty-research";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 /**
@@ -99,8 +100,28 @@ export async function allBanks(): Promise<Record<string, BankAccount>> {
   );
 }
 
-/** True once the office has approved (or paid) an incentive claim for this faculty member. */
-export async function incentiveEligible(facultyKey: string) {
+/**
+ * A faculty member's own Checked & Approved publication or patent that earns an incentive under
+ * the policy (an online course, a paper outside the policy or a patent not yet granted does not).
+ */
+export function hasEligibleWork(records: readonly ResearchRecord[]) {
+  return records.some(
+    (record) =>
+      record.kind === "publication" &&
+      isApproved(record) &&
+      computeIncentive(record, policyRules).amount > 0,
+  );
+}
+
+/**
+ * May the faculty member enter the bank account for incentives? Yes once they are eligible: an
+ * incentive already approved for them, or approved work that earns one.
+ */
+export async function incentiveEligible(
+  facultyKey: string,
+  records: readonly ResearchRecord[] = [],
+) {
+  if (hasEligibleWork(records)) return true;
   const supabase = createAdminSupabase();
   if (!supabase || !facultyKey) return false;
   const { data, error } = await supabase

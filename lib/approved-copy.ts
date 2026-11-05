@@ -126,8 +126,36 @@ export async function buildApprovedCopy(
   }`;
   const bandHeight = supervisorLine && !partial ? 26 : 18;
 
+  const uploadedPages = doc.getPages();
+  /**
+   * The one mark of a fully approved document: a tick and the word APPROVED. Who approved and
+   * when is written once, as text (the line at the foot of each page and the review trail).
+   */
+  const drawTick = (page: (typeof uploadedPages)[number], x: number, y: number) => {
+    page.drawCircle({
+      x: x + 8,
+      y: y + 4,
+      size: 9,
+      borderColor: green,
+      borderWidth: 1.4,
+    });
+    page.drawLine({
+      start: { x: x + 3.6, y: y + 4.2 },
+      end: { x: x + 7, y: y + 0.6 },
+      thickness: 1.8,
+      color: green,
+    });
+    page.drawLine({
+      start: { x: x + 7, y: y + 0.6 },
+      end: { x: x + 12.8, y: y + 8.2 },
+      thickness: 1.8,
+      color: green,
+    });
+    page.drawText("APPROVED", { x: x + 21, y, size: 11, font: bold, color: green });
+  };
+
   // Stamp the uploaded pages.
-  const uploaded = doc.getPages();
+  const uploaded = uploadedPages;
   uploaded.forEach((page, index) => {
     const { width } = page.getSize();
     page.drawRectangle({
@@ -160,93 +188,17 @@ export async function buildApprovedCopy(
       font,
       color: grey,
     });
-    if (index === 0) {
-      const boxWidth = 196;
-      const x = width - boxWidth - 18;
-      const boxHeight = partial ? 80 : stamp.supervisor ? 100 : 58;
-      const y = page.getSize().height - boxHeight - 16;
+    if (index === 0 && !partial) {
+      const { height } = page.getSize();
       page.drawRectangle({
-        x,
-        y,
-        width: boxWidth,
-        height: boxHeight,
-        borderColor: green,
-        borderWidth: 1.6,
+        x: width - 128,
+        y: height - 36,
+        width: 112,
+        height: 24,
         color: rgb(1, 1, 1),
-        opacity: 0.92,
-        borderOpacity: 1,
+        opacity: 0.9,
       });
-      const top = y + boxHeight;
-      page.drawText(partial ? "APPROVED BY SUPERVISOR" : "APPROVED", {
-        x: x + 10,
-        y: top - 20,
-        size: partial ? 10.5 : 15,
-        font: bold,
-        color: green,
-      });
-      let lineY = top - 33;
-      const stampLine = (label: string, by: string, at: string) => {
-        page.drawText(label, {
-          x: x + 10,
-          y: lineY,
-          size: 6.6,
-          font: bold,
-          color: green,
-        });
-        lineY -= 9;
-        page.drawText(by.slice(0, 40), {
-          x: x + 10,
-          y: lineY,
-          size: 8,
-          font,
-          color: green,
-        });
-        lineY -= 9;
-        page.drawText(momentLabel(at), {
-          x: x + 10,
-          y: lineY,
-          size: 8,
-          font,
-          color: green,
-        });
-        lineY -= 11;
-      };
-      if (stamp.supervisor) {
-        stampLine("SUPERVISOR", stamp.supervisor.by || "—", stamp.supervisor.at);
-        if (partial) {
-          page.drawText("Sent to the Dean for final approval", {
-            x: x + 10,
-            y: lineY,
-            size: 6.6,
-            font,
-            color: green,
-          });
-        } else {
-          stampLine("DEAN", deanBy, deanAt);
-        }
-      } else {
-        page.drawText(momentLabel(deanAt), {
-          x: x + 10,
-          y: lineY,
-          size: 8.5,
-          font,
-          color: green,
-        });
-        page.drawText(deanBy.slice(0, 40), {
-          x: x + 10,
-          y: lineY - 11,
-          size: 8,
-          font,
-          color: green,
-        });
-      }
-      page.drawText("Office of the Dean · Center for Research", {
-        x: x + 10,
-        y: y + 3.5,
-        size: 6.2,
-        font,
-        color: green,
-      });
+      drawTick(page, width - 122, height - 28);
     }
   });
 
@@ -312,58 +264,81 @@ export async function buildApprovedCopy(
     });
     y -= 14;
   }
-  y -= 12;
+  // The status, once: a tick when fully approved; in words while the Dean has not yet.
+  y -= 6;
+  if (partial) {
+    const waiting = "Approved by the supervisor · waiting for the Dean";
+    page.drawText(waiting, {
+      x: (width - bold.widthOfTextAtSize(waiting, 10)) / 2,
+      y,
+      size: 10,
+      font: bold,
+      color: green,
+    });
+  } else {
+    drawTick(page, (width - 94) / 2, y);
+  }
+  y -= 22;
 
   const rows: [string, string][] = [
     ["Scholar", stamp.scholarName],
     ...(stamp.scholarId ? ([["Scholar ID", stamp.scholarId]] as [string, string][]) : []),
     ...(stamp.details ?? []).map((item) => [item.label, item.value] as [string, string]),
     ["Document", fileName?.trim() || "Recorded by the research office"],
-    ["Status", partial ? "APPROVED BY SUPERVISOR · AWAITING THE DEAN" : "APPROVED"],
-    ...(stamp.supervisor
-      ? ([
-          [
-            "Approved by Supervisor",
-            `${stamp.supervisor.by || "—"} · ${momentLabel(stamp.supervisor.at)}`,
-          ],
-          ...(partial
-            ? []
-            : ([["Approved by Dean", `${deanBy} · ${momentLabel(deanAt)}`]] as [
-                string,
-                string,
-              ][])),
-        ] as [string, string][])
-      : ([
-          ["Approved on", momentLabel(deanAt)],
-          ["Approved by", deanBy],
-        ] as [string, string][])),
     ...(stamp.reference ? ([["Reference", stamp.reference]] as [string, string][]) : []),
   ];
   for (const [label, value] of rows) {
+    // A long answer (a request's reason) takes up to three lines.
+    const lines = wrap(value || "—", width - 230, 9.5, measure).slice(0, 3);
+    const extra = (lines.length - 1) * 12;
     page.drawRectangle({
       x: 40,
-      y: y - 6,
+      y: y - 6 - extra,
       width: width - 80,
-      height: 22,
+      height: 22 + extra,
       color: rgb(0.97, 0.96, 0.99),
     });
     page.drawText(label, { x: 50, y, size: 9.5, font: bold, color: purple });
-    const lines = wrap(value || "—", width - 230, 9.5, measure);
-    page.drawText(lines[0] ?? "—", {
-      x: 190,
-      y,
-      size: 9.5,
-      font: label === "Status" ? bold : font,
-      color: label === "Status" ? green : rgb(0.1, 0.1, 0.1),
-    });
-    y -= 26;
+    lines.forEach((line, index) =>
+      page.drawText(line, {
+        x: 190,
+        y: y - index * 12,
+        size: 9.5,
+        font: label === "Status" ? bold : font,
+        color: label === "Status" ? green : rgb(0.1, 0.1, 0.1),
+      }),
+    );
+    y -= 26 + extra;
   }
 
-  if (stamp.steps && stamp.steps.length > 0) {
+  const trail: readonly ApprovalStep[] =
+    stamp.steps && stamp.steps.length > 0
+      ? stamp.steps
+      : [
+          ...(stamp.supervisor
+            ? [
+                {
+                  label: "Approved by the Supervisor",
+                  by: stamp.supervisor.by,
+                  on: stamp.supervisor.at,
+                },
+              ]
+            : []),
+          ...(partial
+            ? []
+            : [
+                {
+                  label: stamp.supervisor ? "Approved by the Dean" : "Approved",
+                  by: deanBy,
+                  on: deanAt,
+                },
+              ]),
+        ];
+  if (trail.length > 0) {
     y -= 8;
     page.drawText("Review trail", { x: 40, y, size: 11, font: bold, color: purple });
     y -= 18;
-    stamp.steps.forEach((step, index) => {
+    trail.forEach((step, index) => {
       page.drawCircle({ x: 48, y: y + 3, size: 4, color: green });
       page.drawText(`${index + 1}. ${step.label}`, {
         x: 60,

@@ -1,10 +1,14 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { motion } from "framer-motion";
+import { BookOpenCheck, LogOut, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { FacultyDashboard } from "@/components/forms/FacultyDashboard";
-import { ToppersBoard, type PublicToppers } from "@/components/forms/ToppersBoard";
+import { ToppersStrip, type PublicToppers } from "@/components/forms/ToppersBoard";
+import { Logo } from "@/components/brand/Logo";
+import { DeskModal } from "@/components/portal/Desk";
 import { ResearchRecordForm } from "@/components/portal/ResearchRecordForm";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -98,12 +102,14 @@ function Identify({ onOpen }: { onOpen: (faculty: Faculty) => void }) {
   }
 
   return (
-    <form
-      noValidate
-      onSubmit={open}
-      className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_auto]"
-    >
-      <FormField label="Email" htmlFor="faculty-email" required error={errors.email}>
+    <form noValidate onSubmit={open} className="grid items-end gap-4 sm:grid-cols-2">
+      <FormField
+        label="Email"
+        htmlFor="faculty-email"
+        required
+        error={errors.email}
+        className="sm:col-span-2"
+      >
         <Input
           id="faculty-email"
           type="email"
@@ -136,11 +142,11 @@ function Identify({ onOpen }: { onOpen: (faculty: Faculty) => void }) {
           onChange={(event) => setDob(event.target.value)}
         />
       </FormField>
-      <Button type="submit" disabled={busy} className="sm:mb-0.5">
+      <Button type="submit" disabled={busy} className="sm:col-span-2">
         {busy ? "Opening…" : "Continue"}
       </Button>
       {message ? (
-        <p role="alert" className="text-sm text-secondary sm:col-span-2 lg:col-span-4">
+        <p role="alert" className="text-sm text-secondary sm:col-span-2">
           {message}
         </p>
       ) : null}
@@ -173,8 +179,8 @@ const bankFields: [keyof Bank, string, string][] = [
 ];
 
 /**
- * The bank account publication incentives are credited to. It is entered once, after an
- * incentive has been approved; the research office corrects it if needed.
+ * The bank account publication incentives are credited to. It is entered once, when the faculty
+ * member becomes eligible; the research office corrects it if needed.
  */
 function BankCard({
   faculty,
@@ -236,12 +242,13 @@ function BankCard({
         </>
       ) : !faculty.bankOpen ? (
         <p className="mt-2 text-sm text-muted-foreground">
-          You can enter your bank account here once an incentive has been approved for you.
+          You can enter your bank account once you have a Checked &amp; Approved
+          publication or patent that earns an incentive.
         </p>
       ) : (
         <form noValidate onSubmit={save} className="mt-3 space-y-3">
           <p className="text-sm text-muted-foreground">
-            An incentive has been approved for you. Enter the account it is to be credited to.
+            You are eligible for an incentive. Enter the account it is to be credited to.
             Check the details carefully: they can be entered only once.
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -404,10 +411,26 @@ function AddRecord({
   );
 }
 
+/** The slim bar on top of the faculty dashboard, in place of the website's menus. */
+function TopBar({ children }: { children?: React.ReactNode }) {
+  return (
+    <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
+      <div className="mx-auto flex w-full max-w-[110rem] flex-wrap items-center gap-3 px-3 py-2 sm:px-5">
+        <Link href="/" className="shrink-0" aria-label="St. Joseph University, home">
+          <Logo className="h-9 w-auto sm:h-10" />
+        </Link>
+        <span className="hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
+        <p className="font-heading text-base text-primary sm:text-lg">Faculty research</p>
+        <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
+      </div>
+    </header>
+  );
+}
+
 /**
- * The open page for faculty: mobile number and date of birth first; then the saved details, the
- * records already saved and buttons to add a publication or a project proposal. Records can be
- * added here, never changed or deleted.
+ * The faculty dashboard: email, mobile number and date of birth first; then the faculty
+ * member's figures and records on one compact screen. New and changed records open in a
+ * popup over it.
  */
 export function PublicResearchDesk({ toppers }: { toppers: PublicToppers }) {
   const [faculty, setFaculty] = useState<Faculty | null>(null);
@@ -417,145 +440,195 @@ export function PublicResearchDesk({ toppers }: { toppers: PublicToppers }) {
 
   if (!faculty) {
     return (
-      <div className="space-y-6">
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-card sm:p-8">
-          <h2 className="font-heading text-xl text-primary">
-            Sign in with your email, mobile number and date of birth
-          </h2>
-          <Identify
-            onOpen={(opened) => {
-              setFaculty(opened);
-              setNotice(
-                opened.linked
-                  ? `${opened.linked} record(s) entered by the research office were found under your email and added to your file.`
-                  : "",
-              );
-              setAdding(opened.profile ? null : "publication");
-            }}
-          />
-        </div>
-        <ToppersBoard toppers={toppers} />
-      </div>
+      <>
+        <TopBar />
+        <main className="mx-auto w-full max-w-xl px-3 py-8 sm:px-5 sm:py-12">
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: "easeOut" }}
+            className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
+          >
+            <span
+              aria-hidden="true"
+              className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-purple-deep to-accent"
+            />
+            <div className="flex items-center gap-3">
+              <motion.span
+                initial={{ scale: 0.6, rotate: -12, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ delay: 0.15, type: "spring", stiffness: 260, damping: 16 }}
+                className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"
+              >
+                <BookOpenCheck className="size-5" aria-hidden="true" />
+              </motion.span>
+              <div>
+                <h1 className="font-heading text-xl text-primary">Sign in</h1>
+                <p className="text-sm text-muted-foreground">
+                  Email, mobile number and date of birth.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4" />
+            <Identify
+              onOpen={(opened) => {
+                setFaculty(opened);
+                setNotice(
+                  opened.linked
+                    ? `${opened.linked} record(s) entered by the research office were found under your email and added to your file.`
+                    : "",
+                );
+                setAdding(opened.profile ? null : "publication");
+              }}
+            />
+          </motion.section>
+        </main>
+      </>
     );
   }
 
   const startAdding = (kind: ResearchKind) => {
+    setEditing(null);
     setAdding(kind);
     setNotice("");
   };
+  const formOpen = Boolean(editing || adding);
 
   return (
-    <div className="space-y-6 rounded-2xl border border-border bg-card p-5 shadow-card sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-heading text-xl text-primary">
-          {faculty.profile ? "Your research records" : "First record"}
-        </h2>
+    <>
+      <TopBar>
+        <Button type="button" size="sm" onClick={() => startAdding("publication")}>
+          <Plus className="size-4" /> Publication
+        </Button>
         <Button
           type="button"
-          variant="outline"
           size="sm"
+          variant="outline"
+          onClick={() => startAdding("proposal")}
+        >
+          <Plus className="size-4" /> Project proposal
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
           onClick={() => {
             setFaculty(null);
             setAdding(null);
-          }}
-        >
-          Change mobile number
-        </Button>
-      </div>
-
-      {notice ? (
-        <p
-          role="status"
-          className="rounded-xl border border-border bg-primary/10 px-4 py-3 text-sm text-primary"
-        >
-          {notice}
-        </p>
-      ) : null}
-      {editing ? (
-        <AddRecord
-          key={editing.id}
-          faculty={faculty}
-          kind={editing.kind}
-          record={editing}
-          onCancel={() => setEditing(null)}
-          onSaved={(saved) => {
-            setFaculty(saved);
             setEditing(null);
-            setNotice("Changes saved.");
           }}
+        >
+          <LogOut className="size-4" /> Sign out
+        </Button>
+      </TopBar>
+      <main className="mx-auto w-full max-w-[110rem] space-y-3 px-3 py-3 sm:px-5">
+        <ToppersStrip
+          toppers={toppers}
+          department={
+            faculty.profile && typeof faculty.profile.department === "string"
+              ? faculty.profile.department
+              : ""
+          }
         />
-      ) : adding ? (
-        <>
-          {!faculty.profile ? (
-            <div
-              role="radiogroup"
-              aria-label="Record type"
-              className="flex flex-wrap gap-2"
-            >
-              {(Object.keys(kindLabel) as ResearchKind[]).map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={adding === id}
-                  onClick={() => setAdding(id)}
-                  className={cn(
-                    "min-h-10 rounded-xl border px-4 text-sm font-semibold transition",
-                    adding === id
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-card text-primary hover:border-primary/40",
-                  )}
-                >
-                  {kindLabel[id]}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <AddRecord
-            key={adding}
-            faculty={faculty}
-            kind={adding}
-            onCancel={() => setAdding(faculty.profile ? null : adding)}
-            onSaved={(saved) => {
-              setFaculty(saved);
+        {notice ? (
+          <p
+            role="status"
+            className="rounded-lg border border-border bg-primary/10 px-3 py-2 text-sm text-primary"
+          >
+            {notice}
+          </p>
+        ) : null}
+        {faculty.profile ? (
+          <FacultyDashboard
+            profile={faculty.profile}
+            records={faculty.records}
+            standing={faculty.standing}
+            onEdit={(record) => {
               setAdding(null);
-              setNotice("Saved. You can add another record.");
+              setNotice("");
+              setEditing(record);
             }}
           />
-        </>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => startAdding("publication")}>
-            <Plus className="size-4" /> Add publication
-          </Button>
-          <Button type="button" variant="outline" onClick={() => startAdding("proposal")}>
-            <Plus className="size-4" /> Add project proposal
-          </Button>
-        </div>
-      )}
-      {faculty.profile ? (
-        <BankCard
-          faculty={faculty}
-          onSaved={(bank) => {
-            setFaculty({ ...faculty, bank, bankOpen: false });
-            setNotice("Bank account saved.");
-          }}
-        />
-      ) : null}
-      {faculty.profile ? (
-        <FacultyDashboard
-          profile={faculty.profile}
-          records={faculty.records}
-          standing={faculty.standing}
-          onEdit={(record) => {
+        ) : (
+          <p className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+            Add your first publication or project proposal to start your dashboard.
+          </p>
+        )}
+        {/* The toppers are shown only once signed in, in the strip at the top. */}
+        {faculty.profile ? (
+          <BankCard
+            faculty={faculty}
+            onSaved={(bank) => {
+              setFaculty({ ...faculty, bank, bankOpen: false });
+              setNotice("Bank account saved.");
+            }}
+          />
+        ) : null}
+      </main>
+      {formOpen ? (
+        <DeskModal
+          title={
+            editing ? "Edit record" : faculty.profile ? "Add record" : "First record"
+          }
+          onClose={() => {
+            setEditing(null);
             setAdding(null);
-            setNotice("");
-            setEditing(record);
-            window.scrollTo({ top: 0, behavior: "smooth" });
           }}
-        />
+          size="lg"
+        >
+          {editing ? (
+            <AddRecord
+              key={editing.id}
+              faculty={faculty}
+              kind={editing.kind}
+              record={editing}
+              onCancel={() => setEditing(null)}
+              onSaved={(saved) => {
+                setFaculty(saved);
+                setEditing(null);
+                setNotice("Changes saved.");
+              }}
+            />
+          ) : adding ? (
+            <>
+              <div
+                role="radiogroup"
+                aria-label="Record type"
+                className="flex flex-wrap gap-2"
+              >
+                {(Object.keys(kindLabel) as ResearchKind[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={adding === id}
+                    onClick={() => setAdding(id)}
+                    className={cn(
+                      "min-h-9 rounded-lg border px-3 text-sm font-semibold transition",
+                      adding === id
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-card text-primary hover:border-primary/40",
+                    )}
+                  >
+                    {kindLabel[id]}
+                  </button>
+                ))}
+              </div>
+              <AddRecord
+                key={adding}
+                faculty={faculty}
+                kind={adding}
+                onCancel={() => setAdding(null)}
+                onSaved={(saved) => {
+                  setFaculty(saved);
+                  setAdding(null);
+                  setNotice("Saved. You can add another record.");
+                }}
+              />
+            </>
+          ) : null}
+        </DeskModal>
       ) : null}
-      <ToppersBoard toppers={toppers} />
-    </div>
+    </>
   );
 }

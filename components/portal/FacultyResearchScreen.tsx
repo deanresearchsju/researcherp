@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   agencyOf,
+  courseAgencyOf,
   allFields,
   approvedLabel,
   indexingOf,
@@ -932,7 +933,9 @@ export function FacultyResearchOffice({ kind }: { kind: ResearchKind }) {
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {kind === "publication"
-                          ? indexingOf(v).join(", ") || "—"
+                          ? valueText(v, "type") === "Online course"
+                            ? courseAgencyOf(v)
+                            : indexingOf(v).join(", ") || "—"
                           : fundingStage(v)}
                       </td>
                       <td className="px-3 py-2">
@@ -1064,7 +1067,12 @@ export function FacultyResearchMine({ kind }: { kind: ResearchKind }) {
               ))}
               <td className="px-4 py-3">
                 {isApproved(record) ? null : (
-                  <Button type="button" size="sm" variant="outline" onClick={() => setEditing(record)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditing(record)}
+                  >
                     Edit
                   </Button>
                 )}

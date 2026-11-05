@@ -49,7 +49,9 @@ const textItems = (titles: readonly string[]): ChecklistItem[] =>
     ...(title === colloquiumCheck ? { locked: true } : {}),
   }));
 
-const nonPatent = publicationTypes.filter((type) => type !== "Patent");
+const nonPatent = publicationTypes.filter(
+  (type) => type !== "Patent" && type !== "Online course",
+);
 
 export const checklistCatalog: Record<ChecklistKey, Definition> = {
   application: {
@@ -100,6 +102,12 @@ export const checklistCatalog: Record<ChecklistKey, Definition> = {
         title: "Indexing proof (Scopus / Web of Science)",
         required: false,
         appliesTo: ["Journal article", "Conference proceedings", "Book chapter"],
+      },
+      {
+        id: "course-certificate",
+        title: "Passing certificate (online course)",
+        required: true,
+        appliesTo: ["Online course"],
       },
       {
         id: "patent-proof",

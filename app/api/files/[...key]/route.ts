@@ -29,6 +29,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
       (part) => /^[A-Za-z0-9._-]+$/.test(part) && part !== "." && part !== "..",
     );
   const folder = parts[0] as keyof typeof storeFolders;
+  // Faculty evidence (first pages, certificates) is opened by the office and by supervisors,
+  // never by scholars.
+  if (folder === "research" && session.role === "scholar") {
+    return NextResponse.json(
+      { ok: false, message: "That file was not found." },
+      { status: 404 },
+    );
+  }
   if (!valid || storeFolders[folder] !== "private") {
     return NextResponse.json(
       { ok: false, message: "That file was not found." },

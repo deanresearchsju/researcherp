@@ -427,11 +427,12 @@ export function ScholarInformationViewer({ withRegister = false }: { withRegiste
                       </span>
                     </p>
                     <Table
-                      headers={["Fee year", "Period", "Annual fee (₹)", "Paid (₹)", "Waiting (₹)", "Balance (₹)", "Status"]}
+                      headers={["Fee year", "Period", "Annual fee (₹)", "Concession (₹)", "Paid (₹)", "Waiting (₹)", "Balance (₹)", "Status"]}
                       rows={ledger.plan.map((year) => [
                         year.label,
                         `${when(year.from)} – ${when(year.to)}`,
-                        formatInr(year.amount),
+                        formatInr(year.fullFee),
+                        year.concession ? formatInr(year.concession) : "—",
                         formatInr(year.paid),
                         formatInr(year.pending),
                         formatInr(year.balance),
